@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.1...gnhf-v0.1.2) (2026-03-31)
+
+
+### Bug Fixes
+
+* repo field in package json ([d635f42](https://github.com/kunchenguid/gnhf/commit/d635f42286f2a2904752d3d06319e2950d992934))
+
 ## [0.1.1](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.0...gnhf-v0.1.1) (2026-03-31)
 
 
