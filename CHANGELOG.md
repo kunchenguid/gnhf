@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.2...gnhf-v0.1.3) (2026-03-31)
+
+
+### Bug Fixes
+
+* **cli:** correct version flag ([a1203ca](https://github.com/kunchenguid/gnhf/commit/a1203caf8a6fbb794b8a954b4acdf79ebba2ebd8))
+
 ## [0.1.2](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.1...gnhf-v0.1.2) (2026-03-31)
 
 
