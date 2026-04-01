@@ -3,24 +3,7 @@ import { execSync } from "node:child_process";
 const NOT_GIT_REPOSITORY_MESSAGE =
   'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
 
-function extractGitErrorText(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-
-  const stderr =
-    "stderr" in error && typeof error.stderr === "string"
-      ? error.stderr
-      : undefined;
-
-  return [error.message, stderr].filter(Boolean).join("\n");
-}
-
 function translateGitError(error: unknown): Error {
-  const message = extractGitErrorText(error);
-
-  if (message.includes("not a git repository")) {
-    return new Error(NOT_GIT_REPOSITORY_MESSAGE);
-  }
-
   return error instanceof Error ? error : new Error(String(error));
 }
 
@@ -36,8 +19,33 @@ function git(args: string, cwd: string): string {
   }
 }
 
+function isGitRepository(cwd: string): boolean {
+  try {
+    execSync("git rev-parse --git-dir", {
+      cwd,
+      encoding: "utf-8",
+      stdio: "pipe",
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureGitRepository(cwd: string): void {
+  if (!isGitRepository(cwd)) {
+    throw new Error(NOT_GIT_REPOSITORY_MESSAGE);
+  }
+}
+
 export function getCurrentBranch(cwd: string): string {
-  return git("rev-parse --abbrev-ref HEAD", cwd);
+  ensureGitRepository(cwd);
+  try {
+    return git("symbolic-ref --short HEAD", cwd);
+  } catch {
+    return git("rev-parse --abbrev-ref HEAD", cwd);
+  }
 }
 
 export function ensureCleanWorkingTree(cwd: string): void {
