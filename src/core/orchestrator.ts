@@ -235,6 +235,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         err instanceof Error &&
         err.message === "Agent was aborted"
       ) {
+        resetHard(this.cwd);
         return { type: "aborted", reason: this.pendingAbortReason };
       }
 
@@ -352,6 +353,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
   private abort(reason: string): void {
     this.state.status = "aborted";
+    this.state.lastMessage = reason;
     this.state.waitingUntil = null;
     this.emit("abort", reason);
     this.emit("state", this.getState());
