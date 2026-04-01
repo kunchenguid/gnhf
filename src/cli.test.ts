@@ -151,7 +151,9 @@ describe("cli", () => {
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
       code?: string | number | null,
     ) => {
