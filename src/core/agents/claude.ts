@@ -1,23 +1,18 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import type {
-  Agent,
-  AgentResult,
-  AgentOutput,
-  TokenUsage,
-  AgentRunOptions,
+import {
+  AGENT_OUTPUT_SCHEMA,
+  type Agent,
+  type AgentResult,
+  type AgentOutput,
+  type TokenUsage,
+  type AgentRunOptions,
 } from "./types.js";
-
-const OUTPUT_SCHEMA = JSON.stringify({
-  type: "object",
-  properties: {
-    success: { type: "boolean" },
-    summary: { type: "string" },
-    key_changes_made: { type: "array", items: { type: "string" } },
-    key_learnings: { type: "array", items: { type: "string" } },
-  },
-  required: ["success", "summary", "key_changes_made", "key_learnings"],
-});
+import {
+  parseJSONLStream,
+  setupAbortHandler,
+  setupChildProcessHandlers,
+} from "./stream-utils.js";
 
 interface ClaudeAssistantEvent {
   type: "assistant";
@@ -69,27 +64,14 @@ export class ClaudeAgent implements Agent {
           "--output-format",
           "stream-json",
           "--json-schema",
-          OUTPUT_SCHEMA,
+          JSON.stringify(AGENT_OUTPUT_SCHEMA),
           "--dangerously-skip-permissions",
         ],
         { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
       );
 
-      if (signal) {
-        const onAbort = () => {
-          child.kill("SIGTERM");
-          reject(new Error("Agent was aborted"));
-        };
-        if (signal.aborted) {
-          onAbort();
-          return;
-        }
-        signal.addEventListener("abort", onAbort, { once: true });
-        child.on("close", () => signal.removeEventListener("abort", onAbort));
-      }
+      if (setupAbortHandler(signal, child, reject)) return;
 
-      let stderr = "";
-      let buffer = "";
       let resultEvent: ClaudeResultEvent | null = null;
       const cumulative: TokenUsage = {
         inputTokens: 0,
@@ -98,69 +80,40 @@ export class ClaudeAgent implements Agent {
         cacheCreationTokens: 0,
       };
 
-      child.stdout.on("data", (data: Buffer) => {
-        logStream?.write(data);
-        buffer += data.toString();
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+      parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
+        if (event.type === "assistant") {
+          const msg = (event as ClaudeAssistantEvent).message;
+          cumulative.inputTokens +=
+            (msg.usage.input_tokens ?? 0) +
+            (msg.usage.cache_read_input_tokens ?? 0);
+          cumulative.outputTokens += msg.usage.output_tokens ?? 0;
+          cumulative.cacheReadTokens += msg.usage.cache_read_input_tokens ?? 0;
+          cumulative.cacheCreationTokens +=
+            msg.usage.cache_creation_input_tokens ?? 0;
+          onUsage?.({ ...cumulative });
 
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line) as ClaudeEvent;
-
-            if (event.type === "assistant") {
-              const msg = (event as ClaudeAssistantEvent).message;
-              cumulative.inputTokens +=
-                (msg.usage.input_tokens ?? 0) +
-                (msg.usage.cache_read_input_tokens ?? 0);
-              cumulative.outputTokens += msg.usage.output_tokens ?? 0;
-              cumulative.cacheReadTokens +=
-                msg.usage.cache_read_input_tokens ?? 0;
-              cumulative.cacheCreationTokens +=
-                msg.usage.cache_creation_input_tokens ?? 0;
-              onUsage?.({ ...cumulative });
-
-              if (onMessage) {
-                const content = (msg as Record<string, unknown>).content;
-                if (Array.isArray(content)) {
-                  for (const block of content) {
-                    if (
-                      block?.type === "text" &&
-                      typeof block.text === "string" &&
-                      block.text.trim()
-                    ) {
-                      onMessage(block.text.trim());
-                    }
-                  }
+          if (onMessage) {
+            const content = (msg as Record<string, unknown>).content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (
+                  block?.type === "text" &&
+                  typeof block.text === "string" &&
+                  block.text.trim()
+                ) {
+                  onMessage(block.text.trim());
                 }
               }
             }
-
-            if (event.type === "result") {
-              resultEvent = event as ClaudeResultEvent;
-            }
-          } catch {
-            // Skip unparseable lines
           }
         }
-      });
 
-      child.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on("error", (err) => {
-        reject(new Error(`Failed to spawn claude: ${err.message}`));
-      });
-
-      child.on("close", (code) => {
-        logStream?.end();
-        if (code !== 0) {
-          reject(new Error(`claude exited with code ${code}: ${stderr}`));
-          return;
+        if (event.type === "result") {
+          resultEvent = event as ClaudeResultEvent;
         }
+      });
 
+      setupChildProcessHandlers(child, "claude", logStream, reject, () => {
         if (!resultEvent) {
           reject(new Error("claude returned no result event"));
           return;

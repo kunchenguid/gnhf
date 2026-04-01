@@ -155,6 +155,26 @@ function starStyle(state: "bright" | "dim" | "hidden"): Style {
   return "normal";
 }
 
+function placeStarsInCells(
+  cells: Cell[],
+  stars: Star[],
+  row: number,
+  xMin: number,
+  xMax: number,
+  xOffset: number,
+  now: number,
+): void {
+  for (const star of stars) {
+    if (star.y !== row || star.x < xMin || star.x >= xMax) continue;
+    const state = getStarState(star, now);
+    const localX = star.x - xOffset;
+    cells[localX] =
+      state === "hidden"
+        ? { char: " ", style: "normal", width: 1 }
+        : { char: star.char, style: starStyle(state), width: 1 };
+  }
+}
+
 function renderStarLineCells(
   stars: Star[],
   width: number,
@@ -162,15 +182,7 @@ function renderStarLineCells(
   now: number,
 ): Cell[] {
   const cells = emptyCells(width);
-  for (const star of stars) {
-    if (star.y !== y) continue;
-    const state = getStarState(star, now);
-    if (state === "hidden") {
-      cells[star.x] = { char: " ", style: "normal", width: 1 };
-    } else {
-      cells[star.x] = { char: star.char, style: starStyle(state), width: 1 };
-    }
-  }
+  placeStarsInCells(cells, stars, y, 0, width, 0, now);
   return cells;
 }
 
@@ -197,21 +209,15 @@ function renderSideStarsCells(
 ): Cell[] {
   if (sideWidth <= 0) return [];
   const cells = emptyCells(sideWidth);
-  for (const star of stars) {
-    if (
-      star.y !== rowIndex ||
-      star.x < xOffset ||
-      star.x >= xOffset + sideWidth
-    )
-      continue;
-    const localX = star.x - xOffset;
-    const state = getStarState(star, now);
-    if (state === "hidden") {
-      cells[localX] = { char: " ", style: "normal", width: 1 };
-    } else {
-      cells[localX] = { char: star.char, style: starStyle(state), width: 1 };
-    }
-  }
+  placeStarsInCells(
+    cells,
+    stars,
+    rowIndex,
+    xOffset,
+    xOffset + sideWidth,
+    xOffset,
+    now,
+  );
   return cells;
 }
 

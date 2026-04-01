@@ -12,6 +12,24 @@ if [ -z "$CHANGED_FILES" ]; then
   exit 0
 fi
 
+ensure_project_tools() {
+  if [ -x "node_modules/.bin/prettier" ] && [ -x "node_modules/.bin/eslint" ]; then
+    return
+  fi
+
+  echo "==> Installing project dependencies..."
+  if [ -f "package-lock.json" ]; then
+    npm ci
+  else
+    npm install
+  fi
+}
+
+ensure_project_tools
+
+PRETTIER_BIN="./node_modules/.bin/prettier"
+ESLINT_BIN="./node_modules/.bin/eslint"
+
 # Filter files by type
 TS_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs)$' || true)
 PRETTIER_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|yml|yaml|md|css|html)$' || true)
@@ -38,19 +56,19 @@ ERRORS=0
 # Step 1: Run Prettier auto-fix on changed files
 if [ -n "$PRETTIER_FILES" ]; then
   echo "==> Running Prettier (auto-fix)..."
-  echo "$PRETTIER_FILES" | xargs npx prettier --write || true
+  echo "$PRETTIER_FILES" | xargs "$PRETTIER_BIN" --write || true
 fi
 
 # Step 2: Run ESLint auto-fix on changed TS/JS files
 if [ -n "$TS_FILES" ]; then
   echo "==> Running ESLint (auto-fix)..."
-  echo "$TS_FILES" | xargs npx eslint --fix || true
+  echo "$TS_FILES" | xargs "$ESLINT_BIN" --fix || true
 fi
 
 # Step 3: Run Prettier check mode to verify
 if [ -n "$PRETTIER_FILES" ]; then
   echo "==> Running Prettier (check)..."
-  if ! echo "$PRETTIER_FILES" | xargs npx prettier --check; then
+  if ! echo "$PRETTIER_FILES" | xargs "$PRETTIER_BIN" --check; then
     echo "ERROR: Prettier check failed."
     ERRORS=1
   fi
@@ -59,7 +77,7 @@ fi
 # Step 4: Run ESLint check mode to verify
 if [ -n "$TS_FILES" ]; then
   echo "==> Running ESLint (check)..."
-  if ! echo "$TS_FILES" | xargs npx eslint; then
+  if ! echo "$TS_FILES" | xargs "$ESLINT_BIN"; then
     echo "ERROR: ESLint check failed."
     ERRORS=1
   fi

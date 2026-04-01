@@ -5,6 +5,17 @@ export interface AgentOutput {
   key_learnings: string[];
 }
 
+export const AGENT_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    success: { type: "boolean" },
+    summary: { type: "string" },
+    key_changes_made: { type: "array", items: { type: "string" } },
+    key_learnings: { type: "array", items: { type: "string" } },
+  },
+  required: ["success", "summary", "key_changes_made", "key_learnings"],
+} as const;
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;

@@ -7,6 +7,7 @@ import {
   existsSync,
 } from "node:fs";
 import { join } from "node:path";
+import { AGENT_OUTPUT_SCHEMA } from "./agents/types.js";
 
 export interface RunInfo {
   runId: string;
@@ -15,21 +16,6 @@ export interface RunInfo {
   notesPath: string;
   schemaPath: string;
 }
-
-const OUTPUT_SCHEMA = JSON.stringify(
-  {
-    type: "object",
-    properties: {
-      success: { type: "boolean" },
-      summary: { type: "string" },
-      key_changes_made: { type: "array", items: { type: "string" } },
-      key_learnings: { type: "array", items: { type: "string" } },
-    },
-    required: ["success", "summary", "key_changes_made", "key_learnings"],
-  },
-  null,
-  2,
-);
 
 function ensureGitignore(cwd: string): void {
   const gitignorePath = join(cwd, ".gitignore");
@@ -61,7 +47,11 @@ export function setupRun(runId: string, prompt: string, cwd: string): RunInfo {
   );
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeFileSync(schemaPath, OUTPUT_SCHEMA, "utf-8");
+  writeFileSync(
+    schemaPath,
+    JSON.stringify(AGENT_OUTPUT_SCHEMA, null, 2),
+    "utf-8",
+  );
 
   return { runId, runDir, promptPath, notesPath, schemaPath };
 }
@@ -92,6 +82,11 @@ export function getLastIterationNumber(runInfo: RunInfo): number {
   return max;
 }
 
+function formatListSection(title: string, items: string[]): string {
+  if (items.length === 0) return "";
+  return `**${title}:**\n${items.map((item) => `- ${item}`).join("\n")}\n`;
+}
+
 export function appendNotes(
   notesPath: string,
   iteration: number,
@@ -102,12 +97,8 @@ export function appendNotes(
   const entry = [
     `\n### Iteration ${iteration}\n`,
     `**Summary:** ${summary}\n`,
-    changes.length > 0
-      ? `**Changes:**\n${changes.map((c) => `- ${c}`).join("\n")}\n`
-      : "",
-    learnings.length > 0
-      ? `**Learnings:**\n${learnings.map((l) => `- ${l}`).join("\n")}\n`
-      : "",
+    formatListSection("Changes", changes),
+    formatListSection("Learnings", learnings),
   ].join("\n");
 
   appendFileSync(notesPath, entry, "utf-8");

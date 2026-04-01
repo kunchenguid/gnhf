@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
-import type { Agent, TokenUsage } from "./agents/types.js";
+import type { Agent, AgentOutput, TokenUsage } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 import { commitAll, resetHard } from "./git.js";
@@ -108,107 +108,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         prompt: this.prompt,
       });
 
-      let record: IterationRecord;
-      const baseInputTokens = this.state.totalInputTokens;
-      const baseOutputTokens = this.state.totalOutputTokens;
-
-      this.activeAbortController = new AbortController();
-
-      const onUsage = (usage: TokenUsage) => {
-        this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
-        this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
-        this.emit("state", this.getState());
-      };
-
-      const onMessage = (text: string) => {
-        this.state.lastMessage = text;
-        this.emit("state", this.getState());
-      };
-
-      const logPath = join(
-        this.runInfo.runDir,
-        `iteration-${this.state.currentIteration}.jsonl`,
-      );
-
-      try {
-        const result = await this.agent.run(iterationPrompt, this.cwd, {
-          onUsage,
-          onMessage,
-          signal: this.activeAbortController.signal,
-          logPath,
-        });
-
-        if (result.output.success) {
-          appendNotes(
-            this.runInfo.notesPath,
-            this.state.currentIteration,
-            result.output.summary,
-            result.output.key_changes_made,
-            result.output.key_learnings,
-          );
-
-          commitAll(
-            `gnhf #${this.state.currentIteration}: ${result.output.summary}`,
-            this.cwd,
-          );
-
-          this.state.successCount++;
-          this.state.consecutiveFailures = 0;
-
-          record = {
-            number: this.state.currentIteration,
-            success: true,
-            summary: result.output.summary,
-            keyChanges: result.output.key_changes_made,
-            keyLearnings: result.output.key_learnings,
-            timestamp: new Date(),
-          };
-        } else {
-          appendNotes(
-            this.runInfo.notesPath,
-            this.state.currentIteration,
-            `[FAIL] ${result.output.summary}`,
-            [],
-            result.output.key_learnings,
-          );
-
-          resetHard(this.cwd);
-          this.state.failCount++;
-          this.state.consecutiveFailures++;
-
-          record = {
-            number: this.state.currentIteration,
-            success: false,
-            summary: result.output.summary,
-            keyChanges: [],
-            keyLearnings: result.output.key_learnings,
-            timestamp: new Date(),
-          };
-        }
-      } catch (err) {
-        const summary = err instanceof Error ? err.message : String(err);
-
-        appendNotes(
-          this.runInfo.notesPath,
-          this.state.currentIteration,
-          `[ERROR] ${summary}`,
-          [],
-          [],
-        );
-
-        resetHard(this.cwd);
-        this.state.failCount++;
-        this.state.consecutiveFailures++;
-
-        record = {
-          number: this.state.currentIteration,
-          success: false,
-          summary,
-          keyChanges: [],
-          keyLearnings: [],
-          timestamp: new Date(),
-        };
-      }
+      const record = await this.runIteration(iterationPrompt);
 
       this.state.iterations.push(record);
       this.emit("iteration:end", record);
@@ -240,6 +140,99 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         }
       }
     }
+  }
+
+  private async runIteration(prompt: string): Promise<IterationRecord> {
+    const baseInputTokens = this.state.totalInputTokens;
+    const baseOutputTokens = this.state.totalOutputTokens;
+
+    this.activeAbortController = new AbortController();
+
+    const onUsage = (usage: TokenUsage) => {
+      this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
+      this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
+      this.emit("state", this.getState());
+    };
+
+    const onMessage = (text: string) => {
+      this.state.lastMessage = text;
+      this.emit("state", this.getState());
+    };
+
+    const logPath = join(
+      this.runInfo.runDir,
+      `iteration-${this.state.currentIteration}.jsonl`,
+    );
+
+    try {
+      const result = await this.agent.run(prompt, this.cwd, {
+        onUsage,
+        onMessage,
+        signal: this.activeAbortController.signal,
+        logPath,
+      });
+
+      if (result.output.success) {
+        return this.recordSuccess(result.output);
+      }
+      return this.recordFailure(
+        `[FAIL] ${result.output.summary}`,
+        result.output.summary,
+        result.output.key_learnings,
+      );
+    } catch (err) {
+      const summary = err instanceof Error ? err.message : String(err);
+      return this.recordFailure(`[ERROR] ${summary}`, summary, []);
+    }
+  }
+
+  private recordSuccess(output: AgentOutput): IterationRecord {
+    appendNotes(
+      this.runInfo.notesPath,
+      this.state.currentIteration,
+      output.summary,
+      output.key_changes_made,
+      output.key_learnings,
+    );
+    commitAll(
+      `gnhf #${this.state.currentIteration}: ${output.summary}`,
+      this.cwd,
+    );
+    this.state.successCount++;
+    this.state.consecutiveFailures = 0;
+    return {
+      number: this.state.currentIteration,
+      success: true,
+      summary: output.summary,
+      keyChanges: output.key_changes_made,
+      keyLearnings: output.key_learnings,
+      timestamp: new Date(),
+    };
+  }
+
+  private recordFailure(
+    notesSummary: string,
+    recordSummary: string,
+    learnings: string[],
+  ): IterationRecord {
+    appendNotes(
+      this.runInfo.notesPath,
+      this.state.currentIteration,
+      notesSummary,
+      [],
+      learnings,
+    );
+    resetHard(this.cwd);
+    this.state.failCount++;
+    this.state.consecutiveFailures++;
+    return {
+      number: this.state.currentIteration,
+      success: false,
+      summary: recordSummary,
+      keyChanges: [],
+      keyLearnings: learnings,
+      timestamp: new Date(),
+    };
   }
 
   private interruptibleSleep(ms: number): Promise<void> {
