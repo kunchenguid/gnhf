@@ -76,7 +76,10 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option("--agent <agent>", "Agent to use (claude, codex, or rovodev)")
+  .option(
+    "--agent <agent>",
+    "Agent to use (claude, codex, rovodev, or opencode)",
+  )
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -104,7 +107,7 @@ program
         const renderer = new Renderer(
           mock as unknown as Orchestrator,
           "let's minimize app startup latency without sacrificing any functionality",
-          "mock",
+          "claude",
         );
         renderer.start();
         mock.start();
@@ -123,26 +126,30 @@ program
         agentName !== undefined &&
         agentName !== "claude" &&
         agentName !== "codex" &&
-        agentName !== "rovodev"
+        agentName !== "rovodev" &&
+        agentName !== "opencode"
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", or "rovodev".`,
+          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
         );
         process.exit(1);
       }
 
       const config = loadConfig(
         agentName
-          ? { agent: agentName as "claude" | "codex" | "rovodev" }
+          ? {
+              agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
+            }
           : undefined,
       );
       if (
         config.agent !== "claude" &&
         config.agent !== "codex" &&
-        config.agent !== "rovodev"
+        config.agent !== "rovodev" &&
+        config.agent !== "opencode"
       ) {
         console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", or "rovodev".`,
+          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
         );
         process.exit(1);
       }
@@ -208,11 +215,15 @@ program
       const renderer = new Renderer(orchestrator, prompt, config.agent);
       renderer.start();
 
-      const orchestratorPromise = orchestrator.start().catch((err) => {
-        renderer.stop();
-        exitAltScreen();
-        die(err instanceof Error ? err.message : String(err));
-      });
+      const orchestratorPromise = orchestrator
+        .start()
+        .finally(() => {
+          renderer.stop();
+        })
+        .catch((err) => {
+          exitAltScreen();
+          die(err instanceof Error ? err.message : String(err));
+        });
 
       await renderer.waitUntilExit();
       exitAltScreen();

@@ -20,6 +20,7 @@ const stubRunInfo: RunInfo = {
 interface CliMockOverrides {
   orchestratorStart?: ReturnType<typeof vi.fn>;
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
+  rendererStop?: ReturnType<typeof vi.fn>;
 }
 
 async function runCliWithMocks(
@@ -62,7 +63,7 @@ async function runCliWithMocks(
   }));
 
   const rendererStart = vi.fn();
-  const rendererStop = vi.fn();
+  const rendererStop = overrides.rendererStop ?? vi.fn();
   const rendererWaitUntilExit =
     overrides.rendererWaitUntilExit ?? vi.fn(() => Promise.resolve());
   const orchestratorCtor = vi.fn();
@@ -174,6 +175,19 @@ describe("cli", () => {
     expect(createAgent).toHaveBeenCalledWith("rovodev", stubRunInfo);
   });
 
+  it("accepts opencode as an explicit --agent override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "opencode"],
+      {
+        agent: "opencode",
+        maxConsecutiveFailures: 3,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "opencode" });
+    expect(createAgent).toHaveBeenCalledWith("opencode", stubRunInfo);
+  });
+
   it("passes max iteration and token caps to the orchestrator", async () => {
     const { orchestratorCtor } = await runCliWithMocks(
       ["ship it", "--max-iterations", "12", "--max-tokens", "3456"],
@@ -219,6 +233,38 @@ describe("cli", () => {
     expect(state).toBe("pending");
 
     resolveStart();
+    await cliPromise;
+  });
+
+  it("stops the renderer when the orchestrator finishes normally", async () => {
+    let resolveRendererExit!: () => void;
+    const rendererStop = vi.fn(() => {
+      resolveRendererExit();
+    });
+    const rendererWaitUntilExit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRendererExit = resolve;
+        }),
+    );
+
+    const cliPromise = runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "opencode",
+        maxConsecutiveFailures: 3,
+      },
+      {
+        orchestratorStart: vi.fn(() => Promise.resolve()),
+        rendererStop,
+        rendererWaitUntilExit,
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(rendererStop).toHaveBeenCalledTimes(1);
+    });
+
     await cliPromise;
   });
 

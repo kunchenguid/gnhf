@@ -101,6 +101,26 @@ describe("loadConfig", () => {
     });
   });
 
+  it("supports bootstrapping opencode as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "opencode" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/mock-home/.gnhf/config.yml",
+      "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "opencode",
+      maxConsecutiveFailures: 3,
+    });
+  });
+
   it("reads config from ~/.gnhf/config.yml", () => {
     mockReadFileSync.mockReturnValue("agent: codex\n");
 

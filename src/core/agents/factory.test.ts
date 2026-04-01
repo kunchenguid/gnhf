@@ -29,9 +29,17 @@ vi.mock("./rovodev.js", () => {
   return { RovoDevAgent };
 });
 
+vi.mock("./opencode.js", () => {
+  const OpenCodeAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "opencode";
+  });
+  return { OpenCodeAgent };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
+import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
 import type { RunInfo } from "../run.js";
 
@@ -62,5 +70,11 @@ describe("createAgent", () => {
     const agent = createAgent("rovodev", stubRunInfo);
     expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath);
     expect(agent.name).toBe("rovodev");
+  });
+
+  it("creates an OpenCodeAgent when name is 'opencode'", () => {
+    const agent = createAgent("opencode", stubRunInfo);
+    expect(OpenCodeAgent).toHaveBeenCalled();
+    expect(agent.name).toBe("opencode");
   });
 });
