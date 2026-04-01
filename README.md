@@ -117,6 +117,7 @@ npm link
 
 - **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
+- **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off
 
 ## CLI Reference
@@ -146,6 +147,8 @@ agent: claude
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
 ```
+
+If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
 
 CLI flags override config file values.
 
