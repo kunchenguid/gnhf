@@ -6,7 +6,7 @@ import {
   readdirSync,
   existsSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
 import { AGENT_OUTPUT_SCHEMA } from "./agents/types.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
@@ -27,7 +27,7 @@ function ensureRunMetadataIgnored(cwd: string): void {
     ["rev-parse", "--git-path", "info/exclude"],
     { cwd, encoding: "utf-8" },
   ).trim();
-  const resolved = join(cwd, excludePath);
+  const resolved = isAbsolute(excludePath) ? excludePath : join(cwd, excludePath);
   const entry = ".gnhf/runs/";
   mkdirSync(dirname(resolved), { recursive: true });
 

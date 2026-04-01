@@ -95,6 +95,12 @@ program
       const config = loadConfig(
         agentName ? { agent: agentName as "claude" | "codex" } : undefined,
       );
+      if (config.agent !== "claude" && config.agent !== "codex") {
+        console.error(
+          `Unknown agent: ${config.agent}. Use "claude" or "codex".`,
+        );
+        process.exit(1);
+      }
       const cwd = process.cwd();
 
       const currentBranch = getCurrentBranch(cwd);
