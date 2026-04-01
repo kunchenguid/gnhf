@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.5...gnhf-v0.1.6) (2026-04-01)
+
+
+### Features
+
+* **cli:** add iteration and token caps ([#9](https://github.com/kunchenguid/gnhf/issues/9)) ([b92e9ac](https://github.com/kunchenguid/gnhf/commit/b92e9aca196647b19c854b722551e401c4ce72a7))
+
 ## [0.1.5](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.4...gnhf-v0.1.5) (2026-04-01)
 
 
