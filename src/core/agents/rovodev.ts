@@ -238,19 +238,12 @@ export class RovoDevAgent implements Agent {
     });
 
     this.server = server;
-    server.readyPromise = this.waitForHealthy(server, signal).catch((error) => {
-      if (this.server === server) {
-        this.server = null;
-      }
-      if (!server.closed) {
-        try {
-          this.signalServer(server, "SIGTERM");
-        } catch {
-          // Best effort only.
-        }
-      }
-      throw error;
-    });
+    server.readyPromise = this.waitForHealthy(server, signal).catch(
+      async (error) => {
+        await this.shutdownServer();
+        throw error;
+      },
+    );
 
     await server.readyPromise;
     return server;
