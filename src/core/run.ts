@@ -6,7 +6,8 @@ import {
   readdirSync,
   existsSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { execFileSync } from "node:child_process";
 import { AGENT_OUTPUT_SCHEMA } from "./agents/types.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
@@ -21,20 +22,24 @@ export interface RunInfo {
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
-  const infoDir = join(cwd, ".git", "info");
-  const excludePath = join(infoDir, "exclude");
+  const excludePath = execFileSync(
+    "git",
+    ["rev-parse", "--git-path", "info/exclude"],
+    { cwd, encoding: "utf-8" },
+  ).trim();
+  const resolved = join(cwd, excludePath);
   const entry = ".gnhf/runs/";
-  mkdirSync(infoDir, { recursive: true });
+  mkdirSync(dirname(resolved), { recursive: true });
 
-  if (existsSync(excludePath)) {
-    const content = readFileSync(excludePath, "utf-8");
+  if (existsSync(resolved)) {
+    const content = readFileSync(resolved, "utf-8");
     if (content.split("\n").some((line) => line.trim() === entry)) return;
     const separator = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
-    appendFileSync(excludePath, `${separator}${entry}\n`, "utf-8");
+    appendFileSync(resolved, `${separator}${entry}\n`, "utf-8");
   } else {
     // This ignore rule is runtime metadata, so keep it local to the clone
     // instead of mutating tracked .gitignore state on startup.
-    writeFileSync(excludePath, `${entry}\n`, "utf-8");
+    writeFileSync(resolved, `${entry}\n`, "utf-8");
   }
 }
 
