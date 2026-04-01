@@ -42,7 +42,7 @@
 gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.com/karpathy/autoresearch)-style orchestrator that keeps your agents running while you sleep — each iteration makes one small, committed, documented change towards an objective.
 You wake up to a branch full of clean work and a log of everything that happened.
 
-- **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C
+- **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries and exponential backoff
 - **Agent-agnostic** — works with Claude Code or Codex out of the box
 
@@ -50,7 +50,14 @@ You wake up to a branch full of clean work and a log of everything that happened
 
 ```sh
 $ gnhf "reduce complexity of the codebase without changing functionality"
-# go to sleep
+# have a good sleep
+```
+
+```sh
+$ gnhf "reduce complexity of the codebase without changing functionality" \
+    --max-iterations 10 \
+    --max-tokens 5000000
+# have a good nap
 ```
 
 ## Install
@@ -131,10 +138,12 @@ npm link
 
 ### Flags
 
-| Flag              | Description                        | Default                |
-| ----------------- | ---------------------------------- | ---------------------- |
-| `--agent <agent>` | Agent to use (`claude` or `codex`) | config file (`claude`) |
-| `--version`       | Show version                       |                        |
+| Flag                   | Description                               | Default                |
+| ---------------------- | ----------------------------------------- | ---------------------- |
+| `--agent <agent>`      | Agent to use (`claude` or `codex`)        | config file (`claude`) |
+| `--max-iterations <n>` | Abort after `n` total iterations          | unlimited              |
+| `--max-tokens <n>`     | Abort after `n` total input+output tokens | unlimited              |
+| `--version`            | Show version                              |                        |
 
 ## Configuration
 
@@ -150,7 +159,7 @@ maxConsecutiveFailures: 3
 
 If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
 
-CLI flags override config file values.
+CLI flags override config file values. The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
 
 ## Development
 

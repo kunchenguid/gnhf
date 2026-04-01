@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 import { createInterface } from "node:readline";
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { loadConfig } from "./core/config.js";
 import {
   ensureCleanWorkingTree,
@@ -24,6 +24,19 @@ import { slugifyPrompt } from "./utils/slugify.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+
+function parseNonNegativeInteger(value: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new InvalidArgumentError("must be a non-negative integer");
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new InvalidArgumentError("must be a safe integer");
+  }
+
+  return parsed;
+}
 
 function initializeNewBranch(prompt: string, cwd: string): RunInfo {
   ensureCleanWorkingTree(cwd);
@@ -55,11 +68,26 @@ program
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
   .option("--agent <agent>", "Agent to use (claude or codex)")
+  .option(
+    "--max-iterations <n>",
+    "Abort after N total iterations",
+    parseNonNegativeInteger,
+  )
+  .option(
+    "--max-tokens <n>",
+    "Abort after N total input+output tokens",
+    parseNonNegativeInteger,
+  )
   .option("--mock", "", false)
   .action(
     async (
       promptArg: string | undefined,
-      options: { agent?: string; mock: boolean },
+      options: {
+        agent?: string;
+        maxIterations?: number;
+        maxTokens?: number;
+        mock: boolean;
+      },
     ) => {
       if (options.mock) {
         const mock = new MockOrchestrator();
@@ -153,6 +181,10 @@ program
         prompt,
         cwd,
         startIteration,
+        {
+          maxIterations: options.maxIterations,
+          maxTokens: options.maxTokens,
+        },
       );
 
       enterAltScreen();

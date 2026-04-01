@@ -54,6 +54,7 @@ async function runCliWithMocks(args: string[], config: Config) {
   const rendererStart = vi.fn();
   const rendererStop = vi.fn();
   const rendererWaitUntilExit = vi.fn(() => Promise.resolve());
+  const orchestratorCtor = vi.fn();
 
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({ loadConfig }));
@@ -71,6 +72,9 @@ async function runCliWithMocks(args: string[], config: Config) {
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
   vi.doMock("./core/orchestrator.js", () => ({
     Orchestrator: class MockOrchestrator {
+      constructor(...args: unknown[]) {
+        orchestratorCtor(...args);
+      }
       start = orchestratorStart;
       stop = orchestratorStop;
       on = orchestratorOn;
@@ -95,7 +99,7 @@ async function runCliWithMocks(args: string[], config: Config) {
     exitSpy.mockRestore();
   }
 
-  return { loadConfig, createAgent };
+  return { loadConfig, createAgent, orchestratorCtor };
 }
 
 describe("cli", () => {
@@ -144,5 +148,21 @@ describe("cli", () => {
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
     expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo);
+  });
+
+  it("passes max iteration and token caps to the orchestrator", async () => {
+    const { orchestratorCtor } = await runCliWithMocks(
+      ["ship it", "--max-iterations", "12", "--max-tokens", "3456"],
+      {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+      },
+    );
+
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: 12,
+      maxTokens: 3456,
+    });
   });
 });

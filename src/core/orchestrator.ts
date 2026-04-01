@@ -39,14 +39,25 @@ export interface OrchestratorEvents {
   stopped: [];
 }
 
+export interface RunLimits {
+  maxIterations?: number;
+  maxTokens?: number;
+}
+
+type RunIterationResult =
+  | { type: "completed"; record: IterationRecord }
+  | { type: "aborted"; reason: string };
+
 export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private config: Config;
   private agent: Agent;
   private runInfo: RunInfo;
   private cwd: string;
   private prompt: string;
+  private limits: RunLimits;
   private stopRequested = false;
   private activeAbortController: AbortController | null = null;
+  private pendingAbortReason: string | null = null;
 
   private state: OrchestratorState = {
     status: "running",
@@ -70,6 +81,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     prompt: string,
     cwd: string,
     startIteration = 0,
+    limits: RunLimits = {},
   ) {
     super();
     this.config = config;
@@ -77,6 +89,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.runInfo = runInfo;
     this.prompt = prompt;
     this.cwd = cwd;
+    this.limits = limits;
     this.state.currentIteration = startIteration;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
@@ -103,6 +116,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.emit("state", this.getState());
 
     while (!this.stopRequested) {
+      const preIterationAbortReason = this.getPreIterationAbortReason();
+      if (preIterationAbortReason) {
+        this.abort(preIterationAbortReason);
+        break;
+      }
+
       this.state.currentIteration++;
       this.state.status = "running";
       this.emit("iteration:start", this.state.currentIteration);
@@ -114,19 +133,29 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         prompt: this.prompt,
       });
 
-      const record = await this.runIteration(iterationPrompt);
+      const result = await this.runIteration(iterationPrompt);
+      if (result.type === "aborted") {
+        this.abort(result.reason);
+        break;
+      }
 
+      const { record } = result;
       this.state.iterations.push(record);
       this.emit("iteration:end", record);
       this.emit("state", this.getState());
 
+      const postIterationAbortReason = this.getPostIterationAbortReason();
+      if (postIterationAbortReason) {
+        this.abort(postIterationAbortReason);
+        break;
+      }
+
       if (
         this.state.consecutiveFailures >= this.config.maxConsecutiveFailures
       ) {
-        this.state.status = "aborted";
-        const reason = `${this.config.maxConsecutiveFailures} consecutive failures`;
-        this.emit("abort", reason);
-        this.emit("state", this.getState());
+        this.abort(
+          `${this.config.maxConsecutiveFailures} consecutive failures`,
+        );
         break;
       }
 
@@ -148,16 +177,27 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     }
   }
 
-  private async runIteration(prompt: string): Promise<IterationRecord> {
+  private async runIteration(prompt: string): Promise<RunIterationResult> {
     const baseInputTokens = this.state.totalInputTokens;
     const baseOutputTokens = this.state.totalOutputTokens;
 
     this.activeAbortController = new AbortController();
+    this.pendingAbortReason = null;
 
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
       this.emit("state", this.getState());
+
+      const reason = this.getTokenAbortReason();
+      if (
+        reason &&
+        this.activeAbortController &&
+        !this.activeAbortController.signal.aborted
+      ) {
+        this.pendingAbortReason = reason;
+        this.activeAbortController.abort();
+      }
     };
 
     const onMessage = (text: string) => {
@@ -179,16 +219,33 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       });
 
       if (result.output.success) {
-        return this.recordSuccess(result.output);
+        return { type: "completed", record: this.recordSuccess(result.output) };
       }
-      return this.recordFailure(
-        `[FAIL] ${result.output.summary}`,
-        result.output.summary,
-        result.output.key_learnings,
-      );
+      return {
+        type: "completed",
+        record: this.recordFailure(
+          `[FAIL] ${result.output.summary}`,
+          result.output.summary,
+          result.output.key_learnings,
+        ),
+      };
     } catch (err) {
+      if (
+        this.pendingAbortReason &&
+        err instanceof Error &&
+        err.message === "Agent was aborted"
+      ) {
+        return { type: "aborted", reason: this.pendingAbortReason };
+      }
+
       const summary = err instanceof Error ? err.message : String(err);
-      return this.recordFailure(`[ERROR] ${summary}`, summary, []);
+      return {
+        type: "completed",
+        record: this.recordFailure(`[ERROR] ${summary}`, summary, []),
+      };
+    } finally {
+      this.activeAbortController = null;
+      this.pendingAbortReason = null;
     }
   }
 
@@ -259,5 +316,44 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         resolve();
       });
     });
+  }
+
+  private getPreIterationAbortReason(): string | null {
+    if (
+      this.limits.maxIterations !== undefined &&
+      this.state.currentIteration >= this.limits.maxIterations
+    ) {
+      return `max iterations reached (${this.limits.maxIterations})`;
+    }
+
+    return this.getTokenAbortReason();
+  }
+
+  private getPostIterationAbortReason(): string | null {
+    if (
+      this.limits.maxIterations !== undefined &&
+      this.state.currentIteration >= this.limits.maxIterations
+    ) {
+      return `max iterations reached (${this.limits.maxIterations})`;
+    }
+
+    return this.getTokenAbortReason();
+  }
+
+  private getTokenAbortReason(): string | null {
+    if (this.limits.maxTokens === undefined) return null;
+
+    const totalTokens =
+      this.state.totalInputTokens + this.state.totalOutputTokens;
+    if (totalTokens < this.limits.maxTokens) return null;
+
+    return `max tokens reached (${totalTokens}/${this.limits.maxTokens})`;
+  }
+
+  private abort(reason: string): void {
+    this.state.status = "aborted";
+    this.state.waitingUntil = null;
+    this.emit("abort", reason);
+    this.emit("state", this.getState());
   }
 }
