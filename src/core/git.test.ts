@@ -11,6 +11,7 @@ import {
   commitAll,
   findLegacyRunBaseCommit,
   getBranchCommitCount,
+  getCurrentBranch,
   resetHard,
 } from "./git.js";
 
@@ -56,6 +57,22 @@ describe("git utilities", () => {
           encoding: "utf-8",
           stdio: "pipe",
         },
+      );
+    });
+  });
+
+  describe("getCurrentBranch", () => {
+    it("rewrites non-repository git errors with a friendly message", () => {
+      const error = Object.assign(new Error("Command failed"), {
+        stderr:
+          "fatal: not a git repository (or any of the parent directories): .git",
+      });
+      mockExecSync.mockImplementation(() => {
+        throw error;
+      });
+
+      expect(() => getCurrentBranch("/repo")).toThrow(
+        'This command must be run inside a Git repository. Change into a repo or run "git init" first.',
       );
     });
   });

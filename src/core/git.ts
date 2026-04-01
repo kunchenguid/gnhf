@@ -1,11 +1,39 @@
 import { execSync } from "node:child_process";
 
+const NOT_GIT_REPOSITORY_MESSAGE =
+  'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
+
+function extractGitErrorText(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const stderr =
+    "stderr" in error && typeof error.stderr === "string"
+      ? error.stderr
+      : undefined;
+
+  return [error.message, stderr].filter(Boolean).join("\n");
+}
+
+function translateGitError(error: unknown): Error {
+  const message = extractGitErrorText(error);
+
+  if (message.includes("not a git repository")) {
+    return new Error(NOT_GIT_REPOSITORY_MESSAGE);
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function git(args: string, cwd: string): string {
-  return execSync(`git ${args}`, {
-    cwd,
-    encoding: "utf-8",
-    stdio: "pipe",
-  }).trim();
+  try {
+    return execSync(`git ${args}`, {
+      cwd,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+  } catch (error) {
+    throw translateGitError(error);
+  }
 }
 
 export function getCurrentBranch(cwd: string): string {

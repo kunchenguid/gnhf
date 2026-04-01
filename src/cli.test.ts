@@ -145,4 +145,59 @@ describe("cli", () => {
     expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
     expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo);
   });
+
+  it("prints a friendly message outside a git repository", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => {
+        throw new Error(
+          [
+            "Command failed: git rev-parse --abbrev-ref HEAD",
+            "fatal: not a git repository (or any of the parent directories): .git",
+          ].join("\n"),
+        );
+      }),
+    }));
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
+
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
+        ),
+      );
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+    }
+  });
 });
