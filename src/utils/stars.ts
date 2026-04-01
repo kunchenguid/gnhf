@@ -65,15 +65,11 @@ export function getStarState(star: Star, now: number): StarState {
     ((now % star.period) / star.period + star.phase / (Math.PI * 2)) % 1;
   // Outside the blink window → steady state
   if (t > 0.05) return star.rest;
-  // Inside the blink window → shift away from rest
-  if (star.rest === "bright") {
+  // bright/hidden share the same blink envelope: dim → opposite → dim
+  if (star.rest === "bright" || star.rest === "hidden") {
+    const opposite: StarState = star.rest === "bright" ? "hidden" : "bright";
     if (t > 0.0325) return "dim";
-    if (t > 0.0175) return "hidden";
-    return "dim";
-  }
-  if (star.rest === "hidden") {
-    if (t > 0.0325) return "dim";
-    if (t > 0.0175) return "bright";
+    if (t > 0.0175) return opposite;
     return "dim";
   }
   // dim rest → blink bright

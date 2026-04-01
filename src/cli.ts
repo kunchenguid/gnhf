@@ -9,7 +9,12 @@ import {
   commitAll,
   getCurrentBranch,
 } from "./core/git.js";
-import { setupRun, resumeRun, getLastIterationNumber } from "./core/run.js";
+import {
+  type RunInfo,
+  setupRun,
+  resumeRun,
+  getLastIterationNumber,
+} from "./core/run.js";
 import { createAgent } from "./core/agents/factory.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
@@ -19,6 +24,16 @@ import { slugifyPrompt } from "./utils/slugify.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+
+function initializeNewBranch(prompt: string, cwd: string): RunInfo {
+  ensureCleanWorkingTree(cwd);
+  const branchName = slugifyPrompt(prompt);
+  createBranch(branchName, cwd);
+  const runId = branchName.split("/")[1]!;
+  const runInfo = setupRun(runId, prompt, cwd);
+  commitAll(`gnhf: initialize run ${runId}`, cwd);
+  return runInfo;
+}
 
 function ask(question: string): Promise<string> {
   const rl = createInterface({
@@ -106,12 +121,7 @@ program
             runInfo = setupRun(existingRunId, prompt, cwd);
             commitAll(`gnhf: overwrite run ${existingRunId}`, cwd);
           } else if (answer === "n") {
-            ensureCleanWorkingTree(cwd);
-            const branchName = slugifyPrompt(prompt);
-            createBranch(branchName, cwd);
-            const runId = branchName.split("/")[1]!;
-            runInfo = setupRun(runId, prompt, cwd);
-            commitAll(`gnhf: initialize run ${runId}`, cwd);
+            runInfo = initializeNewBranch(prompt, cwd);
           } else {
             process.exit(0);
           }
@@ -122,12 +132,7 @@ program
           return;
         }
 
-        ensureCleanWorkingTree(cwd);
-        const branchName = slugifyPrompt(prompt);
-        createBranch(branchName, cwd);
-        const runId = branchName.split("/")[1]!;
-        runInfo = setupRun(runId, prompt, cwd);
-        commitAll(`gnhf: initialize run ${runId}`, cwd);
+        runInfo = initializeNewBranch(prompt, cwd);
       }
 
       const agent = createAgent(agentName, runInfo);
