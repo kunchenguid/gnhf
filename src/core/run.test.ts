@@ -9,11 +9,16 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn(() => false),
 }));
 
+vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(() => ".git/info/exclude\n"),
+}));
+
 vi.mock("./git.js", () => ({
   findLegacyRunBaseCommit: vi.fn(() => null),
   getHeadCommit: vi.fn(() => "head123"),
 }));
 
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   writeFileSync,
@@ -29,12 +34,14 @@ const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockAppendFileSync = vi.mocked(appendFileSync);
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 const mockFindLegacyRunBaseCommit = vi.mocked(findLegacyRunBaseCommit);
 const mockGetHeadCommit = vi.mocked(getHeadCommit);
 
 describe("setupRun", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecFileSync.mockReturnValue(".git/info/exclude\n");
   });
 
   it("creates the run directory recursively", () => {
