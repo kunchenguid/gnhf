@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.3...gnhf-v0.1.4) (2026-04-01)
+
+
+### Features
+
+* **core:** track branch commits from run base ([#5](https://github.com/kunchenguid/gnhf/issues/5)) ([dce09e6](https://github.com/kunchenguid/gnhf/commit/dce09e6a0a47644a174428c7a29b6e19f189486b))
+
 ## [0.1.3](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.2...gnhf-v0.1.3) (2026-03-31)
 
 
