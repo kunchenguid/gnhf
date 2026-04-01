@@ -222,12 +222,19 @@ export class RovoDevAgent implements Agent {
       stderr: "",
     };
 
+    const MAX_OUTPUT = 64 * 1024;
     child.stdout.on("data", (data: Buffer) => {
       server.stdout += data.toString();
+      if (server.stdout.length > MAX_OUTPUT) {
+        server.stdout = server.stdout.slice(-MAX_OUTPUT);
+      }
     });
 
     child.stderr.on("data", (data: Buffer) => {
       server.stderr += data.toString();
+      if (server.stderr.length > MAX_OUTPUT) {
+        server.stderr = server.stderr.slice(-MAX_OUTPUT);
+      }
     });
 
     child.on("close", () => {
