@@ -37,9 +37,25 @@ export function stripAnsi(s: string): string {
 
 // ── Cell-based render functions ──────────────────────────────
 
-export function renderTitleCells(): Cell[][] {
+function spacedLabel(text: string): string {
+  return text.split("").join(" ");
+}
+
+export function renderTitleCells(agentName?: string): Cell[][] {
+  const eyebrow: Cell[] = [
+    ...textToCells(spacedLabel("gnhf"), "dim"),
+    ...(agentName
+      ? [
+          ...textToCells("  ", "normal"),
+          ...textToCells("\u00b7", "dim"),
+          ...textToCells("  ", "normal"),
+          ...textToCells(spacedLabel(agentName), "dim"),
+        ]
+      : []),
+  ];
+
   return [
-    textToCells("g n h f", "dim"),
+    eyebrow,
     [],
     textToCells(
       "┏━╸┏━┓┏━┓╺┳┓   ┏┓╻╻┏━╸╻ ╻╺┳╸   ╻ ╻┏━┓╻ ╻┏━╸   ┏━╸╻ ╻┏┓╻",
@@ -127,8 +143,8 @@ export function renderMoonStripCells(
 
 // ── String wrappers (preserve existing API) ──────────────────
 
-export function renderTitle(): string[] {
-  return renderTitleCells().map(rowToString);
+export function renderTitle(agentName?: string): string[] {
+  return renderTitleCells(agentName).map(rowToString);
 }
 
 export function renderStats(
@@ -262,6 +278,7 @@ function fitContentRows(contentRows: Cell[][], maxRows: number): Cell[][] {
 
 export function buildContentCells(
   prompt: string,
+  agentName: string,
   state: OrchestratorState,
   elapsed: string,
   now: number,
@@ -270,7 +287,7 @@ export function buildContentCells(
   const isRunning = state.status === "running" || state.status === "waiting";
 
   rows.push([]);
-  rows.push(...renderTitleCells());
+  rows.push(...renderTitleCells(agentName));
   rows.push([], []);
 
   const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
@@ -298,6 +315,7 @@ export function buildContentCells(
 
 export function buildFrameCells(
   prompt: string,
+  agentName: string,
   state: OrchestratorState,
   topStars: Star[],
   bottomStars: Star[],
@@ -310,7 +328,7 @@ export function buildFrameCells(
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
   const contentRows = fitContentRows(
-    buildContentCells(prompt, state, elapsed, now),
+    buildContentCells(prompt, agentName, state, elapsed, now),
     availableHeight,
   );
 
@@ -361,15 +379,19 @@ export function buildFrameCells(
 
 export function buildContentLines(
   prompt: string,
+  agentName: string,
   state: OrchestratorState,
   elapsed: string,
   now: number,
 ): string[] {
-  return buildContentCells(prompt, state, elapsed, now).map(rowToString);
+  return buildContentCells(prompt, agentName, state, elapsed, now).map(
+    rowToString,
+  );
 }
 
 export function buildFrame(
   prompt: string,
+  agentName: string,
   state: OrchestratorState,
   topStars: Star[],
   bottomStars: Star[],
@@ -380,6 +402,7 @@ export function buildFrame(
 ): string {
   const cells = buildFrameCells(
     prompt,
+    agentName,
     state,
     topStars,
     bottomStars,
@@ -396,6 +419,7 @@ export function buildFrame(
 export class Renderer {
   private orchestrator: Orchestrator;
   private prompt: string;
+  private agentName: string;
   private state: OrchestratorState;
   private interval: ReturnType<typeof setInterval> | null = null;
   private exitResolve!: () => void;
@@ -408,9 +432,10 @@ export class Renderer {
   private prevCells: Cell[][] = [];
   private isFirstFrame = true;
 
-  constructor(orchestrator: Orchestrator, prompt: string) {
+  constructor(orchestrator: Orchestrator, prompt: string, agentName: string) {
     this.orchestrator = orchestrator;
     this.prompt = prompt;
+    this.agentName = agentName;
     this.state = orchestrator.getState();
     this.exitPromise = new Promise((resolve) => {
       this.exitResolve = resolve;
@@ -431,6 +456,7 @@ export class Renderer {
       process.stdin.resume();
       process.stdin.on("data", (data) => {
         if (data[0] === 3) {
+          this.stop();
           this.orchestrator.stop();
         }
       });
@@ -498,6 +524,7 @@ export class Renderer {
 
     const nextCells = buildFrameCells(
       this.prompt,
+      this.agentName,
       this.state,
       this.topStars,
       this.bottomStars,

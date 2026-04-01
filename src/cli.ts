@@ -24,6 +24,7 @@ import { slugifyPrompt } from "./utils/slugify.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+const FORCE_EXIT_TIMEOUT_MS = 5_000;
 
 function parseNonNegativeInteger(value: string): number {
   if (!/^\d+$/.test(value)) {
@@ -75,7 +76,7 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option("--agent <agent>", "Agent to use (claude or codex)")
+  .option("--agent <agent>", "Agent to use (claude, codex, or rovodev)")
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -103,6 +104,7 @@ program
         const renderer = new Renderer(
           mock as unknown as Orchestrator,
           "let's minimize app startup latency without sacrificing any functionality",
+          "mock",
         );
         renderer.start();
         mock.start();
@@ -120,20 +122,27 @@ program
       if (
         agentName !== undefined &&
         agentName !== "claude" &&
-        agentName !== "codex"
+        agentName !== "codex" &&
+        agentName !== "rovodev"
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude" or "codex".`,
+          `Unknown agent: ${options.agent}. Use "claude", "codex", or "rovodev".`,
         );
         process.exit(1);
       }
 
       const config = loadConfig(
-        agentName ? { agent: agentName as "claude" | "codex" } : undefined,
+        agentName
+          ? { agent: agentName as "claude" | "codex" | "rovodev" }
+          : undefined,
       );
-      if (config.agent !== "claude" && config.agent !== "codex") {
+      if (
+        config.agent !== "claude" &&
+        config.agent !== "codex" &&
+        config.agent !== "rovodev"
+      ) {
         console.error(
-          `Unknown agent: ${config.agent}. Use "claude" or "codex".`,
+          `Unknown agent: ${config.agent}. Use "claude", "codex", or "rovodev".`,
         );
         process.exit(1);
       }
@@ -196,10 +205,10 @@ program
       );
 
       enterAltScreen();
-      const renderer = new Renderer(orchestrator, prompt);
+      const renderer = new Renderer(orchestrator, prompt, config.agent);
       renderer.start();
 
-      orchestrator.start().catch((err) => {
+      const orchestratorPromise = orchestrator.start().catch((err) => {
         renderer.stop();
         exitAltScreen();
         die(err instanceof Error ? err.message : String(err));
@@ -207,6 +216,19 @@ program
 
       await renderer.waitUntilExit();
       exitAltScreen();
+      const shutdownResult = await Promise.race([
+        orchestratorPromise.then(() => "done" as const),
+        new Promise<"timeout">((resolve) => {
+          setTimeout(() => resolve("timeout"), FORCE_EXIT_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (shutdownResult === "timeout") {
+        console.error(
+          `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
+        );
+        process.exit(130);
+      }
     },
   );
 

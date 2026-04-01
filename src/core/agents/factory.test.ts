@@ -18,9 +18,21 @@ vi.mock("./codex.js", () => {
   return { CodexAgent };
 });
 
+vi.mock("./rovodev.js", () => {
+  const RovoDevAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    schemaPath: string,
+  ) {
+    this.name = "rovodev";
+    this.schemaPath = schemaPath;
+  });
+  return { RovoDevAgent };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
+import { RovoDevAgent } from "./rovodev.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -44,5 +56,11 @@ describe("createAgent", () => {
     const agent = createAgent("codex", stubRunInfo);
     expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath);
     expect(agent.name).toBe("codex");
+  });
+
+  it("creates a RovoDevAgent when name is 'rovodev'", () => {
+    const agent = createAgent("rovodev", stubRunInfo);
+    expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath);
+    expect(agent.name).toBe("rovodev");
   });
 });

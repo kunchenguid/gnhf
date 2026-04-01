@@ -41,6 +41,7 @@ export interface AgentRunOptions {
 
 export interface Agent {
   name: string;
+  close?(): Promise<void> | void;
   run(
     prompt: string,
     cwd: string,

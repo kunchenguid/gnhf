@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { EventEmitter } from "node:events";
+import { describe, it, expect, vi } from "vitest";
 import {
+  Renderer,
   stripAnsi,
   renderTitle,
   renderStats,
@@ -8,7 +10,7 @@ import {
   renderStarFieldLines,
   buildFrame,
 } from "./renderer.js";
-import type { OrchestratorState } from "./core/orchestrator.js";
+import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 
 describe("renderTitle", () => {
   it("renders the gnhf eyebrow above the ASCII art", () => {
@@ -17,6 +19,13 @@ describe("renderTitle", () => {
     const artIdx = lines.findIndex((l) => l.includes("┏━╸┏━┓"));
     expect(eyebrowIdx).toBeGreaterThanOrEqual(0);
     expect(artIdx).toBeGreaterThan(eyebrowIdx);
+  });
+
+  it("renders the agent name in the eyebrow", () => {
+    const lines = renderTitle("rovodev").map(stripAnsi);
+    expect(lines[0]).toContain("g n h f");
+    expect(lines[0]).toContain("·");
+    expect(lines[0]).toContain("r o v o d e v");
   });
 
   it("renders all three lines of ASCII art", () => {
@@ -140,7 +149,17 @@ describe("buildFrame", () => {
       lastMessage: null,
     };
 
-    const frame = buildFrame("ship it", state, [], [], [], Date.now(), 80, 30);
+    const frame = buildFrame(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      80,
+      30,
+    );
     const lines = stripCursorHome(frame).split("\n");
     const rawHintLine = lines.at(-2) ?? "";
     const hintLine = stripAnsi(rawHintLine);
@@ -173,7 +192,17 @@ describe("buildFrame", () => {
       lastMessage: null,
     };
 
-    const frame = buildFrame("ship it", state, [], [], [], Date.now(), 80, 24);
+    const frame = buildFrame(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      80,
+      24,
+    );
     const lines = stripCursorHome(frame).split("\n");
     const plainLines = lines.map(stripAnsi);
     const moonLines = plainLines.filter((line) => /🌕/.test(line));
@@ -184,5 +213,88 @@ describe("buildFrame", () => {
       "[ctrl+c to stop, gnhf again to resume]",
     );
     expect(plainLines.at(-1)?.trim()).toBe("");
+  });
+});
+
+describe("Renderer ctrl+c", () => {
+  it("hides immediately and then requests orchestrator stop", async () => {
+    vi.useFakeTimers();
+
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    let dataHandler: ((data: Buffer) => void) | null = null;
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+
+    const originalIsTTY = process.stdin.isTTY;
+    const originalSetRawMode = (process.stdin as NodeJS.ReadStream & {
+      setRawMode?: (mode: boolean) => void;
+    }).setRawMode;
+    const originalResume = process.stdin.resume;
+    const originalPause = process.stdin.pause;
+    const originalOn = process.stdin.on;
+    const originalRemoveAllListeners = process.stdin.removeAllListeners;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    (process.stdin as NodeJS.ReadStream & { setRawMode: ReturnType<typeof vi.fn> }).setRawMode =
+      vi.fn();
+    process.stdin.resume = vi.fn();
+    process.stdin.pause = vi.fn();
+    process.stdin.on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      if (event === "data") {
+        dataHandler = handler as (data: Buffer) => void;
+      }
+      return process.stdin;
+    }) as typeof process.stdin.on;
+    process.stdin.removeAllListeners = vi.fn(() => process.stdin);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+
+      expect(dataHandler).not.toBeNull();
+      dataHandler?.(Buffer.from([3]));
+
+      await renderer.waitUntilExit();
+
+      expect((orchestrator.stop as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+      expect(process.stdin.pause).toHaveBeenCalledTimes(1);
+      expect(process.stdin.removeAllListeners).toHaveBeenCalledWith("data");
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      (process.stdin as NodeJS.ReadStream & {
+        setRawMode?: (mode: boolean) => void;
+      }).setRawMode = originalSetRawMode;
+      process.stdin.resume = originalResume;
+      process.stdin.pause = originalPause;
+      process.stdin.on = originalOn;
+      process.stdin.removeAllListeners = originalRemoveAllListeners;
+      stdoutWrite.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

@@ -155,4 +155,60 @@ describe("Orchestrator stop limits", () => {
       totalOutputTokens: 4,
     });
   });
+
+  it("closes the agent when stop is requested", () => {
+    const close = vi.fn();
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(),
+      close,
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    orchestrator.stop();
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits stopped only after agent cleanup completes", async () => {
+    let resolveClose!: () => void;
+    const close = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveClose = resolve;
+        }),
+    );
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(),
+      close,
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const stopped = vi.fn();
+    orchestrator.on("stopped", stopped);
+
+    orchestrator.stop();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(stopped).not.toHaveBeenCalled();
+
+    resolveClose();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stopped).toHaveBeenCalledTimes(1);
+  });
 });

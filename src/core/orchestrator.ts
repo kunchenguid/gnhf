@@ -56,6 +56,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private prompt: string;
   private limits: RunLimits;
   private stopRequested = false;
+  private stopPromise: Promise<void> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
 
@@ -104,10 +105,16 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   stop(): void {
     this.stopRequested = true;
     this.activeAbortController?.abort();
-    resetHard(this.cwd);
-    this.state.status = "stopped";
-    this.emit("state", this.getState());
-    this.emit("stopped");
+
+    if (this.stopPromise) return;
+
+    this.stopPromise = (async () => {
+      await this.closeAgent();
+      resetHard(this.cwd);
+      this.state.status = "stopped";
+      this.emit("state", this.getState());
+      this.emit("stopped");
+    })();
   }
 
   async start(): Promise<void> {
@@ -115,64 +122,72 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.state.status = "running";
     this.emit("state", this.getState());
 
-    while (!this.stopRequested) {
-      const preIterationAbortReason = this.getPreIterationAbortReason();
-      if (preIterationAbortReason) {
-        this.abort(preIterationAbortReason);
-        break;
-      }
+    try {
+      while (!this.stopRequested) {
+        const preIterationAbortReason = this.getPreIterationAbortReason();
+        if (preIterationAbortReason) {
+          this.abort(preIterationAbortReason);
+          break;
+        }
 
-      this.state.currentIteration++;
-      this.state.status = "running";
-      this.emit("iteration:start", this.state.currentIteration);
-      this.emit("state", this.getState());
-
-      const iterationPrompt = buildIterationPrompt({
-        n: this.state.currentIteration,
-        runId: this.runInfo.runId,
-        prompt: this.prompt,
-      });
-
-      const result = await this.runIteration(iterationPrompt);
-      if (result.type === "aborted") {
-        this.abort(result.reason);
-        break;
-      }
-
-      const { record } = result;
-      this.state.iterations.push(record);
-      this.emit("iteration:end", record);
-      this.emit("state", this.getState());
-
-      const postIterationAbortReason = this.getPostIterationAbortReason();
-      if (postIterationAbortReason) {
-        this.abort(postIterationAbortReason);
-        break;
-      }
-
-      if (
-        this.state.consecutiveFailures >= this.config.maxConsecutiveFailures
-      ) {
-        this.abort(
-          `${this.config.maxConsecutiveFailures} consecutive failures`,
-        );
-        break;
-      }
-
-      if (this.state.consecutiveFailures > 0 && !this.stopRequested) {
-        const backoffMs =
-          60_000 * Math.pow(2, this.state.consecutiveFailures - 1);
-        this.state.status = "waiting";
-        this.state.waitingUntil = new Date(Date.now() + backoffMs);
+        this.state.currentIteration++;
+        this.state.status = "running";
+        this.emit("iteration:start", this.state.currentIteration);
         this.emit("state", this.getState());
 
-        await this.interruptibleSleep(backoffMs);
+        const iterationPrompt = buildIterationPrompt({
+          n: this.state.currentIteration,
+          runId: this.runInfo.runId,
+          prompt: this.prompt,
+        });
 
-        this.state.waitingUntil = null;
-        if (!this.stopRequested) {
-          this.state.status = "running";
-          this.emit("state", this.getState());
+        const result = await this.runIteration(iterationPrompt);
+        if (result.type === "aborted") {
+          this.abort(result.reason);
+          break;
         }
+
+        const { record } = result;
+        this.state.iterations.push(record);
+        this.emit("iteration:end", record);
+        this.emit("state", this.getState());
+
+        const postIterationAbortReason = this.getPostIterationAbortReason();
+        if (postIterationAbortReason) {
+          this.abort(postIterationAbortReason);
+          break;
+        }
+
+        if (
+          this.state.consecutiveFailures >= this.config.maxConsecutiveFailures
+        ) {
+          this.abort(
+            `${this.config.maxConsecutiveFailures} consecutive failures`,
+          );
+          break;
+        }
+
+        if (this.state.consecutiveFailures > 0 && !this.stopRequested) {
+          const backoffMs =
+            60_000 * Math.pow(2, this.state.consecutiveFailures - 1);
+          this.state.status = "waiting";
+          this.state.waitingUntil = new Date(Date.now() + backoffMs);
+          this.emit("state", this.getState());
+
+          await this.interruptibleSleep(backoffMs);
+
+          this.state.waitingUntil = null;
+          if (!this.stopRequested) {
+            this.state.status = "running";
+            this.emit("state", this.getState());
+          }
+        }
+      }
+    } finally {
+      if (this.stopPromise) {
+        await this.stopPromise;
+      } else {
+        await this.closeAgent();
       }
     }
   }
@@ -357,5 +372,13 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.state.waitingUntil = null;
     this.emit("abort", reason);
     this.emit("state", this.getState());
+  }
+
+  private async closeAgent(): Promise<void> {
+    try {
+      await this.agent.close?.();
+    } catch {
+      // Best-effort cleanup only.
+    }
   }
 }

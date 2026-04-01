@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import yaml from "js-yaml";
 
 export interface Config {
-  agent: "claude" | "codex";
+  agent: "claude" | "codex" | "rovodev";
   maxConsecutiveFailures: number;
 }
 

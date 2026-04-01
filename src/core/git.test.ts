@@ -62,6 +62,60 @@ describe("git utilities", () => {
   });
 
   describe("getCurrentBranch", () => {
+    it("returns the current branch name when HEAD points to a branch", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-parse --git-dir") {
+          return ".git\n";
+        }
+        if (cmd === "git symbolic-ref --short HEAD") {
+          return "feature/test\n";
+        }
+        return "";
+      });
+
+      expect(getCurrentBranch("/repo")).toBe("feature/test");
+      expect(mockExecSync).toHaveBeenNthCalledWith(1, "git rev-parse --git-dir", {
+        cwd: "/repo",
+        encoding: "utf-8",
+        stdio: "pipe",
+        env: expect.objectContaining({ LC_ALL: "C" }),
+      });
+      expect(mockExecSync).toHaveBeenNthCalledWith(
+        2,
+        "git symbolic-ref --short HEAD",
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+        },
+      );
+    });
+
+    it("falls back to rev-parse when symbolic-ref fails, such as in detached HEAD", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-parse --git-dir") {
+          return ".git\n";
+        }
+        if (cmd === "git symbolic-ref --short HEAD") {
+          throw new Error("detached HEAD");
+        }
+        if (cmd === "git rev-parse --abbrev-ref HEAD") {
+          return "HEAD\n";
+        }
+        return "";
+      });
+
+      expect(getCurrentBranch("/repo")).toBe("HEAD");
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "git rev-parse --abbrev-ref HEAD",
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+        },
+      );
+    });
+
     it("rewrites non-repository git errors with a friendly message", () => {
       const error = Object.assign(new Error("Command failed"), {
         stderr:

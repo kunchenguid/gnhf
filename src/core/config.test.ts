@@ -81,6 +81,26 @@ describe("loadConfig", () => {
     });
   });
 
+  it("supports bootstrapping rovodev as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "rovodev" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/mock-home/.gnhf/config.yml",
+      "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "rovodev",
+      maxConsecutiveFailures: 3,
+    });
+  });
+
   it("reads config from ~/.gnhf/config.yml", () => {
     mockReadFileSync.mockReturnValue("agent: codex\n");
 

@@ -17,7 +17,16 @@ const stubRunInfo: RunInfo = {
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
 };
 
-async function runCliWithMocks(args: string[], config: Config) {
+interface CliMockOverrides {
+  orchestratorStart?: ReturnType<typeof vi.fn>;
+  rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
+}
+
+async function runCliWithMocks(
+  args: string[],
+  config: Config,
+  overrides: CliMockOverrides = {},
+) {
   const originalArgv = [...process.argv];
   const stdoutWrite = vi
     .spyOn(process.stdout, "write")
@@ -33,7 +42,8 @@ async function runCliWithMocks(args: string[], config: Config) {
   const loadConfig = vi.fn(() => config);
   const createAgent = vi.fn(() => ({ name: config.agent }));
 
-  const orchestratorStart = vi.fn(() => Promise.resolve());
+  const orchestratorStart =
+    overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
   const orchestratorStop = vi.fn();
   const orchestratorOn = vi.fn();
   const orchestratorGetState = vi.fn(() => ({
@@ -53,7 +63,8 @@ async function runCliWithMocks(args: string[], config: Config) {
 
   const rendererStart = vi.fn();
   const rendererStop = vi.fn();
-  const rendererWaitUntilExit = vi.fn(() => Promise.resolve());
+  const rendererWaitUntilExit =
+    overrides.rendererWaitUntilExit ?? vi.fn(() => Promise.resolve());
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
@@ -150,6 +161,19 @@ describe("cli", () => {
     expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo);
   });
 
+  it("accepts rovodev as an explicit --agent override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "rovodev"],
+      {
+        agent: "rovodev",
+        maxConsecutiveFailures: 3,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "rovodev" });
+    expect(createAgent).toHaveBeenCalledWith("rovodev", stubRunInfo);
+  });
+
   it("passes max iteration and token caps to the orchestrator", async () => {
     const { orchestratorCtor } = await runCliWithMocks(
       ["ship it", "--max-iterations", "12", "--max-tokens", "3456"],
@@ -164,6 +188,38 @@ describe("cli", () => {
       maxIterations: 12,
       maxTokens: 3456,
     });
+  });
+
+  it("waits for orchestrator shutdown after the renderer exits", async () => {
+    let resolveStart!: () => void;
+    const orchestratorStart = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+    const rendererWaitUntilExit = vi.fn(() => Promise.resolve());
+
+    const cliPromise = runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+      },
+      { orchestratorStart, rendererWaitUntilExit },
+    );
+
+    await vi.waitFor(() => {
+      expect(orchestratorStart).toHaveBeenCalledTimes(1);
+    });
+    const state = await Promise.race([
+      cliPromise.then(() => "done"),
+      Promise.resolve("pending"),
+    ]);
+    expect(state).toBe("pending");
+
+    resolveStart();
+    await cliPromise;
   });
 
   it("prints a friendly message outside a git repository", async () => {
