@@ -131,10 +131,10 @@ npm link
 
 ### Flags
 
-| Flag              | Description                        | Default  |
-| ----------------- | ---------------------------------- | -------- |
+| Flag              | Description                        | Default                |
+| ----------------- | ---------------------------------- | ---------------------- |
 | `--agent <agent>` | Agent to use (`claude` or `codex`) | config file (`claude`) |
-| `--version`       | Show version                       |          |
+| `--version`       | Show version                       |                        |
 
 ## Configuration
 

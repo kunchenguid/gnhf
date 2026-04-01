@@ -105,8 +105,8 @@ describe("setupRun", () => {
   });
 
   it("preserves the existing branch base commit on overwrite", () => {
-    mockExistsSync.mockImplementation((path) =>
-      path === "/project/.gnhf/runs/run-abc/base-commit",
+    mockExistsSync.mockImplementation(
+      (path) => path === "/project/.gnhf/runs/run-abc/base-commit",
     );
     mockReadFileSync.mockImplementation((path) =>
       path === "/project/.gnhf/runs/run-abc/base-commit" ? "old123\n" : "",
@@ -156,12 +156,17 @@ describe("resumeRun", () => {
   });
 
   it("backfills missing base-commit for legacy runs", () => {
-    mockExistsSync.mockImplementation((path) => path === "/project/.gnhf/runs/run-abc");
+    mockExistsSync.mockImplementation(
+      (path) => path === "/project/.gnhf/runs/run-abc",
+    );
     mockFindLegacyRunBaseCommit.mockReturnValue("legacy123");
 
     const info = resumeRun("run-abc", "/project");
 
-    expect(mockFindLegacyRunBaseCommit).toHaveBeenCalledWith("run-abc", "/project");
+    expect(mockFindLegacyRunBaseCommit).toHaveBeenCalledWith(
+      "run-abc",
+      "/project",
+    );
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/project/.gnhf/runs/run-abc/base-commit",
       "legacy123\n",
@@ -171,7 +176,9 @@ describe("resumeRun", () => {
   });
 
   it("falls back to HEAD when a legacy run has no recoverable base commit", () => {
-    mockExistsSync.mockImplementation((path) => path === "/project/.gnhf/runs/run-abc");
+    mockExistsSync.mockImplementation(
+      (path) => path === "/project/.gnhf/runs/run-abc",
+    );
     mockFindLegacyRunBaseCommit.mockReturnValue(null);
     mockGetHeadCommit.mockReturnValue("head456");
 

@@ -29,9 +29,15 @@ export function getHeadCommit(cwd: string): string {
   return git("rev-parse HEAD", cwd);
 }
 
-export function findLegacyRunBaseCommit(runId: string, cwd: string): string | null {
+export function findLegacyRunBaseCommit(
+  runId: string,
+  cwd: string,
+): string | null {
   try {
-    const history = git("log --first-parent --reverse --format=%H%x09%s HEAD", cwd);
+    const history = git(
+      "log --first-parent --reverse --format=%H%x09%s HEAD",
+      cwd,
+    );
     const marker = history
       .split("\n")
       .map((line) => {

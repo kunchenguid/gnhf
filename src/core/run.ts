@@ -27,7 +27,9 @@ function ensureRunMetadataIgnored(cwd: string): void {
     ["rev-parse", "--git-path", "info/exclude"],
     { cwd, encoding: "utf-8" },
   ).trim();
-  const resolved = isAbsolute(excludePath) ? excludePath : join(cwd, excludePath);
+  const resolved = isAbsolute(excludePath)
+    ? excludePath
+    : join(cwd, excludePath);
   const entry = ".gnhf/runs/";
   mkdirSync(dirname(resolved), { recursive: true });
 
@@ -121,8 +123,7 @@ function backfillLegacyBaseCommit(
   baseCommitPath: string,
   cwd: string,
 ): string {
-  const baseCommit =
-    findLegacyRunBaseCommit(runId, cwd) ?? getHeadCommit(cwd);
+  const baseCommit = findLegacyRunBaseCommit(runId, cwd) ?? getHeadCommit(cwd);
   writeFileSync(baseCommitPath, `${baseCommit}\n`, "utf-8");
   return baseCommit;
 }

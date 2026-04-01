@@ -180,7 +180,9 @@ describe("buildFrame", () => {
 
     expect(lines).toHaveLength(24);
     expect(moonLines).toHaveLength(3);
-    expect(plainLines.at(-2)?.trim()).toBe("[ctrl+c to stop, gnhf again to resume]");
+    expect(plainLines.at(-2)?.trim()).toBe(
+      "[ctrl+c to stop, gnhf again to resume]",
+    );
     expect(plainLines.at(-1)?.trim()).toBe("");
   });
 });

@@ -253,7 +253,9 @@ function fitContentRows(contentRows: Cell[][], maxRows: number): Cell[][] {
     fitted.splice(emptyRowIndex, 1);
   }
 
-  return fitted.length > maxRows ? fitted.slice(fitted.length - maxRows) : fitted;
+  return fitted.length > maxRows
+    ? fitted.slice(fitted.length - maxRows)
+    : fitted;
 }
 
 // ── Build full frame (cell-based) ────────────────────────────

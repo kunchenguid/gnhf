@@ -22,11 +22,13 @@ async function runCliWithMocks(args: string[], config: Config) {
   const stdoutWrite = vi
     .spyOn(process.stdout, "write")
     .mockImplementation(() => true);
-  const exitSpy = vi
-    .spyOn(process, "exit")
-    .mockImplementation(((code?: string | number | null) => {
-      throw new Error(`process.exit unexpectedly called with ${JSON.stringify(code)}`);
-    }) as typeof process.exit);
+  const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+    code?: string | number | null,
+  ) => {
+    throw new Error(
+      `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+    );
+  }) as typeof process.exit);
 
   const loadConfig = vi.fn(() => config);
   const createAgent = vi.fn(() => ({ name: config.agent }));
