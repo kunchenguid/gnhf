@@ -74,12 +74,16 @@ describe("git utilities", () => {
       });
 
       expect(getCurrentBranch("/repo")).toBe("feature/test");
-      expect(mockExecSync).toHaveBeenNthCalledWith(1, "git rev-parse --git-dir", {
-        cwd: "/repo",
-        encoding: "utf-8",
-        stdio: "pipe",
-        env: expect.objectContaining({ LC_ALL: "C" }),
-      });
+      expect(mockExecSync).toHaveBeenNthCalledWith(
+        1,
+        "git rev-parse --git-dir",
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+          env: expect.objectContaining({ LC_ALL: "C" }),
+        },
+      );
       expect(mockExecSync).toHaveBeenNthCalledWith(
         2,
         "git symbolic-ref --short HEAD",

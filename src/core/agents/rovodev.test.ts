@@ -124,7 +124,10 @@ describe("RovoDevAgent", () => {
     const onUsage = vi.fn();
     const onMessage = vi.fn();
 
-    const result = await agent.run("test prompt", "/repo", { onUsage, onMessage });
+    const result = await agent.run("test prompt", "/repo", {
+      onUsage,
+      onMessage,
+    });
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "acli",
@@ -161,12 +164,12 @@ describe("RovoDevAgent", () => {
       "http://127.0.0.1:8765/v3/stream_chat",
       expect.objectContaining({ method: "GET" }),
     );
-    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("x-session-id")).toBe(
-      "session-123",
-    );
-    expect(new Headers(fetchMock.mock.calls[3]?.[1]?.headers).get("x-session-id")).toBe(
-      "session-123",
-    );
+    expect(
+      new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("x-session-id"),
+    ).toBe("session-123");
+    expect(
+      new Headers(fetchMock.mock.calls[3]?.[1]?.headers).get("x-session-id"),
+    ).toBe("session-123");
     const streamHeaders = new Headers(fetchMock.mock.calls[4]?.[1]?.headers);
     expect(streamHeaders.get("x-session-id")).toBe("session-123");
     expect(streamHeaders.get("accept")).toBe("text/event-stream");
@@ -435,9 +438,7 @@ describe("RovoDevAgent", () => {
     await expectation;
 
     const calledUrls = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(calledUrls).toContain(
-      "http://127.0.0.1:8765/v3/cancel",
-    );
+    expect(calledUrls).toContain("http://127.0.0.1:8765/v3/cancel");
     expect(calledUrls).toContain(
       "http://127.0.0.1:8765/v3/sessions/session-123",
     );

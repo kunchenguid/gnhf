@@ -143,12 +143,12 @@ If you want to run `gnhf --agent rovodev`, install Atlassian's `acli` and authen
 
 ### Flags
 
-| Flag                   | Description                               | Default                |
-| ---------------------- | ----------------------------------------- | ---------------------- |
+| Flag                   | Description                                    | Default                |
+| ---------------------- | ---------------------------------------------- | ---------------------- |
 | `--agent <agent>`      | Agent to use (`claude`, `codex`, or `rovodev`) | config file (`claude`) |
-| `--max-iterations <n>` | Abort after `n` total iterations          | unlimited              |
-| `--max-tokens <n>`     | Abort after `n` total input+output tokens | unlimited              |
-| `--version`            | Show version                              |                        |
+| `--max-iterations <n>` | Abort after `n` total iterations               | unlimited              |
+| `--max-tokens <n>`     | Abort after `n` total input+output tokens      | unlimited              |
+| `--version`            | Show version                                   |                        |
 
 ## Configuration
 

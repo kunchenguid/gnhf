@@ -153,7 +153,12 @@ export class RovoDevAgent implements Agent {
       const server = await this.ensureServer(cwd, runController.signal);
       sessionId = await this.createSession(server, runController.signal);
       await this.setInlineSystemPrompt(server, sessionId, runController.signal);
-      await this.setChatMessage(server, sessionId, prompt, runController.signal);
+      await this.setChatMessage(
+        server,
+        sessionId,
+        prompt,
+        runController.signal,
+      );
 
       return await this.streamChat(
         server,
@@ -327,16 +332,12 @@ export class RovoDevAgent implements Agent {
     signal?: AbortSignal,
   ): Promise<void> {
     const schema = readFileSync(this.schemaPath, "utf-8").trim();
-    await this.requestJSON(
-      server,
-      "/v3/inline-system-prompt",
-      {
-        method: "PUT",
-        sessionId,
-        body: { prompt: buildSystemPrompt(schema) },
-        signal,
-      },
-    );
+    await this.requestJSON(server, "/v3/inline-system-prompt", {
+      method: "PUT",
+      sessionId,
+      body: { prompt: buildSystemPrompt(schema) },
+      signal,
+    });
   }
 
   private async setChatMessage(
@@ -551,7 +552,10 @@ export class RovoDevAgent implements Agent {
         let boundary: number;
         let separatorLen: number;
         if (lfBoundary === -1 && crlfBoundary === -1) break;
-        if (crlfBoundary !== -1 && (lfBoundary === -1 || crlfBoundary < lfBoundary)) {
+        if (
+          crlfBoundary !== -1 &&
+          (lfBoundary === -1 || crlfBoundary < lfBoundary)
+        ) {
           boundary = crlfBoundary;
           separatorLen = 4;
         } else {
@@ -629,20 +633,19 @@ export class RovoDevAgent implements Agent {
       timer.unref?.();
     });
 
-    this.closingPromise = Promise.race([waitForClose, forceKill]).finally(() => {
-      if (this.server === server) {
-        this.server = null;
-      }
-      this.closingPromise = null;
-    });
+    this.closingPromise = Promise.race([waitForClose, forceKill]).finally(
+      () => {
+        if (this.server === server) {
+          this.server = null;
+        }
+        this.closingPromise = null;
+      },
+    );
 
     await this.closingPromise;
   }
 
-  private signalServer(
-    server: RovoDevServer,
-    signal: NodeJS.Signals,
-  ): void {
+  private signalServer(server: RovoDevServer, signal: NodeJS.Signals): void {
     if (server.detached && server.child.pid) {
       try {
         this.killProcessFn(-server.child.pid, signal);

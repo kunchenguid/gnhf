@@ -242,9 +242,11 @@ describe("Renderer ctrl+c", () => {
     }) as unknown as Orchestrator;
 
     const originalIsTTY = process.stdin.isTTY;
-    const originalSetRawMode = (process.stdin as NodeJS.ReadStream & {
-      setRawMode?: (mode: boolean) => void;
-    }).setRawMode;
+    const originalSetRawMode = (
+      process.stdin as NodeJS.ReadStream & {
+        setRawMode?: (mode: boolean) => void;
+      }
+    ).setRawMode;
     const originalResume = process.stdin.resume;
     const originalPause = process.stdin.pause;
     const originalOn = process.stdin.on;
@@ -257,16 +259,21 @@ describe("Renderer ctrl+c", () => {
       configurable: true,
       value: true,
     });
-    (process.stdin as NodeJS.ReadStream & { setRawMode: ReturnType<typeof vi.fn> }).setRawMode =
-      vi.fn();
+    (
+      process.stdin as NodeJS.ReadStream & {
+        setRawMode: ReturnType<typeof vi.fn>;
+      }
+    ).setRawMode = vi.fn();
     process.stdin.resume = vi.fn();
     process.stdin.pause = vi.fn();
-    process.stdin.on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-      if (event === "data") {
-        dataHandler = handler as (data: Buffer) => void;
-      }
-      return process.stdin;
-    }) as typeof process.stdin.on;
+    process.stdin.on = vi.fn(
+      (event: string, handler: (...args: unknown[]) => void) => {
+        if (event === "data") {
+          dataHandler = handler as (data: Buffer) => void;
+        }
+        return process.stdin;
+      },
+    ) as typeof process.stdin.on;
     process.stdin.removeAllListeners = vi.fn(() => process.stdin);
 
     try {
@@ -278,7 +285,9 @@ describe("Renderer ctrl+c", () => {
 
       await renderer.waitUntilExit();
 
-      expect((orchestrator.stop as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+      expect(
+        orchestrator.stop as ReturnType<typeof vi.fn>,
+      ).toHaveBeenCalledTimes(1);
       expect(process.stdin.pause).toHaveBeenCalledTimes(1);
       expect(process.stdin.removeAllListeners).toHaveBeenCalledWith("data");
     } finally {
@@ -286,9 +295,11 @@ describe("Renderer ctrl+c", () => {
         configurable: true,
         value: originalIsTTY,
       });
-      (process.stdin as NodeJS.ReadStream & {
-        setRawMode?: (mode: boolean) => void;
-      }).setRawMode = originalSetRawMode;
+      (
+        process.stdin as NodeJS.ReadStream & {
+          setRawMode?: (mode: boolean) => void;
+        }
+      ).setRawMode = originalSetRawMode;
       process.stdin.resume = originalResume;
       process.stdin.pause = originalPause;
       process.stdin.on = originalOn;
