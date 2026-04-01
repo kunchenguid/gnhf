@@ -8,7 +8,11 @@ import {
   type TokenUsage,
   type AgentRunOptions,
 } from "./types.js";
-import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
+import {
+  parseJSONLStream,
+  setupAbortHandler,
+  setupChildProcessHandlers,
+} from "./stream-utils.js";
 
 interface ClaudeAssistantEvent {
   type: "assistant";
@@ -68,7 +72,6 @@ export class ClaudeAgent implements Agent {
 
       if (setupAbortHandler(signal, child, reject)) return;
 
-      let stderr = "";
       let resultEvent: ClaudeResultEvent | null = null;
       const cumulative: TokenUsage = {
         inputTokens: 0,
@@ -110,21 +113,7 @@ export class ClaudeAgent implements Agent {
         }
       });
 
-      child.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on("error", (err) => {
-        reject(new Error(`Failed to spawn claude: ${err.message}`));
-      });
-
-      child.on("close", (code) => {
-        logStream?.end();
-        if (code !== 0) {
-          reject(new Error(`claude exited with code ${code}: ${stderr}`));
-          return;
-        }
-
+      setupChildProcessHandlers(child, "claude", logStream, reject, () => {
         if (!resultEvent) {
           reject(new Error("claude returned no result event"));
           return;

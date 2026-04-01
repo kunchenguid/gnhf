@@ -7,7 +7,11 @@ import type {
   TokenUsage,
   AgentRunOptions,
 } from "./types.js";
-import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
+import {
+  parseJSONLStream,
+  setupAbortHandler,
+  setupChildProcessHandlers,
+} from "./stream-utils.js";
 
 interface CodexItemCompleted {
   type: "item.completed";
@@ -61,7 +65,6 @@ export class CodexAgent implements Agent {
 
       if (setupAbortHandler(signal, child, reject)) return;
 
-      let stderr = "";
       let lastAgentMessage: string | null = null;
       const cumulative: TokenUsage = {
         inputTokens: 0,
@@ -89,21 +92,7 @@ export class CodexAgent implements Agent {
         }
       });
 
-      child.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on("error", (err) => {
-        reject(new Error(`Failed to spawn codex: ${err.message}`));
-      });
-
-      child.on("close", (code) => {
-        logStream?.end();
-        if (code !== 0) {
-          reject(new Error(`codex exited with code ${code}: ${stderr}`));
-          return;
-        }
-
+      setupChildProcessHandlers(child, "codex", logStream, reject, () => {
         if (!lastAgentMessage) {
           reject(new Error("codex returned no agent message"));
           return;

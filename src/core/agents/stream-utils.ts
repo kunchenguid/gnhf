@@ -3,6 +3,38 @@ import type { Readable } from "node:stream";
 import type { WriteStream } from "node:fs";
 
 /**
+ * Wire stderr collection, spawn-error handling, and the common close-handler
+ * prefix (logStream.end + non-zero exit code rejection) for a child process.
+ * Calls `onSuccess` only when the process exits with code 0.
+ */
+export function setupChildProcessHandlers(
+  child: ChildProcess,
+  agentName: string,
+  logStream: WriteStream | null,
+  reject: (err: Error) => void,
+  onSuccess: () => void,
+): void {
+  let stderr = "";
+
+  child.stderr!.on("data", (data: Buffer) => {
+    stderr += data.toString();
+  });
+
+  child.on("error", (err) => {
+    reject(new Error(`Failed to spawn ${agentName}: ${err.message}`));
+  });
+
+  child.on("close", (code) => {
+    logStream?.end();
+    if (code !== 0) {
+      reject(new Error(`${agentName} exited with code ${code}: ${stderr}`));
+      return;
+    }
+    onSuccess();
+  });
+}
+
+/**
  * Parse a JSONL stream, calling the callback for each parsed event.
  * Handles buffering of incomplete lines and skips unparseable lines.
  */

@@ -82,6 +82,11 @@ export function getLastIterationNumber(runInfo: RunInfo): number {
   return max;
 }
 
+function formatListSection(title: string, items: string[]): string {
+  if (items.length === 0) return "";
+  return `**${title}:**\n${items.map((item) => `- ${item}`).join("\n")}\n`;
+}
+
 export function appendNotes(
   notesPath: string,
   iteration: number,
@@ -92,12 +97,8 @@ export function appendNotes(
   const entry = [
     `\n### Iteration ${iteration}\n`,
     `**Summary:** ${summary}\n`,
-    changes.length > 0
-      ? `**Changes:**\n${changes.map((c) => `- ${c}`).join("\n")}\n`
-      : "",
-    learnings.length > 0
-      ? `**Learnings:**\n${learnings.map((l) => `- ${l}`).join("\n")}\n`
-      : "",
+    formatListSection("Changes", changes),
+    formatListSection("Learnings", learnings),
   ].join("\n");
 
   appendFileSync(notesPath, entry, "utf-8");
