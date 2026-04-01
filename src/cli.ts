@@ -219,7 +219,7 @@ program
       const shutdownResult = await Promise.race([
         orchestratorPromise.then(() => "done" as const),
         new Promise<"timeout">((resolve) => {
-          setTimeout(() => resolve("timeout"), FORCE_EXIT_TIMEOUT_MS);
+          setTimeout(() => resolve("timeout"), FORCE_EXIT_TIMEOUT_MS).unref();
         }),
       ]);
 

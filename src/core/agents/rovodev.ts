@@ -462,17 +462,23 @@ export class RovoDevAgent implements Agent {
         return;
       }
 
-      if (eventName === "request-usage") {
+      const kind =
+        eventName ||
+        (typeof (payload as Record<string, unknown>).event_kind === "string"
+          ? ((payload as Record<string, unknown>).event_kind as string)
+          : "");
+
+      if (kind === "request-usage") {
         handleUsage(payload as RovoDevRequestUsageEvent);
         return;
       }
 
-      if (eventName === "tool-return" || eventName === "on_call_tools_start") {
+      if (kind === "tool-return" || kind === "on_call_tools_start") {
         resetCurrentMessage();
         return;
       }
 
-      if (eventName === "text") {
+      if (kind === "text") {
         const content = (payload as { content?: unknown }).content;
         if (typeof content === "string") {
           currentTextParts = [content];
@@ -482,7 +488,7 @@ export class RovoDevAgent implements Agent {
         return;
       }
 
-      if (eventName === "part_start") {
+      if (kind === "part_start") {
         const partStart = payload as {
           index?: unknown;
           part?: { content?: unknown; part_kind?: unknown };
@@ -499,7 +505,7 @@ export class RovoDevAgent implements Agent {
         return;
       }
 
-      if (eventName === "part_delta") {
+      if (kind === "part_delta") {
         const partDelta = payload as {
           index?: unknown;
           delta?: { content_delta?: unknown; part_delta_kind?: unknown };
