@@ -53,6 +53,8 @@ $ gnhf "reduce complexity of the codebase without changing functionality"
 # go to sleep
 ```
 
+Run `gnhf` from inside a Git repository with a clean working tree. If you are starting from a plain directory, run `git init` first.
+
 ## Install
 
 **npm**
