@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.6...gnhf-v0.1.7) (2026-04-01)
+
+
+### Features
+
+* add RovoDev agent support ([#11](https://github.com/kunchenguid/gnhf/issues/11)) ([484d989](https://github.com/kunchenguid/gnhf/commit/484d989a632aebef27b4592f96ffd7fd4f25fde0))
+* **opencode:** add OpenCode agent integration ([#13](https://github.com/kunchenguid/gnhf/issues/13)) ([aa9a2a5](https://github.com/kunchenguid/gnhf/commit/aa9a2a5cecbfe95abe6830dff40750aa03ee0423))
+
 ## [0.1.6](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.5...gnhf-v0.1.6) (2026-04-01)
 
 
