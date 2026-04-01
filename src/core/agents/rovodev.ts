@@ -171,7 +171,10 @@ export class RovoDevAgent implements Agent {
     } finally {
       signal?.removeEventListener("abort", onAbort);
       logStream?.end();
-      if (!runController.signal.aborted && this.server && sessionId) {
+      if (this.server && sessionId) {
+        if (runController.signal.aborted) {
+          await this.cancelSession(this.server, sessionId);
+        }
         await this.deleteSession(this.server, sessionId);
       }
     }
@@ -238,6 +241,13 @@ export class RovoDevAgent implements Agent {
     server.readyPromise = this.waitForHealthy(server, signal).catch((error) => {
       if (this.server === server) {
         this.server = null;
+      }
+      if (!server.closed) {
+        try {
+          this.signalServer(server, "SIGTERM");
+        } catch {
+          // Best effort only.
+        }
       }
       throw error;
     });
@@ -341,6 +351,21 @@ export class RovoDevAgent implements Agent {
       body: { message: prompt },
       signal,
     });
+  }
+
+  private async cancelSession(
+    server: RovoDevServer,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      await this.request(server, "/v3/cancel", {
+        method: "POST",
+        sessionId,
+        timeoutMs: 1_000,
+      });
+    } catch {
+      // Best effort only.
+    }
   }
 
   private async deleteSession(
@@ -515,11 +540,21 @@ export class RovoDevAgent implements Agent {
       buffer += chunk;
 
       while (true) {
-        const boundary = buffer.indexOf("\n\n");
-        if (boundary === -1) break;
+        const lfBoundary = buffer.indexOf("\n\n");
+        const crlfBoundary = buffer.indexOf("\r\n\r\n");
+        let boundary: number;
+        let separatorLen: number;
+        if (lfBoundary === -1 && crlfBoundary === -1) break;
+        if (crlfBoundary !== -1 && (lfBoundary === -1 || crlfBoundary < lfBoundary)) {
+          boundary = crlfBoundary;
+          separatorLen = 4;
+        } else {
+          boundary = lfBoundary;
+          separatorLen = 2;
+        }
 
         const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
+        buffer = buffer.slice(boundary + separatorLen);
         if (rawEvent.trim()) {
           handleEvent(rawEvent);
         }

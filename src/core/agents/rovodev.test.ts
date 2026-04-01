@@ -368,7 +368,7 @@ describe("RovoDevAgent", () => {
     vi.useRealTimers();
   });
 
-  it("skips session cleanup requests after an abort", async () => {
+  it("cancels and deletes the session after an abort", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -414,7 +414,9 @@ describe("RovoDevAgent", () => {
       )
       .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
       .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
-      .mockResolvedValueOnce(streamResponse);
+      .mockResolvedValueOnce(streamResponse)
+      .mockResolvedValueOnce(jsonResponse({ message: "ok" }))
+      .mockResolvedValueOnce(jsonResponse({ message: "ok" }));
 
     const controller = new AbortController();
     const promise = agent.run("test", "/repo", { signal: controller.signal });
@@ -433,10 +435,10 @@ describe("RovoDevAgent", () => {
     await expectation;
 
     const calledUrls = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(calledUrls).not.toContain(
+    expect(calledUrls).toContain(
       "http://127.0.0.1:8765/v3/cancel",
     );
-    expect(calledUrls).not.toContain(
+    expect(calledUrls).toContain(
       "http://127.0.0.1:8765/v3/sessions/session-123",
     );
   });
