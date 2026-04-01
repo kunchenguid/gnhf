@@ -6,7 +6,7 @@ import { loadConfig } from "./core/config.js";
 import {
   ensureCleanWorkingTree,
   createBranch,
-  commitAll,
+  getHeadCommit,
   getCurrentBranch,
 } from "./core/git.js";
 import {
@@ -27,12 +27,11 @@ const packageVersion = JSON.parse(
 
 function initializeNewBranch(prompt: string, cwd: string): RunInfo {
   ensureCleanWorkingTree(cwd);
+  const baseCommit = getHeadCommit(cwd);
   const branchName = slugifyPrompt(prompt);
   createBranch(branchName, cwd);
   const runId = branchName.split("/")[1]!;
-  const runInfo = setupRun(runId, prompt, cwd);
-  commitAll(`gnhf: initialize run ${runId}`, cwd);
-  return runInfo;
+  return setupRun(runId, prompt, baseCommit, cwd);
 }
 
 function ask(question: string): Promise<string> {
@@ -55,12 +54,12 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option("--agent <agent>", "Agent to use (claude or codex)", "claude")
+  .option("--agent <agent>", "Agent to use (claude or codex)")
   .option("--mock", "", false)
   .action(
     async (
       promptArg: string | undefined,
-      options: { agent: string; mock: boolean },
+      options: { agent?: string; mock: boolean },
     ) => {
       if (options.mock) {
         const mock = new MockOrchestrator();
@@ -81,15 +80,21 @@ program
         prompt = readFileSync("/dev/stdin", "utf-8").trim();
       }
 
-      const agentName = options.agent as "claude" | "codex";
-      if (agentName !== "claude" && agentName !== "codex") {
+      const agentName = options.agent;
+      if (
+        agentName !== undefined &&
+        agentName !== "claude" &&
+        agentName !== "codex"
+      ) {
         console.error(
           `Unknown agent: ${options.agent}. Use "claude" or "codex".`,
         );
         process.exit(1);
       }
 
-      const config = loadConfig({ agent: agentName });
+      const config = loadConfig(
+        agentName ? { agent: agentName as "claude" | "codex" } : undefined,
+      );
       const cwd = process.cwd();
 
       const currentBranch = getCurrentBranch(cwd);
@@ -118,8 +123,7 @@ program
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
-            runInfo = setupRun(existingRunId, prompt, cwd);
-            commitAll(`gnhf: overwrite run ${existingRunId}`, cwd);
+            runInfo = setupRun(existingRunId, prompt, existing.baseCommit, cwd);
           } else if (answer === "n") {
             runInfo = initializeNewBranch(prompt, cwd);
           } else {
@@ -135,7 +139,7 @@ program
         runInfo = initializeNewBranch(prompt, cwd);
       }
 
-      const agent = createAgent(agentName, runInfo);
+      const agent = createAgent(config.agent, runInfo);
       const orchestrator = new Orchestrator(
         config,
         agent,

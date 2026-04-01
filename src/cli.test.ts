@@ -1,9 +1,100 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import type { Config } from "./core/config.js";
+import type { RunInfo } from "./core/run.js";
 
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+
+const stubRunInfo: RunInfo = {
+  runId: "run-abc",
+  runDir: "/repo/.gnhf/runs/run-abc",
+  promptPath: "/repo/.gnhf/runs/run-abc/PROMPT.md",
+  notesPath: "/repo/.gnhf/runs/run-abc/notes.md",
+  schemaPath: "/repo/.gnhf/runs/run-abc/schema.json",
+  baseCommit: "abc123",
+  baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
+};
+
+async function runCliWithMocks(args: string[], config: Config) {
+  const originalArgv = [...process.argv];
+  const stdoutWrite = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation(() => true);
+  const exitSpy = vi
+    .spyOn(process, "exit")
+    .mockImplementation(((code?: string | number | null) => {
+      throw new Error(`process.exit unexpectedly called with ${JSON.stringify(code)}`);
+    }) as typeof process.exit);
+
+  const loadConfig = vi.fn(() => config);
+  const createAgent = vi.fn(() => ({ name: config.agent }));
+
+  const orchestratorStart = vi.fn(() => Promise.resolve());
+  const orchestratorStop = vi.fn();
+  const orchestratorOn = vi.fn();
+  const orchestratorGetState = vi.fn(() => ({
+    status: "running" as const,
+    currentIteration: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    commitCount: 0,
+    iterations: [],
+    successCount: 0,
+    failCount: 0,
+    consecutiveFailures: 0,
+    startTime: new Date("2026-01-01T00:00:00Z"),
+    waitingUntil: null,
+    lastMessage: null,
+  }));
+
+  const rendererStart = vi.fn();
+  const rendererStop = vi.fn();
+  const rendererWaitUntilExit = vi.fn(() => Promise.resolve());
+
+  vi.resetModules();
+  vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/git.js", () => ({
+    ensureCleanWorkingTree: vi.fn(),
+    createBranch: vi.fn(),
+    getHeadCommit: vi.fn(() => "abc123"),
+    getCurrentBranch: vi.fn(() => "main"),
+  }));
+  vi.doMock("./core/run.js", () => ({
+    setupRun: vi.fn(() => stubRunInfo),
+    resumeRun: vi.fn(),
+    getLastIterationNumber: vi.fn(() => 0),
+  }));
+  vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
+  vi.doMock("./core/orchestrator.js", () => ({
+    Orchestrator: class MockOrchestrator {
+      start = orchestratorStart;
+      stop = orchestratorStop;
+      on = orchestratorOn;
+      getState = orchestratorGetState;
+    },
+  }));
+  vi.doMock("./renderer.js", () => ({
+    Renderer: class MockRenderer {
+      start = rendererStart;
+      stop = rendererStop;
+      waitUntilExit = rendererWaitUntilExit;
+    },
+  }));
+
+  process.argv = ["node", "gnhf", ...args];
+
+  try {
+    await import("./cli.js");
+  } finally {
+    process.argv = originalArgv;
+    stdoutWrite.mockRestore();
+    exitSpy.mockRestore();
+  }
+
+  return { loadConfig, createAgent };
+}
 
 describe("cli", () => {
   it("prints the package version for -V", async () => {
@@ -28,5 +119,28 @@ describe("cli", () => {
       stdoutWrite.mockRestore();
       exitSpy.mockRestore();
     }
+  });
+
+  it("uses config.agent when --agent is not passed", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      maxConsecutiveFailures: 3,
+    });
+
+    expect(loadConfig).toHaveBeenCalledWith(undefined);
+    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo);
+  });
+
+  it("uses the explicit --agent flag as an override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "claude"],
+      {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
+    expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo);
   });
 });

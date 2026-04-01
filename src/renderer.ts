@@ -26,6 +26,7 @@ const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
 const MAX_MSG_LINE_LEN = 64;
+const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
 
 // ── ANSI helpers ─────────────────────────────────────────────
 
@@ -59,7 +60,9 @@ export function renderStatsCells(
   elapsed: string,
   inputTokens: number,
   outputTokens: number,
+  commitCount: number,
 ): Cell[] {
+  const commitLabel = commitCount === 1 ? "commit" : "commits";
   return [
     ...textToCells(elapsed, "bold"),
     ...textToCells("  ", "normal"),
@@ -70,6 +73,10 @@ export function renderStatsCells(
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
     ...textToCells(`${formatTokens(outputTokens)} out`, "normal"),
+    ...textToCells("  ", "normal"),
+    ...textToCells("\u00b7", "dim"),
+    ...textToCells("  ", "normal"),
+    ...textToCells(`${commitCount} ${commitLabel}`, "normal"),
   ];
 }
 
@@ -128,8 +135,11 @@ export function renderStats(
   elapsed: string,
   inputTokens: number,
   outputTokens: number,
+  commitCount: number,
 ): string {
-  return rowToString(renderStatsCells(elapsed, inputTokens, outputTokens));
+  return rowToString(
+    renderStatsCells(elapsed, inputTokens, outputTokens, commitCount),
+  );
 }
 
 export function renderAgentMessage(
@@ -228,6 +238,24 @@ function centerLineCells(content: Cell[], width: number): Cell[] {
   return [...emptyCells(pad), ...content, ...emptyCells(rightPad)];
 }
 
+function renderResumeHintCells(width: number): Cell[] {
+  return centerLineCells(textToCells(RESUME_HINT, "dim"), width);
+}
+
+function fitContentRows(contentRows: Cell[][], maxRows: number): Cell[][] {
+  if (contentRows.length <= maxRows) return contentRows;
+
+  const fitted = [...contentRows];
+
+  while (fitted.length > maxRows) {
+    const emptyRowIndex = fitted.findIndex((row) => row.length === 0);
+    if (emptyRowIndex === -1) break;
+    fitted.splice(emptyRowIndex, 1);
+  }
+
+  return fitted.length > maxRows ? fitted.slice(fitted.length - maxRows) : fitted;
+}
+
 // ── Build full frame (cell-based) ────────────────────────────
 
 export function buildContentCells(
@@ -251,7 +279,12 @@ export function buildContentCells(
 
   rows.push([], []);
   rows.push(
-    renderStatsCells(elapsed, state.totalInputTokens, state.totalOutputTokens),
+    renderStatsCells(
+      elapsed,
+      state.totalInputTokens,
+      state.totalOutputTokens,
+      state.commitCount,
+    ),
   );
   rows.push([], []);
   rows.push(...renderAgentMessageCells(state.lastMessage, state.status));
@@ -272,13 +305,20 @@ export function buildFrameCells(
   terminalHeight: number,
 ): Cell[][] {
   const elapsed = formatElapsed(now - state.startTime.getTime());
-  const contentRows = buildContentCells(prompt, state, elapsed, now);
+  const reservedBottomRows = 2;
+  const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
+  const contentRows = fitContentRows(
+    buildContentCells(prompt, state, elapsed, now),
+    availableHeight,
+  );
 
-  while (contentRows.length < BASE_CONTENT_ROWS) contentRows.push([]);
+  while (contentRows.length < Math.min(BASE_CONTENT_ROWS, availableHeight)) {
+    contentRows.push([]);
+  }
 
   const contentCount = contentRows.length;
-  const remaining = Math.max(0, terminalHeight - contentCount);
-  const topHeight = Math.ceil(remaining / 2) - 1;
+  const remaining = Math.max(0, availableHeight - contentCount);
+  const topHeight = Math.max(0, Math.ceil(remaining / 2));
   const bottomHeight = remaining - topHeight;
 
   const sideWidth = Math.max(
@@ -308,6 +348,9 @@ export function buildFrameCells(
   for (let y = 0; y < bottomHeight; y++) {
     frame.push(renderStarLineCells(bottomStars, terminalWidth, y, now));
   }
+
+  frame.push(renderResumeHintCells(terminalWidth));
+  frame.push(emptyCells(terminalWidth));
 
   return frame;
 }
@@ -418,8 +461,9 @@ export class Renderer {
       this.cachedHeight = h;
       const contentStart = Math.max(0, Math.floor((w - CONTENT_WIDTH) / 2) - 8);
       const contentEnd = contentStart + CONTENT_WIDTH + 16;
-      const remaining = Math.max(0, h - BASE_CONTENT_ROWS);
-      const topHeight = Math.ceil(remaining / 2) - 1;
+      const availableHeight = Math.max(0, h - 2);
+      const remaining = Math.max(0, availableHeight - BASE_CONTENT_ROWS);
+      const topHeight = Math.max(0, Math.ceil(remaining / 2));
       const proximityRows = 8;
       const shrinkBig = (s: Star, nearContentRow: boolean): Star => {
         if (!nearContentRow || s.x < contentStart || s.x >= contentEnd)
@@ -435,7 +479,7 @@ export class Renderer {
       );
       this.sideStars = generateStarField(
         w,
-        BASE_CONTENT_ROWS,
+        Math.max(BASE_CONTENT_ROWS, availableHeight),
         STAR_DENSITY,
         99,
       );

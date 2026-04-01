@@ -25,6 +25,44 @@ export function createBranch(branchName: string, cwd: string): void {
   git(`checkout -b ${branchName}`, cwd);
 }
 
+export function getHeadCommit(cwd: string): string {
+  return git("rev-parse HEAD", cwd);
+}
+
+export function findLegacyRunBaseCommit(runId: string, cwd: string): string | null {
+  try {
+    const history = git("log --first-parent --reverse --format=%H%x09%s HEAD", cwd);
+    const marker = history
+      .split("\n")
+      .map((line) => {
+        const [sha, ...subjectParts] = line.split("\t");
+        return { sha, subject: subjectParts.join("\t") };
+      })
+      .find(
+        ({ subject }) =>
+          subject === `gnhf: initialize run ${runId}` ||
+          subject === `gnhf: overwrite run ${runId}`,
+      );
+
+    if (!marker?.sha) return null;
+    return git(`rev-parse ${marker.sha}^`, cwd);
+  } catch {
+    return null;
+  }
+}
+
+export function getBranchCommitCount(baseCommit: string, cwd: string): number {
+  if (!baseCommit) return 0;
+
+  // Intentionally count from the branch base commit instead of gnhf marker
+  // commits so the number reflects "work unique to this branch" and does not
+  // depend on ignored run metadata producing a commit.
+  return Number.parseInt(
+    git(`rev-list --count --first-parent ${baseCommit}..HEAD`, cwd),
+    10,
+  );
+}
+
 export function commitAll(message: string, cwd: string): void {
   git("add -A", cwd);
   try {

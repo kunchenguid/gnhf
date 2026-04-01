@@ -9,6 +9,8 @@ import {
   ensureCleanWorkingTree,
   createBranch,
   commitAll,
+  findLegacyRunBaseCommit,
+  getBranchCommitCount,
   resetHard,
 } from "./git.js";
 
@@ -97,6 +99,70 @@ describe("git utilities", () => {
       });
 
       expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
+  });
+
+  describe("getBranchCommitCount", () => {
+    it("counts commits on the current gnhf branch from the base commit", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-list --count --first-parent abc123..HEAD") {
+          return "1";
+        }
+        return "";
+      });
+
+      expect(getBranchCommitCount("abc123", "/repo")).toBe(1);
+    });
+
+    it("counts all branch commits after the base commit", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-list --count --first-parent base123..HEAD") {
+          return "4";
+        }
+        return "";
+      });
+
+      expect(getBranchCommitCount("base123", "/repo")).toBe(4);
+    });
+
+    it("returns 0 when the branch has no commits after the base commit", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-list --count --first-parent abc123..HEAD") {
+          return "0";
+        }
+        return "";
+      });
+
+      expect(getBranchCommitCount("abc123", "/repo")).toBe(0);
+    });
+
+    it("returns 0 when the base commit is missing", () => {
+      expect(getBranchCommitCount("", "/repo")).toBe(0);
+    });
+  });
+
+  describe("findLegacyRunBaseCommit", () => {
+    it("derives the branch base from the initialize marker parent", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git log --first-parent --reverse --format=%H%x09%s HEAD") {
+          return [
+            "abc123\tinitial repo commit",
+            "def456\tgnhf: initialize run run-abc",
+            "ghi789\tgnhf #1: add tests",
+          ].join("\n");
+        }
+        if (cmd === "git rev-parse def456^") {
+          return "abc123";
+        }
+        return "";
+      });
+
+      expect(findLegacyRunBaseCommit("run-abc", "/repo")).toBe("abc123");
+    });
+
+    it("returns null when no legacy marker exists", () => {
+      mockExecSync.mockReturnValue("abc123\tinitial repo commit");
+      expect(findLegacyRunBaseCommit("run-abc", "/repo")).toBeNull();
     });
   });
 

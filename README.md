@@ -132,7 +132,7 @@ npm link
 
 | Flag              | Description                        | Default  |
 | ----------------- | ---------------------------------- | -------- |
-| `--agent <agent>` | Agent to use (`claude` or `codex`) | `claude` |
+| `--agent <agent>` | Agent to use (`claude` or `codex`) | config file (`claude`) |
 | `--version`       | Show version                       |          |
 
 ## Configuration

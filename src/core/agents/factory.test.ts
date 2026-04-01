@@ -29,6 +29,8 @@ const stubRunInfo: RunInfo = {
   promptPath: "/repo/.gnhf/runs/test-run/PROMPT.md",
   notesPath: "/repo/.gnhf/runs/test-run/notes.md",
   schemaPath: "/repo/.gnhf/runs/test-run/schema.json",
+  baseCommit: "abc123",
+  baseCommitPath: "/repo/.gnhf/runs/test-run/base-commit",
 };
 
 describe("createAgent", () => {

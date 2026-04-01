@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Agent, AgentOutput, TokenUsage } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
-import { commitAll, resetHard } from "./git.js";
+import { commitAll, getBranchCommitCount, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 
@@ -21,6 +21,7 @@ export interface OrchestratorState {
   currentIteration: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  commitCount: number;
   iterations: IterationRecord[];
   successCount: number;
   failCount: number;
@@ -52,6 +53,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     currentIteration: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    commitCount: 0,
     iterations: [],
     successCount: 0,
     failCount: 0,
@@ -76,6 +78,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.prompt = prompt;
     this.cwd = cwd;
     this.state.currentIteration = startIteration;
+    this.state.commitCount = getBranchCommitCount(
+      this.runInfo.baseCommit,
+      this.cwd,
+    );
   }
 
   getState(): OrchestratorState {
@@ -196,6 +202,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     );
     commitAll(
       `gnhf #${this.state.currentIteration}: ${output.summary}`,
+      this.cwd,
+    );
+    this.state.commitCount = getBranchCommitCount(
+      this.runInfo.baseCommit,
       this.cwd,
     );
     this.state.successCount++;

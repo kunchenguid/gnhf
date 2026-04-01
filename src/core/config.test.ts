@@ -2,16 +2,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
 
 vi.mock("node:os", () => ({
   homedir: vi.fn(() => "/mock-home"),
 }));
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { loadConfig } from "./config.js";
 
+const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockWriteFileSync = vi.mocked(writeFileSync);
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -24,8 +28,55 @@ describe("loadConfig", () => {
     });
 
     const config = loadConfig();
+
+    expect(mockMkdirSync).toHaveBeenCalledWith("/mock-home/.gnhf", {
+      recursive: true,
+    });
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/mock-home/.gnhf/config.yml",
+      "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "utf-8",
+    );
     expect(config).toEqual({
       agent: "claude",
+      maxConsecutiveFailures: 3,
+    });
+  });
+
+  it("still returns defaults when default config creation fails", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+    mockWriteFileSync.mockImplementation(() => {
+      throw new Error("EPERM");
+    });
+
+    const config = loadConfig();
+
+    expect(config).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+    });
+  });
+
+  it("writes override values when bootstrapping a missing config file", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "codex" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/mock-home/.gnhf/config.yml",
+      "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "codex",
       maxConsecutiveFailures: 3,
     });
   });

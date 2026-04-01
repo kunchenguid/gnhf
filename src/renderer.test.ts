@@ -6,7 +6,9 @@ import {
   renderAgentMessage,
   renderMoonStrip,
   renderStarFieldLines,
+  buildFrame,
 } from "./renderer.js";
+import type { OrchestratorState } from "./core/orchestrator.js";
 
 describe("renderTitle", () => {
   it("renders the gnhf eyebrow above the ASCII art", () => {
@@ -26,15 +28,16 @@ describe("renderTitle", () => {
 });
 
 describe("renderStats", () => {
-  it("renders elapsed, input tokens, and output tokens", () => {
-    const line = stripAnsi(renderStats("01:23:45", 12400, 8200));
+  it("renders elapsed, input tokens, output tokens, and commits", () => {
+    const line = stripAnsi(renderStats("01:23:45", 12400, 8200, 12));
     expect(line).toContain("01:23:45");
     expect(line).toContain("12K");
     expect(line).toContain("8K");
+    expect(line).toContain("12 commits");
   });
 
   it("does not contain iteration", () => {
-    const line = stripAnsi(renderStats("00:00:00", 0, 0));
+    const line = stripAnsi(renderStats("00:00:00", 0, 0, 0));
     expect(line).not.toContain("iteration");
   });
 });
@@ -114,5 +117,70 @@ describe("renderStarFieldLines", () => {
       .map(stripAnsi)
       .join("\n");
     expect(/[·✧⋆°]/.test(text)).toBe(true);
+  });
+});
+
+describe("buildFrame", () => {
+  const stripCursorHome = (frame: string) =>
+    frame.startsWith("\x1b[H") ? frame.slice(3) : frame;
+
+  it("shows the stop and resume hint on the second-to-last row with blank bottom padding", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const frame = buildFrame("ship it", state, [], [], [], Date.now(), 80, 30);
+    const lines = stripCursorHome(frame).split("\n");
+    const rawHintLine = lines.at(-2) ?? "";
+    const hintLine = stripAnsi(rawHintLine);
+
+    expect(hintLine.trim()).toBe("[ctrl+c to stop, gnhf again to resume]");
+    expect(rawHintLine).toContain("\x1b[2m");
+    expect(stripAnsi(lines.at(-1) ?? "").trim()).toBe("");
+
+    const leftPad = hintLine.indexOf("[");
+    const rightPad = hintLine.length - leftPad - hintLine.trim().length;
+    expect(Math.abs(leftPad - rightPad)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps all moon rows visible on tight terminals by reserving a real footer row", () => {
+    const state: OrchestratorState = {
+      status: "done",
+      currentIteration: 61,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: Array.from({ length: 61 }, (_, index) => ({
+        iteration: index + 1,
+        success: true,
+      })),
+      successCount: 61,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const frame = buildFrame("ship it", state, [], [], [], Date.now(), 80, 24);
+    const lines = stripCursorHome(frame).split("\n");
+    const plainLines = lines.map(stripAnsi);
+    const moonLines = plainLines.filter((line) => /🌕/.test(line));
+
+    expect(lines).toHaveLength(24);
+    expect(moonLines).toHaveLength(3);
+    expect(plainLines.at(-2)?.trim()).toBe("[ctrl+c to stop, gnhf again to resume]");
+    expect(plainLines.at(-1)?.trim()).toBe("");
   });
 });
