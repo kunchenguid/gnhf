@@ -38,6 +38,14 @@ function parseNonNegativeInteger(value: string): number {
   return parsed;
 }
 
+function humanizeErrorMessage(message: string): string {
+  if (message.includes("not a git repository")) {
+    return 'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
+  }
+
+  return message;
+}
+
 function initializeNewBranch(prompt: string, cwd: string): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
@@ -213,7 +221,7 @@ function exitAltScreen() {
 }
 
 function die(message: string): never {
-  console.error(`\n  gnhf: ${message}\n`);
+  console.error(`\n  gnhf: ${humanizeErrorMessage(message)}\n`);
   process.exit(1);
 }
 

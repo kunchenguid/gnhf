@@ -1,15 +1,51 @@
 import { execSync } from "node:child_process";
 
+const NOT_GIT_REPOSITORY_MESSAGE =
+  'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
+
+function translateGitError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function git(args: string, cwd: string): string {
-  return execSync(`git ${args}`, {
-    cwd,
-    encoding: "utf-8",
-    stdio: "pipe",
-  }).trim();
+  try {
+    return execSync(`git ${args}`, {
+      cwd,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+  } catch (error) {
+    throw translateGitError(error);
+  }
+}
+
+function isGitRepository(cwd: string): boolean {
+  try {
+    execSync("git rev-parse --git-dir", {
+      cwd,
+      encoding: "utf-8",
+      stdio: "pipe",
+      env: { ...process.env, LC_ALL: "C" },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureGitRepository(cwd: string): void {
+  if (!isGitRepository(cwd)) {
+    throw new Error(NOT_GIT_REPOSITORY_MESSAGE);
+  }
 }
 
 export function getCurrentBranch(cwd: string): string {
-  return git("rev-parse --abbrev-ref HEAD", cwd);
+  ensureGitRepository(cwd);
+  try {
+    return git("symbolic-ref --short HEAD", cwd);
+  } catch {
+    return git("rev-parse --abbrev-ref HEAD", cwd);
+  }
 }
 
 export function ensureCleanWorkingTree(cwd: string): void {
