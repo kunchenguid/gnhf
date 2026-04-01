@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.4...gnhf-v0.1.5) (2026-04-01)
+
+
+### Bug Fixes
+
+* **cli:** show friendly non-git error ([#7](https://github.com/kunchenguid/gnhf/issues/7)) ([65acf6b](https://github.com/kunchenguid/gnhf/commit/65acf6be343b805b99a6011d1562ac54b05b6760))
+
 ## [0.1.4](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.3...gnhf-v0.1.4) (2026-04-01)
 
 
