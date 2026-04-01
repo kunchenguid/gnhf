@@ -1,23 +1,13 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import type {
-  Agent,
-  AgentResult,
-  AgentOutput,
-  TokenUsage,
-  AgentRunOptions,
+import {
+  AGENT_OUTPUT_SCHEMA,
+  type Agent,
+  type AgentResult,
+  type AgentOutput,
+  type TokenUsage,
+  type AgentRunOptions,
 } from "./types.js";
-
-const OUTPUT_SCHEMA = JSON.stringify({
-  type: "object",
-  properties: {
-    success: { type: "boolean" },
-    summary: { type: "string" },
-    key_changes_made: { type: "array", items: { type: "string" } },
-    key_learnings: { type: "array", items: { type: "string" } },
-  },
-  required: ["success", "summary", "key_changes_made", "key_learnings"],
-});
 
 interface ClaudeAssistantEvent {
   type: "assistant";
@@ -69,7 +59,7 @@ export class ClaudeAgent implements Agent {
           "--output-format",
           "stream-json",
           "--json-schema",
-          OUTPUT_SCHEMA,
+          JSON.stringify(AGENT_OUTPUT_SCHEMA),
           "--dangerously-skip-permissions",
         ],
         { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
