@@ -8,6 +8,7 @@ import {
   type TokenUsage,
   type AgentRunOptions,
 } from "./types.js";
+import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
 
 interface ClaudeAssistantEvent {
   type: "assistant";
@@ -65,21 +66,9 @@ export class ClaudeAgent implements Agent {
         { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
       );
 
-      if (signal) {
-        const onAbort = () => {
-          child.kill("SIGTERM");
-          reject(new Error("Agent was aborted"));
-        };
-        if (signal.aborted) {
-          onAbort();
-          return;
-        }
-        signal.addEventListener("abort", onAbort, { once: true });
-        child.on("close", () => signal.removeEventListener("abort", onAbort));
-      }
+      if (setupAbortHandler(signal, child, reject)) return;
 
       let stderr = "";
-      let buffer = "";
       let resultEvent: ClaudeResultEvent | null = null;
       const cumulative: TokenUsage = {
         inputTokens: 0,
@@ -88,51 +77,36 @@ export class ClaudeAgent implements Agent {
         cacheCreationTokens: 0,
       };
 
-      child.stdout.on("data", (data: Buffer) => {
-        logStream?.write(data);
-        buffer += data.toString();
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+      parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
+        if (event.type === "assistant") {
+          const msg = (event as ClaudeAssistantEvent).message;
+          cumulative.inputTokens +=
+            (msg.usage.input_tokens ?? 0) +
+            (msg.usage.cache_read_input_tokens ?? 0);
+          cumulative.outputTokens += msg.usage.output_tokens ?? 0;
+          cumulative.cacheReadTokens += msg.usage.cache_read_input_tokens ?? 0;
+          cumulative.cacheCreationTokens +=
+            msg.usage.cache_creation_input_tokens ?? 0;
+          onUsage?.({ ...cumulative });
 
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line) as ClaudeEvent;
-
-            if (event.type === "assistant") {
-              const msg = (event as ClaudeAssistantEvent).message;
-              cumulative.inputTokens +=
-                (msg.usage.input_tokens ?? 0) +
-                (msg.usage.cache_read_input_tokens ?? 0);
-              cumulative.outputTokens += msg.usage.output_tokens ?? 0;
-              cumulative.cacheReadTokens +=
-                msg.usage.cache_read_input_tokens ?? 0;
-              cumulative.cacheCreationTokens +=
-                msg.usage.cache_creation_input_tokens ?? 0;
-              onUsage?.({ ...cumulative });
-
-              if (onMessage) {
-                const content = (msg as Record<string, unknown>).content;
-                if (Array.isArray(content)) {
-                  for (const block of content) {
-                    if (
-                      block?.type === "text" &&
-                      typeof block.text === "string" &&
-                      block.text.trim()
-                    ) {
-                      onMessage(block.text.trim());
-                    }
-                  }
+          if (onMessage) {
+            const content = (msg as Record<string, unknown>).content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (
+                  block?.type === "text" &&
+                  typeof block.text === "string" &&
+                  block.text.trim()
+                ) {
+                  onMessage(block.text.trim());
                 }
               }
             }
-
-            if (event.type === "result") {
-              resultEvent = event as ClaudeResultEvent;
-            }
-          } catch {
-            // Skip unparseable lines
           }
+        }
+
+        if (event.type === "result") {
+          resultEvent = event as ClaudeResultEvent;
         }
       });
 
