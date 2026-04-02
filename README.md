@@ -149,7 +149,7 @@ npm link
 | `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`) | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                           | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                  | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on` or `off`)        | config file (`on`)     |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
 | `--version`              | Show version                                               |                        |
 
 ## Configuration
@@ -169,7 +169,8 @@ preventSleep: true
 
 If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
 
-CLI flags override config file values. The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
+The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
 When sleep prevention is enabled, `gnhf` uses the native mechanism for your OS: `caffeinate` on macOS, `systemd-inhibit` on Linux, and a small PowerShell helper backed by `SetThreadExecutionState` on Windows.
 
 ## Debug Logs
@@ -196,8 +197,8 @@ GNHF_DEBUG_LOG_PATH=/tmp/gnhf-debug.jsonl gnhf "ship it"
 ```sh
 npm run build          # Build with tsdown
 npm run dev            # Watch mode
-npm test               # Run tests (vitest)
-npm run test:e2e       # Run end-to-end tests against the mock opencode executable
+npm test               # Build, then run unit tests (vitest)
+npm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
 npm run lint           # ESLint
 npm run format         # Prettier
 ```
