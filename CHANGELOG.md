@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.7...gnhf-v0.1.8) (2026-04-02)
+
+
+### Bug Fixes
+
+* **schema:** enforce strict output schema ([#14](https://github.com/kunchenguid/gnhf/issues/14)) ([085aef7](https://github.com/kunchenguid/gnhf/commit/085aef74ba647a582aa280697213790abfa49cfa))
+
 ## [0.1.7](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.6...gnhf-v0.1.7) (2026-04-01)
 
 
