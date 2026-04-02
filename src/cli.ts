@@ -1,4 +1,12 @@
-import { readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  rmdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
@@ -28,6 +36,10 @@ const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
 const FORCE_EXIT_TIMEOUT_MS = 5_000;
+const GNHF_REEXEC_STDIN_PROMPT = "GNHF_REEXEC_STDIN_PROMPT";
+const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
+const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
+const GNHF_REEXEC_STDIN_PROMPT_FILENAME = "prompt.txt";
 
 function parseNonNegativeInteger(value: string): number {
   if (!/^\d+$/.test(value)) {
@@ -84,6 +96,67 @@ function getSignalExitCode(signal: NodeJS.Signals): number {
   return signal === "SIGINT" ? 130 : 143;
 }
 
+function persistStdinPromptForReexec(prompt: string): {
+  path: string;
+  cleanup: () => void;
+} {
+  const promptDir = mkdtempSync(
+    join(tmpdir(), GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX),
+  );
+  const promptPath = join(promptDir, GNHF_REEXEC_STDIN_PROMPT_FILENAME);
+  writeFileSync(promptPath, prompt, { encoding: "utf-8", mode: 0o600 });
+  return {
+    path: promptPath,
+    cleanup: () => {
+      rmSync(promptDir, { recursive: true, force: true });
+    },
+  };
+}
+
+function isTrustedReexecPromptPath(promptPath: string): boolean {
+  const resolvedPromptPath = resolve(promptPath);
+  const promptDir = dirname(resolvedPromptPath);
+  return (
+    basename(resolvedPromptPath) === GNHF_REEXEC_STDIN_PROMPT_FILENAME &&
+    dirname(promptDir) === resolve(tmpdir()) &&
+    basename(promptDir).startsWith(GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX)
+  );
+}
+
+function cleanupTrustedReexecPromptPath(promptPath: string): void {
+  if (!isTrustedReexecPromptPath(promptPath)) {
+    return;
+  }
+
+  const resolvedPromptPath = resolve(promptPath);
+  rmSync(resolvedPromptPath, { force: true });
+  try {
+    rmdirSync(dirname(resolvedPromptPath));
+  } catch {
+    // Leave the directory in place if anything unexpected remains.
+  }
+}
+
+function readReexecStdinPrompt(env: NodeJS.ProcessEnv): string | undefined {
+  const promptPath = env[GNHF_REEXEC_STDIN_PROMPT_FILE];
+  if (promptPath !== undefined) {
+    delete env[GNHF_REEXEC_STDIN_PROMPT_FILE];
+    try {
+      return readFileSync(promptPath, "utf-8");
+    } finally {
+      cleanupTrustedReexecPromptPath(promptPath);
+    }
+  }
+
+  const prompt = env[GNHF_REEXEC_STDIN_PROMPT];
+  if (prompt !== undefined) {
+    delete env[GNHF_REEXEC_STDIN_PROMPT];
+    return prompt;
+  }
+
+  return undefined;
+}
+
 const program = new Command();
 
 program
@@ -122,10 +195,6 @@ program
         mock: boolean;
       },
     ) => {
-      appendDebugLog("run:start", {
-        args: process.argv.slice(2),
-      });
-
       if (options.mock) {
         const mock = new MockOrchestrator();
         enterAltScreen();
@@ -140,7 +209,16 @@ program
         exitAltScreen();
         return;
       }
+      let initialSleepPrevention: Awaited<
+        ReturnType<typeof startSleepPrevention>
+      > | null = null;
+      if (process.env.GNHF_SLEEP_INHIBITED === "1") {
+        initialSleepPrevention = await startSleepPrevention(
+          process.argv.slice(2),
+        );
+      }
       let prompt = promptArg;
+      let promptFromStdin = false;
 
       const agentName = options.agent;
       if (
@@ -156,16 +234,19 @@ program
         process.exit(1);
       }
 
-      const config = loadConfig({
-        ...(agentName
+      const loadedConfig = loadConfig(
+        agentName
           ? {
               agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
             }
-          : {}),
+          : {},
+      );
+      const config = {
+        ...loadedConfig,
         ...(options.preventSleep === undefined
           ? {}
           : { preventSleep: options.preventSleep }),
-      });
+      };
       if (
         config.agent !== "claude" &&
         config.agent !== "codex" &&
@@ -178,21 +259,12 @@ program
         process.exit(1);
       }
 
-      let sleepPreventionCleanup: (() => Promise<void>) | null = null;
-      if (config.preventSleep) {
-        const sleepPrevention = await startSleepPrevention(
-          process.argv.slice(2),
-        );
-        if (sleepPrevention.type === "reexeced") {
-          process.exit(sleepPrevention.exitCode);
-        }
-        if (sleepPrevention.type === "active") {
-          sleepPreventionCleanup = sleepPrevention.cleanup;
-        }
+      if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
+        prompt = readReexecStdinPrompt(process.env);
       }
-
       if (!prompt && !process.stdin.isTTY) {
         prompt = await readStdinText(process.stdin);
+        promptFromStdin = true;
       }
 
       const cwd = process.cwd();
@@ -239,6 +311,41 @@ program
         runInfo = initializeNewBranch(prompt, cwd);
       }
 
+      let sleepPreventionCleanup: (() => Promise<void>) | null = null;
+      if (config.preventSleep) {
+        const persistedPrompt =
+          promptFromStdin && prompt !== undefined
+            ? persistStdinPromptForReexec(prompt)
+            : null;
+        let reexeced = false;
+        try {
+          const sleepPrevention =
+            initialSleepPrevention ??
+            (await startSleepPrevention(process.argv.slice(2), {
+              reexecEnv: persistedPrompt
+                ? {
+                    [GNHF_REEXEC_STDIN_PROMPT_FILE]: persistedPrompt.path,
+                  }
+                : undefined,
+            }));
+          if (sleepPrevention.type === "reexeced") {
+            reexeced = true;
+            process.exit(sleepPrevention.exitCode);
+          }
+          if (sleepPrevention.type === "active") {
+            sleepPreventionCleanup = sleepPrevention.cleanup;
+          }
+        } finally {
+          if (!reexeced) {
+            persistedPrompt?.cleanup();
+          }
+        }
+      }
+
+      appendDebugLog("run:start", {
+        args: process.argv.slice(2),
+      });
+
       const agent = createAgent(config.agent, runInfo);
       const orchestrator = new Orchestrator(
         config,
@@ -281,7 +388,11 @@ program
         });
 
       try {
-        await renderer.waitUntilExit();
+        const rendererExitReason = await renderer.waitUntilExit();
+        if (rendererExitReason === "interrupted" && !shutdownSignal) {
+          shutdownSignal = "SIGINT";
+          appendDebugLog("signal:SIGINT");
+        }
         exitAltScreen();
         const shutdownResult = await Promise.race([
           orchestratorPromise.then(() => "done" as const),
@@ -297,7 +408,7 @@ program
           console.error(
             `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
           );
-          process.exit(130);
+          process.exit(getSignalExitCode(shutdownSignal ?? "SIGINT"));
         }
       } finally {
         process.off("SIGINT", handleSigInt);

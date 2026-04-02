@@ -149,6 +149,36 @@ describe("loadConfig", () => {
     });
   });
 
+  it('coerces quoted "false" for preventSleep to a boolean false', () => {
+    mockReadFileSync.mockReturnValue('preventSleep: "false"\n');
+
+    const config = loadConfig();
+
+    expect(config).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+  });
+
+  it('coerces "off" for preventSleep to a boolean false', () => {
+    mockReadFileSync.mockReturnValue("preventSleep: off\n");
+
+    const config = loadConfig();
+
+    expect(config).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+  });
+
+  it("throws when preventSleep has an unrecognized value", () => {
+    mockReadFileSync.mockReturnValue("preventSleep: flase\n");
+
+    expect(() => loadConfig()).toThrow(/Invalid config value for preventSleep/);
+  });
+
   it("overrides take precedence over file config and defaults", () => {
     mockReadFileSync.mockReturnValue(
       "agent: codex\nmaxConsecutiveFailures: 10\npreventSleep: false\n",

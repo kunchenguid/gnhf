@@ -44,8 +44,11 @@ export interface RunLimits {
   maxTokens?: number;
 }
 
+const STOP_CLOSE_AGENT_GRACE_MS = 250;
+
 type RunIterationResult =
   | { type: "completed"; record: IterationRecord }
+  | { type: "stopped" }
   | { type: "aborted"; reason: string };
 
 export class Orchestrator extends EventEmitter<OrchestratorEvents> {
@@ -110,8 +113,27 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     if (this.stopPromise) return;
 
     this.stopPromise = (async () => {
-      await this.activeIterationPromise?.catch(() => undefined);
-      await this.closeAgent();
+      if (this.activeIterationPromise) {
+        const iterationPromise = this.activeIterationPromise.catch(
+          () => undefined,
+        );
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const settle = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(settle, STOP_CLOSE_AGENT_GRACE_MS);
+          timer.unref?.();
+          void iterationPromise.finally(settle);
+        });
+        await this.closeAgent();
+        await iterationPromise;
+      } else {
+        await this.closeAgent();
+      }
       resetHard(this.cwd);
       this.state.status = "stopped";
       this.emit("state", this.getState());
@@ -146,6 +168,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.activeIterationPromise = this.runIteration(iterationPrompt);
         const result = await this.activeIterationPromise;
         this.activeIterationPromise = null;
+        if (result.type === "stopped") {
+          break;
+        }
         if (result.type === "aborted") {
           this.abort(result.reason);
           break;
@@ -238,6 +263,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         logPath,
       });
 
+      if (this.stopRequested) {
+        return { type: "stopped" };
+      }
+
       if (result.output.success) {
         return { type: "completed", record: this.recordSuccess(result.output) };
       }
@@ -257,6 +286,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       ) {
         resetHard(this.cwd);
         return { type: "aborted", reason: this.pendingAbortReason };
+      }
+
+      if (this.stopRequested) {
+        return { type: "stopped" };
       }
 
       const summary = err instanceof Error ? err.message : String(err);

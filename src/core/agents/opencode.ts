@@ -1,4 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import {
@@ -79,6 +83,7 @@ interface OpenCodeDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  platform?: NodeJS.Platform;
   spawn?: typeof spawn;
 }
 
@@ -137,6 +142,21 @@ function buildPrompt(prompt: string): string {
     "Do not include any prose before or after the JSON.",
     `The JSON must match this schema exactly: ${JSON.stringify(AGENT_OUTPUT_SCHEMA)}`,
   ].join("\n");
+}
+
+/**
+ * On Windows with `shell: true`, `child.pid` is the `cmd.exe` wrapper, not
+ * the actual server process.  `taskkill /T` terminates the entire process
+ * tree rooted at that PID so the real server doesn't survive shutdown.
+ */
+async function killWindowsProcessTree(pid: number): Promise<void> {
+  try {
+    execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
+      stdio: "ignore",
+    });
+  } catch {
+    // Best-effort: the process may have already exited.
+  }
 }
 
 function createAbortError(): Error {
@@ -227,6 +247,7 @@ export class OpenCodeAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private platform: NodeJS.Platform;
   private spawnFn: typeof spawn;
   private server: OpenCodeServer | null = null;
   private closingPromise: Promise<void> | null = null;
@@ -235,6 +256,7 @@ export class OpenCodeAgent implements Agent {
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
+    this.platform = deps.platform ?? process.platform;
     this.spawnFn = deps.spawn ?? spawn;
   }
 
@@ -311,7 +333,8 @@ export class OpenCodeAgent implements Agent {
     }
 
     const port = await this.getPortFn();
-    const detached = process.platform !== "win32";
+    const isWindows = this.platform === "win32";
+    const detached = !isWindows;
     const child = this.spawnFn(
       "opencode",
       [
@@ -325,6 +348,7 @@ export class OpenCodeAgent implements Agent {
       {
         cwd,
         detached,
+        shell: isWindows,
         stdio: ["ignore", "pipe", "pipe"],
         env: buildOpencodeChildEnv(),
       },
@@ -794,11 +818,15 @@ export class OpenCodeAgent implements Agent {
     const server = this.server;
     appendDebugLog("opencode:shutdown", { cwd: server.cwd, port: server.port });
 
-    this.closingPromise = shutdownChildProcess(server.child, {
-      detached: server.detached,
-      killProcess: this.killProcessFn,
-      timeoutMs: 3_000,
-    }).finally(() => {
+    this.closingPromise = (
+      this.platform === "win32" && server.child.pid
+        ? killWindowsProcessTree(server.child.pid)
+        : shutdownChildProcess(server.child, {
+            detached: server.detached,
+            killProcess: this.killProcessFn,
+            timeoutMs: 3_000,
+          })
+    ).finally(() => {
       if (this.server === server) {
         this.server = null;
       }

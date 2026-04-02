@@ -283,7 +283,7 @@ describe("Renderer ctrl+c", () => {
       expect(dataHandler).not.toBeNull();
       dataHandler?.(Buffer.from([3]));
 
-      await renderer.waitUntilExit();
+      await expect(renderer.waitUntilExit()).resolves.toBe("interrupted");
 
       expect(
         orchestrator.stop as ReturnType<typeof vi.fn>,

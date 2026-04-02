@@ -7,10 +7,11 @@ import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(),
   spawn: vi.fn(),
 }));
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { OpenCodeAgent } from "./opencode.js";
 import { AGENT_OUTPUT_SCHEMA } from "./types.js";
 
@@ -266,7 +267,9 @@ describe("OpenCodeAgent", () => {
       cacheReadTokens: 3,
       cacheCreationTokens: 2,
     });
-    expect(readFileSync(logPath, "utf-8")).toContain("message.part.delta");
+    await vi.waitFor(() => {
+      expect(readFileSync(logPath, "utf-8")).toContain("message.part.delta");
+    });
 
     resolveMessageResponse(
       finalMessageResponse("done", { input: 10, output: 4, read: 3, write: 2 }),
@@ -455,6 +458,99 @@ describe("OpenCodeAgent", () => {
     expect(onMessage).toHaveBeenCalledWith(
       '{"success":true,"summary":"done","key_changes_made":[],"key_learnings":[]}',
     );
+  });
+
+  it("uses a shell on Windows so PATH-resolved .cmd shims can launch", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const windowsAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "session-123",
+          directory: "/repo",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 1,
+            output: 1,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await windowsAgent.run("test prompt", "/repo");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "opencode",
+      ["serve", "--hostname", "127.0.0.1", "--port", "8765", "--print-logs"],
+      expect.objectContaining({
+        cwd: "/repo",
+        detached: false,
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    );
+  });
+
+  it("kills the full process tree on Windows so the opencode server does not survive shutdown", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 5678 });
+    mockSpawn.mockReturnValue(proc);
+
+    const windowsAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await windowsAgent.run("test", "/repo");
+    await windowsAgent.close();
+
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledWith(
+      "taskkill",
+      ["/T", "/F", "/PID", "5678"],
+      { stdio: "ignore" },
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
   });
 
   it("reuses the existing server process across runs in the same cwd", async () => {
@@ -665,6 +761,14 @@ describe("OpenCodeAgent", () => {
   it("force terminates opencode if shutdown exceeds the timeout", async () => {
     vi.useFakeTimers();
     const proc = createMockProcess();
+    vi.mocked(proc.kill).mockImplementation((signal?: NodeJS.Signals) => {
+      if (signal === "SIGKILL") {
+        queueMicrotask(() => {
+          proc.emit("close", 0, null);
+        });
+      }
+      return true;
+    });
     mockSpawn.mockReturnValue(proc);
 
     fetchMock

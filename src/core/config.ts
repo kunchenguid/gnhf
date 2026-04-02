@@ -15,6 +15,41 @@ const DEFAULT_CONFIG: Config = {
   preventSleep: true,
 };
 
+class InvalidConfigError extends Error {}
+
+function normalizePreventSleep(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "on") return true;
+  if (value === "off") return false;
+  return undefined;
+}
+
+function normalizeConfig(config: Partial<Config>): Partial<Config> {
+  const normalized: Partial<Config> = { ...config };
+  const hasPreventSleep = Object.prototype.hasOwnProperty.call(
+    config,
+    "preventSleep",
+  );
+  const preventSleep = normalizePreventSleep(config.preventSleep);
+
+  if (preventSleep === undefined) {
+    if (hasPreventSleep && config.preventSleep !== undefined) {
+      throw new InvalidConfigError(
+        `Invalid config value for preventSleep: ${String(config.preventSleep)}`,
+      );
+    }
+    delete normalized.preventSleep;
+  } else {
+    normalized.preventSleep = preventSleep;
+  }
+
+  return normalized;
+}
+
 function isMissingConfigError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return "code" in error
@@ -42,8 +77,11 @@ export function loadConfig(overrides?: Partial<Config>): Config {
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    fileConfig = (yaml.load(raw) as Partial<Config>) ?? {};
+    fileConfig = normalizeConfig((yaml.load(raw) as Partial<Config>) ?? {});
   } catch (error) {
+    if (error instanceof InvalidConfigError) {
+      throw error;
+    }
     if (isMissingConfigError(error)) {
       shouldBootstrapConfig = true;
     }
@@ -51,7 +89,11 @@ export function loadConfig(overrides?: Partial<Config>): Config {
     // Config file doesn't exist or is invalid -- use defaults
   }
 
-  const resolvedConfig = { ...DEFAULT_CONFIG, ...fileConfig, ...overrides };
+  const resolvedConfig = {
+    ...DEFAULT_CONFIG,
+    ...fileConfig,
+    ...normalizeConfig(overrides ?? {}),
+  };
 
   if (shouldBootstrapConfig) {
     try {

@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
+import console from "node:console";
+import { Buffer } from "node:buffer";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import process from "node:process";
+import { setTimeout } from "node:timers";
 
 function appendLog(event, details = {}) {
   const logPath = process.env.GNHF_MOCK_OPENCODE_LOG_PATH;

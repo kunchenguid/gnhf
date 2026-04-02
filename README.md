@@ -144,13 +144,13 @@ npm link
 
 ### Flags
 
-| Flag                     | Description                                                | Default                |
-| ------------------------ | ---------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`) | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                           | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                  | unlimited              |
+| Flag                     | Description                                                        | Default                |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)         | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                   | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                          | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
-| `--version`              | Show version                                               |                        |
+| `--version`              | Show version                                                       |                        |
 
 ## Configuration
 
