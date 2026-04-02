@@ -6,11 +6,13 @@ import yaml from "js-yaml";
 export interface Config {
   agent: "claude" | "codex" | "rovodev" | "opencode";
   maxConsecutiveFailures: number;
+  preventSleep: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
   agent: "claude",
   maxConsecutiveFailures: 3,
+  preventSleep: true,
 };
 
 function isMissingConfigError(error: unknown): boolean {
@@ -26,6 +28,9 @@ agent: ${config.agent}
 
 # Abort after this many consecutive failures
 maxConsecutiveFailures: ${config.maxConsecutiveFailures}
+
+# Prevent the machine from sleeping during a run
+preventSleep: ${config.preventSleep}
 `;
 }
 

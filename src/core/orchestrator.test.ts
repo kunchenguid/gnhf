@@ -117,7 +117,7 @@ describe("Orchestrator stop limits", () => {
       name: "claude",
       run: vi.fn(
         (_prompt, _cwd, options) =>
-          new Promise((_resolve, reject) => {
+          new Promise<AgentResult>((_resolve, reject) => {
             options?.signal?.addEventListener("abort", () => {
               reject(new Error("Agent was aborted"));
             });
@@ -156,7 +156,7 @@ describe("Orchestrator stop limits", () => {
     });
   });
 
-  it("closes the agent when stop is requested", () => {
+  it("closes the agent when stop is requested", async () => {
     const close = vi.fn();
     const agent: Agent = {
       name: "claude",
@@ -172,6 +172,7 @@ describe("Orchestrator stop limits", () => {
     );
 
     orchestrator.stop();
+    await Promise.resolve();
 
     expect(close).toHaveBeenCalledTimes(1);
   });
@@ -201,6 +202,7 @@ describe("Orchestrator stop limits", () => {
     orchestrator.on("stopped", stopped);
 
     orchestrator.stop();
+    await Promise.resolve();
 
     expect(close).toHaveBeenCalledTimes(1);
     expect(stopped).not.toHaveBeenCalled();
@@ -210,5 +212,47 @@ describe("Orchestrator stop limits", () => {
     await Promise.resolve();
 
     expect(stopped).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the active iteration to unwind before closing the agent", async () => {
+    let rejectRun!: (error: Error) => void;
+    const close = vi.fn(() => Promise.resolve());
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        (_prompt, _cwd, options) =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            rejectRun = reject;
+            options?.signal?.addEventListener("abort", () => {
+              queueMicrotask(() => {
+                reject(new Error("Agent was aborted"));
+              });
+            });
+          }),
+      ),
+      close,
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    orchestrator.stop();
+
+    expect(close).not.toHaveBeenCalled();
+
+    rejectRun(new Error("Agent was aborted"));
+    await startPromise;
+
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

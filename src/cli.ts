@@ -3,6 +3,7 @@ import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
 import { loadConfig } from "./core/config.js";
+import { appendDebugLog } from "./core/debug-log.js";
 import {
   ensureCleanWorkingTree,
   createBranch,
@@ -15,6 +16,8 @@ import {
   resumeRun,
   getLastIterationNumber,
 } from "./core/run.js";
+import { readStdinText } from "./core/stdin.js";
+import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
@@ -37,6 +40,14 @@ function parseNonNegativeInteger(value: string): number {
   }
 
   return parsed;
+}
+
+function parseOnOffBoolean(value: string): boolean {
+  if (value === "on" || value === "true") return true;
+  if (value === "off" || value === "false") return false;
+  throw new InvalidArgumentError(
+    'must be one of: "on", "off", "true", "false"',
+  );
 }
 
 function humanizeErrorMessage(message: string): string {
@@ -69,6 +80,10 @@ function ask(question: string): Promise<string> {
   });
 }
 
+function getSignalExitCode(signal: NodeJS.Signals): number {
+  return signal === "SIGINT" ? 130 : 143;
+}
+
 const program = new Command();
 
 program
@@ -90,6 +105,11 @@ program
     "Abort after N total input+output tokens",
     parseNonNegativeInteger,
   )
+  .option(
+    "--prevent-sleep <mode>",
+    'Prevent system sleep during the run ("on" or "off")',
+    parseOnOffBoolean,
+  )
   .option("--mock", "", false)
   .action(
     async (
@@ -98,9 +118,14 @@ program
         agent?: string;
         maxIterations?: number;
         maxTokens?: number;
+        preventSleep?: boolean;
         mock: boolean;
       },
     ) => {
+      appendDebugLog("run:start", {
+        args: process.argv.slice(2),
+      });
+
       if (options.mock) {
         const mock = new MockOrchestrator();
         enterAltScreen();
@@ -117,10 +142,6 @@ program
       }
       let prompt = promptArg;
 
-      if (!prompt && !process.stdin.isTTY) {
-        prompt = readFileSync("/dev/stdin", "utf-8").trim();
-      }
-
       const agentName = options.agent;
       if (
         agentName !== undefined &&
@@ -135,13 +156,16 @@ program
         process.exit(1);
       }
 
-      const config = loadConfig(
-        agentName
+      const config = loadConfig({
+        ...(agentName
           ? {
               agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
             }
-          : undefined,
-      );
+          : {}),
+        ...(options.preventSleep === undefined
+          ? {}
+          : { preventSleep: options.preventSleep }),
+      });
       if (
         config.agent !== "claude" &&
         config.agent !== "codex" &&
@@ -153,6 +177,24 @@ program
         );
         process.exit(1);
       }
+
+      let sleepPreventionCleanup: (() => Promise<void>) | null = null;
+      if (config.preventSleep) {
+        const sleepPrevention = await startSleepPrevention(
+          process.argv.slice(2),
+        );
+        if (sleepPrevention.type === "reexeced") {
+          process.exit(sleepPrevention.exitCode);
+        }
+        if (sleepPrevention.type === "active") {
+          sleepPreventionCleanup = sleepPrevention.cleanup;
+        }
+      }
+
+      if (!prompt && !process.stdin.isTTY) {
+        prompt = await readStdinText(process.stdin);
+      }
+
       const cwd = process.cwd();
 
       const currentBranch = getCurrentBranch(cwd);
@@ -210,10 +252,23 @@ program
           maxTokens: options.maxTokens,
         },
       );
+      let shutdownSignal: NodeJS.Signals | null = null;
 
       enterAltScreen();
       const renderer = new Renderer(orchestrator, prompt, config.agent);
       renderer.start();
+
+      const requestShutdown = (signal: NodeJS.Signals) => {
+        if (shutdownSignal) return;
+        shutdownSignal = signal;
+        appendDebugLog(`signal:${signal}`);
+        renderer.stop();
+        orchestrator.stop();
+      };
+      const handleSigInt = () => requestShutdown("SIGINT");
+      const handleSigTerm = () => requestShutdown("SIGTERM");
+      process.on("SIGINT", handleSigInt);
+      process.on("SIGTERM", handleSigTerm);
 
       const orchestratorPromise = orchestrator
         .start()
@@ -225,20 +280,37 @@ program
           die(err instanceof Error ? err.message : String(err));
         });
 
-      await renderer.waitUntilExit();
-      exitAltScreen();
-      const shutdownResult = await Promise.race([
-        orchestratorPromise.then(() => "done" as const),
-        new Promise<"timeout">((resolve) => {
-          setTimeout(() => resolve("timeout"), FORCE_EXIT_TIMEOUT_MS).unref();
-        }),
-      ]);
+      try {
+        await renderer.waitUntilExit();
+        exitAltScreen();
+        const shutdownResult = await Promise.race([
+          orchestratorPromise.then(() => "done" as const),
+          new Promise<"timeout">((resolve) => {
+            setTimeout(() => resolve("timeout"), FORCE_EXIT_TIMEOUT_MS).unref();
+          }),
+        ]);
 
-      if (shutdownResult === "timeout") {
-        console.error(
-          `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
-        );
-        process.exit(130);
+        if (shutdownResult === "timeout") {
+          appendDebugLog("run:shutdown-timeout", {
+            timeoutMs: FORCE_EXIT_TIMEOUT_MS,
+          });
+          console.error(
+            `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
+          );
+          process.exit(130);
+        }
+      } finally {
+        process.off("SIGINT", handleSigInt);
+        process.off("SIGTERM", handleSigTerm);
+        await sleepPreventionCleanup?.();
+      }
+
+      appendDebugLog("run:complete", {
+        signal: shutdownSignal,
+      });
+
+      if (shutdownSignal) {
+        process.exit(getSignalExitCode(shutdownSignal));
       }
     },
   );

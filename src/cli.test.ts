@@ -120,21 +120,32 @@ describe("cli", () => {
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation((() => undefined) as typeof process.exit);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
 
     process.argv = ["node", "gnhf", "-V"];
 
     try {
       vi.resetModules();
-      await import("./cli.js");
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
 
       expect(stdoutWrite).toHaveBeenCalledWith(`${packageVersion}\n`);
-      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(exitSpy).toHaveBeenNthCalledWith(1, 0);
+      expect(exitSpy).toHaveBeenNthCalledWith(2, 1);
     } finally {
       process.argv = originalArgv;
       stdoutWrite.mockRestore();
+      consoleError.mockRestore();
       exitSpy.mockRestore();
     }
   });
@@ -143,9 +154,10 @@ describe("cli", () => {
     const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
       agent: "codex",
       maxConsecutiveFailures: 3,
+      preventSleep: false,
     });
 
-    expect(loadConfig).toHaveBeenCalledWith(undefined);
+    expect(loadConfig).toHaveBeenCalledWith({});
     expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo);
   });
 
@@ -155,6 +167,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -168,6 +181,7 @@ describe("cli", () => {
       {
         agent: "rovodev",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -181,6 +195,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -194,6 +209,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -219,6 +235,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
       { orchestratorStart, rendererWaitUntilExit },
     );
@@ -253,6 +270,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
       {
         orchestratorStart: vi.fn(() => Promise.resolve()),
@@ -289,6 +307,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       })),
     }));
     vi.doMock("./core/git.js", () => ({

@@ -9,6 +9,8 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
+import { appendDebugLog } from "../debug-log.js";
+import { shutdownChildProcess } from "./managed-process.js";
 
 interface OpenCodeMessagePart {
   type?: string;
@@ -363,6 +365,7 @@ export class OpenCodeAgent implements Agent {
     });
 
     this.server = server;
+    appendDebugLog("opencode:spawn", { cwd, port, detached });
     server.readyPromise = this.waitForHealthy(server, signal).catch(
       async (error) => {
         await this.shutdownServer();
@@ -789,57 +792,20 @@ export class OpenCodeAgent implements Agent {
     }
 
     const server = this.server;
-    const waitForClose = new Promise<void>((resolve) => {
-      if (server.closed) {
-        resolve();
-        return;
+    appendDebugLog("opencode:shutdown", { cwd: server.cwd, port: server.port });
+
+    this.closingPromise = shutdownChildProcess(server.child, {
+      detached: server.detached,
+      killProcess: this.killProcessFn,
+      timeoutMs: 3_000,
+    }).finally(() => {
+      if (this.server === server) {
+        this.server = null;
       }
-      server.child.once("close", () => resolve());
+      this.closingPromise = null;
     });
-
-    try {
-      this.signalServer(server, "SIGTERM");
-    } catch {
-      // Best effort only.
-    }
-
-    const forceKill = new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (!server.closed) {
-          try {
-            this.signalServer(server, "SIGKILL");
-          } catch {
-            // Best effort only.
-          }
-        }
-        resolve();
-      }, 3_000);
-      timer.unref?.();
-    });
-
-    this.closingPromise = Promise.race([waitForClose, forceKill]).finally(
-      () => {
-        if (this.server === server) {
-          this.server = null;
-        }
-        this.closingPromise = null;
-      },
-    );
 
     await this.closingPromise;
-  }
-
-  private signalServer(server: OpenCodeServer, signal: NodeJS.Signals): void {
-    if (server.detached && server.child.pid) {
-      try {
-        this.killProcessFn(-server.child.pid, signal);
-        return;
-      } catch {
-        // Fall back to killing the direct child below.
-      }
-    }
-
-    server.child.kill(signal);
   }
 
   private async requestJSON<T>(

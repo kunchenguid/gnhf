@@ -34,12 +34,13 @@ describe("loadConfig", () => {
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -58,6 +59,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -72,12 +74,13 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "codex",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -92,12 +95,13 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "rovodev",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -112,12 +116,13 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "opencode",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -140,18 +145,24 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 10,
+      preventSleep: true,
     });
   });
 
   it("overrides take precedence over file config and defaults", () => {
     mockReadFileSync.mockReturnValue(
-      "agent: codex\nmaxConsecutiveFailures: 10\n",
+      "agent: codex\nmaxConsecutiveFailures: 10\npreventSleep: false\n",
     );
 
-    const config = loadConfig({ agent: "claude", maxConsecutiveFailures: 3 });
+    const config = loadConfig({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -162,6 +173,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -174,6 +186,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 });

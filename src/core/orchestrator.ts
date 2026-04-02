@@ -57,6 +57,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private limits: RunLimits;
   private stopRequested = false;
   private stopPromise: Promise<void> | null = null;
+  private activeIterationPromise: Promise<RunIterationResult> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
 
@@ -109,6 +110,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     if (this.stopPromise) return;
 
     this.stopPromise = (async () => {
+      await this.activeIterationPromise?.catch(() => undefined);
       await this.closeAgent();
       resetHard(this.cwd);
       this.state.status = "stopped";
@@ -141,7 +143,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           prompt: this.prompt,
         });
 
-        const result = await this.runIteration(iterationPrompt);
+        this.activeIterationPromise = this.runIteration(iterationPrompt);
+        const result = await this.activeIterationPromise;
+        this.activeIterationPromise = null;
         if (result.type === "aborted") {
           this.abort(result.reason);
           break;
@@ -184,6 +188,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         }
       }
     } finally {
+      this.activeIterationPromise = null;
       if (this.stopPromise) {
         await this.stopPromise;
       } else {
