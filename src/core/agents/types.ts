@@ -7,6 +7,7 @@ export interface AgentOutput {
 
 export const AGENT_OUTPUT_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     success: { type: "boolean" },
     summary: { type: "string" },
