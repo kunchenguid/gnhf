@@ -21,6 +21,14 @@ export interface RunInfo {
   baseCommitPath: string;
 }
 
+function writeSchemaFile(schemaPath: string): void {
+  writeFileSync(
+    schemaPath,
+    JSON.stringify(AGENT_OUTPUT_SCHEMA, null, 2),
+    "utf-8",
+  );
+}
+
 function ensureRunMetadataIgnored(cwd: string): void {
   const excludePath = execFileSync(
     "git",
@@ -67,11 +75,7 @@ export function setupRun(
   );
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeFileSync(
-    schemaPath,
-    JSON.stringify(AGENT_OUTPUT_SCHEMA, null, 2),
-    "utf-8",
-  );
+  writeSchemaFile(schemaPath);
 
   const baseCommitPath = join(runDir, "base-commit");
   const hasStoredBaseCommit = existsSync(baseCommitPath);
@@ -102,6 +106,7 @@ export function resumeRun(runId: string, cwd: string): RunInfo {
   const promptPath = join(runDir, "prompt.md");
   const notesPath = join(runDir, "notes.md");
   const schemaPath = join(runDir, "output-schema.json");
+  writeSchemaFile(schemaPath);
   const baseCommitPath = join(runDir, "base-commit");
   const baseCommit = existsSync(baseCommitPath)
     ? readFileSync(baseCommitPath, "utf-8").trim()

@@ -95,6 +95,7 @@ describe("setupRun", () => {
     expect(schemaCall).toBeDefined();
     const schema = JSON.parse(schemaCall![1] as string);
     expect(schema.type).toBe("object");
+    expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toContain("success");
     expect(schema.required).toContain("summary");
     expect(schema.required).toContain("key_changes_made");
@@ -145,6 +146,26 @@ describe("setupRun", () => {
 describe("resumeRun", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("refreshes output-schema.json to the current JSON schema", () => {
+    mockExistsSync.mockImplementation(
+      (path) => path === "/project/.gnhf/runs/run-abc",
+    );
+
+    resumeRun("run-abc", "/project");
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      "/project/.gnhf/runs/run-abc/output-schema.json",
+      expect.any(String),
+      "utf-8",
+    );
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.additionalProperties).toBe(false);
   });
 
   it("reads the stored base commit when present", () => {
