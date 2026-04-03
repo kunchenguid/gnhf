@@ -49,9 +49,7 @@ function isWideEmojiGrapheme(grapheme: string): boolean {
     grapheme.includes("\ufe0f") ||
     grapheme.includes("\u20e3") ||
     REGIONAL_INDICATOR_REGEX.test(grapheme) ||
-    Array.from(grapheme).some((char) =>
-      EXTENDED_PICTOGRAPHIC_REGEX.test(char),
-    )
+    Array.from(grapheme).some((char) => EXTENDED_PICTOGRAPHIC_REGEX.test(char))
   );
 }
 
