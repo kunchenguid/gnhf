@@ -354,9 +354,13 @@ export function buildContentCells(
       ...sections.agent,
     ].filter((row) => row.length > 0);
     const allowedMoonRows = Math.max(0, maxRows - nonMoonRows.length);
+    const visibleMoonRows =
+      allowedMoonRows === 0
+        ? []
+        : moonRows.filter((row) => row.length > 0).slice(-allowedMoonRows);
     rows = [
       ...nonMoonRows,
-      ...moonRows.filter((row) => row.length > 0).slice(-allowedMoonRows),
+      ...visibleMoonRows,
     ];
   }
 

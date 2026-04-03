@@ -353,6 +353,26 @@ describe("buildContentCells adaptive height", () => {
     expect(text).toContain("00:01:00");
     expect(rows.length).toBeLessThanOrEqual(22);
   });
+
+  it("drops all moon rows when no moon rows fit", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      {
+        ...state,
+        status: "done",
+        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+      },
+      "00:01:00",
+      0,
+      1,
+    );
+    const text = toText(rows);
+
+    expect(rows).toHaveLength(1);
+    expect(text).toContain("00:01:00");
+    expect(text).not.toMatch(/🌕/);
+  });
 });
 
 describe("Renderer ctrl+c", () => {
