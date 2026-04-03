@@ -284,21 +284,48 @@ export function buildContentCells(
   state: OrchestratorState,
   elapsed: string,
   now: number,
+  availableHeight?: number,
 ): Cell[][] {
-  const rows: Cell[][] = [];
   const isRunning = state.status === "running" || state.status === "waiting";
+  const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
+  const m = moonRows.length;
+  const maxRows = availableHeight ?? Infinity;
 
-  rows.push([]);
-  rows.push(...renderTitleCells(agentName));
-  rows.push([], []);
+  // Row counts at each visibility level (with m moon rows):
+  // level 0 (full):       21 + m
+  // level 1 (no art):     17 + m
+  // level 2 (no eyebrow): 14 + m
+  // level 3 (no agent):    9 + m
+  // level 4 (no prompt):   4 + m
+  const showArt = maxRows >= 21 + m;
+  const showEyebrow = maxRows >= 17 + m;
+  const showAgent = maxRows >= 14 + m;
+  const showPrompt = maxRows >= 9 + m;
 
-  const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
-  for (let i = 0; i < MAX_PROMPT_LINES; i++) {
-    const pl = promptLines[i] ?? "";
-    rows.push(pl ? textToCells(pl, "dim") : []);
+  const rows: Cell[][] = [];
+
+  if (showEyebrow) {
+    const titleCells = renderTitleCells(agentName);
+    rows.push([]);
+    rows.push(titleCells[0]);
+    if (showArt) {
+      rows.push(titleCells[1]);
+      rows.push(titleCells[2], titleCells[3], titleCells[4]);
+    }
+    rows.push([], []);
+  } else {
+    rows.push([]);
   }
 
-  rows.push([], []);
+  if (showPrompt) {
+    const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
+    for (let i = 0; i < MAX_PROMPT_LINES; i++) {
+      const pl = promptLines[i] ?? "";
+      rows.push(pl ? textToCells(pl, "dim") : []);
+    }
+    rows.push([], []);
+  }
+
   rows.push(
     renderStatsCells(
       elapsed,
@@ -307,10 +334,14 @@ export function buildContentCells(
       state.commitCount,
     ),
   );
+
+  if (showAgent) {
+    rows.push([], []);
+    rows.push(...renderAgentMessageCells(state.lastMessage, state.status));
+  }
+
   rows.push([], []);
-  rows.push(...renderAgentMessageCells(state.lastMessage, state.status));
-  rows.push([], []);
-  rows.push(...renderMoonStripCells(state.iterations, isRunning, now));
+  rows.push(...moonRows);
 
   return rows;
 }
@@ -330,7 +361,7 @@ export function buildFrameCells(
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
   const contentRows = fitContentRows(
-    buildContentCells(prompt, agentName, state, elapsed, now),
+    buildContentCells(prompt, agentName, state, elapsed, now, availableHeight),
     availableHeight,
   );
 
