@@ -9,6 +9,7 @@ import {
   renderMoonStrip,
   renderStarFieldLines,
   buildFrame,
+  buildFrameCells,
 } from "./renderer.js";
 import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 
@@ -213,6 +214,47 @@ describe("buildFrame", () => {
       "[ctrl+c to stop, gnhf again to resume]",
     );
     expect(plainLines.at(-1)?.trim()).toBe("");
+  });
+
+  it("does not let wide agent text push side stars out of position", () => {
+    // Use width where (width - CONTENT_WIDTH) is even so sideWidth*2 + 63 = width
+    const terminalWidth = 83;
+    const terminalHeight = 30;
+    // Message that fills the full MAX_MSG_LINE_LEN (64 chars > CONTENT_WIDTH 63)
+    const longMessage = "A".repeat(64);
+
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 500,
+      totalOutputTokens: 300,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: longMessage,
+    };
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      terminalWidth,
+      terminalHeight,
+    );
+
+    // Every row must be exactly terminalWidth — a wider agent message row
+    // would push the right-side stars out of alignment.
+    for (let r = 0; r < cells.length; r++) {
+      expect(cells[r]).toHaveLength(terminalWidth);
+    }
   });
 });
 
