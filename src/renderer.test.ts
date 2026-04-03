@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, it, expect, vi } from "vitest";
+import * as renderer from "./renderer.js";
 import {
   Renderer,
   stripAnsi,
@@ -11,6 +12,7 @@ import {
   buildFrame,
   buildFrameCells,
 } from "./renderer.js";
+import { rowToString, textToCells } from "./renderer-diff.js";
 import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 
 describe("renderTitle", () => {
@@ -255,6 +257,21 @@ describe("buildFrame", () => {
     for (let r = 0; r < cells.length; r++) {
       expect(cells[r]).toHaveLength(terminalWidth);
     }
+  });
+});
+
+describe("clampCellsToWidth", () => {
+  it("drops an overflowing wide glyph instead of splitting it", () => {
+    const clamp = (
+      renderer as {
+        clampCellsToWidth?: (cells: ReturnType<typeof textToCells>, width: number) => ReturnType<typeof textToCells>;
+      }
+    ).clampCellsToWidth;
+
+    expect(clamp).toBeTypeOf("function");
+    expect(
+      rowToString(clamp?.(textToCells(`${"A".repeat(62)}🌕`, "normal"), 63) ?? []),
+    ).toBe("A".repeat(62));
   });
 });
 

@@ -249,8 +249,31 @@ function renderSideStarsCells(
   return cells;
 }
 
+export function clampCellsToWidth(content: Cell[], width: number): Cell[] {
+  if (content.length <= width) return content;
+
+  const clamped: Cell[] = [];
+  let remaining = width;
+
+  for (let i = 0; i < content.length && remaining > 0; i++) {
+    const cell = content[i];
+    if (cell.width === 0) continue;
+    if (cell.width > remaining) break;
+
+    clamped.push(cell);
+    remaining -= cell.width;
+
+    if (cell.width === 2 && content[i + 1]?.width === 0) {
+      clamped.push(content[i + 1]);
+      i += 1;
+    }
+  }
+
+  return clamped;
+}
+
 function centerLineCells(content: Cell[], width: number): Cell[] {
-  const clamped = content.length > width ? content.slice(0, width) : content;
+  const clamped = clampCellsToWidth(content, width);
   const w = clamped.length;
   const pad = Math.max(0, Math.floor((width - w) / 2));
   const rightPad = Math.max(0, width - w - pad);
