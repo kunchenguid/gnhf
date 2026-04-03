@@ -262,6 +262,13 @@ function renderResumeHintCells(width: number): Cell[] {
 
 // ── Build full frame (cell-based) ────────────────────────────
 
+/**
+ * Builds the centered content viewport for the renderer.
+ *
+ * When `availableHeight` is constrained, the layout drops optional sections in
+ * priority order (ASCII art, eyebrow, agent message, then prompt) so the stats
+ * row remains visible and any remaining space is used for the newest moon rows.
+ */
 export function buildContentCells(
   prompt: string,
   agentName: string,
