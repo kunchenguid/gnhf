@@ -111,7 +111,11 @@ describe("gnhf e2e", () => {
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
-      rmSync(dir, { recursive: true, force: true });
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      } catch {
+        // Windows: child processes may still hold file locks briefly after exit
+      }
     }
   });
 
@@ -204,7 +208,9 @@ describe("gnhf e2e", () => {
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
   }, 30_000);
 
-  it("shuts down the agent server when gnhf receives SIGINT", async () => {
+  // Windows has no POSIX signals; child.kill("SIGINT") force-terminates the
+  // process tree without triggering the graceful shutdown path this test covers.
+  it.skipIf(process.platform === "win32")("shuts down the agent server when gnhf receives SIGINT", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));

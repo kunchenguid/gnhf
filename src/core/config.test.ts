@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -17,6 +18,10 @@ const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 
+const HOME = "/mock-home";
+const CONFIG_DIR = join(HOME, ".gnhf");
+const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
+
 describe("loadConfig", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -29,11 +34,11 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
 
-    expect(mockMkdirSync).toHaveBeenCalledWith("/mock-home/.gnhf", {
+    expect(mockMkdirSync).toHaveBeenCalledWith(CONFIG_DIR, {
       recursive: true,
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
+      CONFIG_PATH,
       "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
@@ -73,7 +78,7 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "codex" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
+      CONFIG_PATH,
       "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
@@ -94,7 +99,7 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "rovodev" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
+      CONFIG_PATH,
       "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
@@ -115,7 +120,7 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "opencode" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
+      CONFIG_PATH,
       "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
@@ -131,10 +136,7 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
 
-    expect(mockReadFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "utf-8",
-    );
+    expect(mockReadFileSync).toHaveBeenCalledWith(CONFIG_PATH, "utf-8");
     expect(config.agent).toBe("codex");
   });
 
