@@ -260,22 +260,6 @@ function renderResumeHintCells(width: number): Cell[] {
   return centerLineCells(textToCells(RESUME_HINT, "dim"), width);
 }
 
-function fitContentRows(contentRows: Cell[][], maxRows: number): Cell[][] {
-  if (contentRows.length <= maxRows) return contentRows;
-
-  const fitted = [...contentRows];
-
-  while (fitted.length > maxRows) {
-    const emptyRowIndex = fitted.findIndex((row) => row.length === 0);
-    if (emptyRowIndex === -1) break;
-    fitted.splice(emptyRowIndex, 1);
-  }
-
-  return fitted.length > maxRows
-    ? fitted.slice(fitted.length - maxRows)
-    : fitted;
-}
-
 // ── Build full frame (cell-based) ────────────────────────────
 
 export function buildContentCells(
@@ -292,6 +276,7 @@ export function buildContentCells(
   if (maxRows <= 0) return [];
 
   const titleCells = renderTitleCells(agentName);
+  const titleSpacer = titleCells[1] ?? [];
   const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
   const promptRows: Cell[][] = [];
   for (let i = 0; i < MAX_PROMPT_LINES; i++) {
@@ -302,8 +287,8 @@ export function buildContentCells(
   const sections = {
     top: [[]] as Cell[][],
     eyebrow: [titleCells[0], [], []] as Cell[][],
-    art: titleCells.slice(1),
-    prompt: [...promptRows, [], []] as Cell[][],
+    art: titleCells.slice(2),
+    prompt: [titleSpacer, ...promptRows, [], []] as Cell[][],
     stats: [
       renderStatsCells(
         elapsed,
@@ -381,8 +366,12 @@ export function buildFrameCells(
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
-  const contentRows = fitContentRows(
-    buildContentCells(prompt, agentName, state, elapsed, now, availableHeight),
+  const contentRows = buildContentCells(
+    prompt,
+    agentName,
+    state,
+    elapsed,
+    now,
     availableHeight,
   );
 

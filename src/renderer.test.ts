@@ -253,6 +253,50 @@ describe("buildFrame", () => {
     expect(plainLines.join("\n")).toContain("1K in");
     expect(plainLines.join("\n")).toContain("800 out");
   });
+
+  it("uses the content builder height policy for the content viewport", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 100,
+      totalOutputTokens: 50,
+      commitCount: 1,
+      iterations: [{ success: true }],
+      successCount: 1,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: "reading files",
+    };
+
+    const availableHeight = 22;
+    const now = state.startTime.getTime() + 60_000;
+    const contentRows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      now,
+      availableHeight,
+    ).map(rowToString).map(stripAnsi);
+    const frame = buildFrame(
+      "my prompt",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      now,
+      63,
+      availableHeight + 2,
+    );
+    const frameLines = stripCursorHome(frame).split("\n").map(stripAnsi);
+
+    expect(frameLines.slice(0, availableHeight).map((line) => line.trim())).toEqual(
+      contentRows,
+    );
+  });
 });
 
 describe("buildContentCells adaptive height", () => {
@@ -283,6 +327,20 @@ describe("buildContentCells adaptive height", () => {
     expect(text).toContain("reading files");
     expect(text).toContain("00:01:00");
     expect(rows).toHaveLength(22);
+  });
+
+  it("keeps the logo separated from both the eyebrow and prompt", () => {
+    const lines = buildContentCells("my prompt", "claude", state, "00:01:00", 0)
+      .map(rowToString)
+      .map(stripAnsi);
+
+    const eyebrowIndex = lines.findIndex((line) => line.includes("g n h f"));
+    const firstArtIndex = lines.findIndex((line) => line.includes("┏━╸┏━┓"));
+    const lastArtIndex = lines.findIndex((line) => line.includes("┗━┛┗━┛"));
+    const promptIndex = lines.findIndex((line) => line.includes("my prompt"));
+
+    expect(firstArtIndex - eyebrowIndex).toBe(3);
+    expect(promptIndex - lastArtIndex).toBe(2);
   });
 
   it("hides ASCII art first when height is insufficient", () => {
