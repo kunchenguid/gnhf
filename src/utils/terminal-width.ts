@@ -4,6 +4,7 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, {
 
 const MARK_REGEX = /\p{Mark}/u;
 const REGIONAL_INDICATOR_REGEX = /\p{Regional_Indicator}/u;
+const EXTENDED_PICTOGRAPHIC_REGEX = /\p{Extended_Pictographic}/u;
 
 function isFullWidthCodePoint(codePoint: number): boolean {
   return (
@@ -48,7 +49,9 @@ function isWideEmojiGrapheme(grapheme: string): boolean {
     grapheme.includes("\ufe0f") ||
     grapheme.includes("\u20e3") ||
     REGIONAL_INDICATOR_REGEX.test(grapheme) ||
-    Array.from(grapheme).some((char) => (char.codePointAt(0) ?? 0) > 0xffff)
+    Array.from(grapheme).some((char) =>
+      EXTENDED_PICTOGRAPHIC_REGEX.test(char),
+    )
   );
 }
 
