@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.8...gnhf-v0.1.9) (2026-04-03)
+
+
+### Features
+
+* **sleep:** prevent system sleep during runs ([#17](https://github.com/kunchenguid/gnhf/issues/17)) ([091d9d3](https://github.com/kunchenguid/gnhf/commit/091d9d31b80a4c1b3c01fd7e65009ad86d864ec1))
+
 ## [0.1.8](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.7...gnhf-v0.1.8) (2026-04-02)
 
 
