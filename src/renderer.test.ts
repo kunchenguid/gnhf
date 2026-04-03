@@ -83,6 +83,14 @@ describe("renderAgentMessage", () => {
     expect(plain).toContain("\u2026");
     expect(plain).not.toContain("Line four");
   });
+
+  it("keeps a trailing wide glyph intact at the message width boundary", () => {
+    expect(
+      renderAgentMessage(`${"A".repeat(62)}🌕`, "running")
+        .map(stripAnsi)
+        .filter(Boolean),
+    ).toEqual([`${"A".repeat(62)}🌕`]);
+  });
 });
 
 describe("renderMoonStrip", () => {
@@ -222,8 +230,8 @@ describe("buildFrame", () => {
     // Use width where (width - CONTENT_WIDTH) is even so sideWidth*2 + 63 = width
     const terminalWidth = 83;
     const terminalHeight = 30;
-    // Message that fills the full MAX_MSG_LINE_LEN (64 chars > CONTENT_WIDTH 63)
-    const longMessage = "A".repeat(64);
+    // Message that overflows CONTENT_WIDTH only because the trailing glyph is 2 cells wide.
+    const longMessage = `${"A".repeat(62)}🌕`;
 
     const state: OrchestratorState = {
       status: "running",
