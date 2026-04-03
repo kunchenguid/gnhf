@@ -89,7 +89,7 @@ describe("renderAgentMessage", () => {
       renderAgentMessage(`${"A".repeat(62)}🌕`, "running")
         .map(stripAnsi)
         .filter(Boolean),
-    ).toEqual([`${"A".repeat(62)}🌕`]);
+    ).toEqual(["A".repeat(62), "🌕"]);
   });
 });
 
@@ -143,6 +143,35 @@ describe("renderStarFieldLines", () => {
 describe("buildFrame", () => {
   const stripCursorHome = (frame: string) =>
     frame.startsWith("\x1b[H") ? frame.slice(3) : frame;
+
+  it("wraps a trailing wide prompt glyph onto the next line instead of dropping it", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const lines = renderer
+      .buildContentLines(
+        `${"A".repeat(62)}🌕`,
+        "claude",
+        state,
+        "00:00:00",
+        Date.now(),
+      )
+      .map(stripAnsi);
+
+    expect(lines.slice(8, 11).filter(Boolean)).toEqual(["A".repeat(62), "🌕"]);
+  });
 
   it("shows the stop and resume hint on the second-to-last row with blank bottom padding", () => {
     const state: OrchestratorState = {

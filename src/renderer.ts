@@ -25,7 +25,7 @@ const TICK_MS = 200;
 const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
-const MAX_MSG_LINE_LEN = 64;
+const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
 
 export type RendererExitReason = "interrupted" | "stopped";
