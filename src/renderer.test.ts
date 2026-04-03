@@ -216,6 +216,43 @@ describe("buildFrame", () => {
     );
     expect(plainLines.at(-1)?.trim()).toBe("");
   });
+
+  it("keeps stats visible when moon rows exceed the content viewport", () => {
+    const state: OrchestratorState = {
+      status: "done",
+      currentIteration: 660,
+      totalInputTokens: 1200,
+      totalOutputTokens: 800,
+      commitCount: 7,
+      iterations: Array.from({ length: 660 }, (_, index) => ({
+        iteration: index + 1,
+        success: true,
+      })),
+      successCount: 660,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const frame = buildFrame(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      80,
+      24,
+    );
+    const plainLines = stripCursorHome(frame).split("\n").map(stripAnsi);
+
+    expect(plainLines.join("\n")).toContain("7 commits");
+    expect(plainLines.join("\n")).toContain("1K in");
+    expect(plainLines.join("\n")).toContain("800 out");
+  });
 });
 
 describe("buildContentCells adaptive height", () => {
@@ -296,6 +333,25 @@ describe("buildContentCells adaptive height", () => {
     expect(text).toContain("00:01:00");
     expect(text).toMatch(/🌕/);
     expect(rows.length).toBeLessThanOrEqual(5);
+  });
+
+  it("keeps stats visible when moon rows alone exceed the available height", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      {
+        ...state,
+        status: "done",
+        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+      },
+      "00:01:00",
+      0,
+      22,
+    );
+    const text = toText(rows);
+
+    expect(text).toContain("00:01:00");
+    expect(rows.length).toBeLessThanOrEqual(22);
   });
 });
 

@@ -288,60 +288,77 @@ export function buildContentCells(
 ): Cell[][] {
   const isRunning = state.status === "running" || state.status === "waiting";
   const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
-  const m = moonRows.length;
   const maxRows = availableHeight ?? Infinity;
+  if (maxRows <= 0) return [];
 
-  // Row counts at each visibility level (with m moon rows):
-  // level 0 (full):       21 + m
-  // level 1 (no art):     17 + m
-  // level 2 (no eyebrow): 14 + m
-  // level 3 (no agent):    9 + m
-  // level 4 (no prompt):   4 + m
-  const showArt = maxRows >= 21 + m;
-  const showEyebrow = maxRows >= 17 + m;
-  const showAgent = maxRows >= 14 + m;
-  const showPrompt = maxRows >= 9 + m;
-
-  const rows: Cell[][] = [];
-
-  if (showEyebrow) {
-    const titleCells = renderTitleCells(agentName);
-    rows.push([]);
-    rows.push(titleCells[0]);
-    if (showArt) {
-      rows.push(titleCells[1]);
-      rows.push(titleCells[2], titleCells[3], titleCells[4]);
-    }
-    rows.push([], []);
-  } else {
-    rows.push([]);
+  const titleCells = renderTitleCells(agentName);
+  const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
+  const promptRows: Cell[][] = [];
+  for (let i = 0; i < MAX_PROMPT_LINES; i++) {
+    const pl = promptLines[i] ?? "";
+    promptRows.push(pl ? textToCells(pl, "dim") : []);
   }
 
-  if (showPrompt) {
-    const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
-    for (let i = 0; i < MAX_PROMPT_LINES; i++) {
-      const pl = promptLines[i] ?? "";
-      rows.push(pl ? textToCells(pl, "dim") : []);
-    }
-    rows.push([], []);
+  const sections = {
+    top: [[]] as Cell[][],
+    eyebrow: [titleCells[0], [], []] as Cell[][],
+    art: titleCells.slice(1),
+    prompt: [...promptRows, [], []] as Cell[][],
+    stats: [
+      renderStatsCells(
+        elapsed,
+        state.totalInputTokens,
+        state.totalOutputTokens,
+        state.commitCount,
+      ),
+    ] as Cell[][],
+    agent: [[], [], ...renderAgentMessageCells(state.lastMessage, state.status)],
+    moon: [[], [], ...moonRows] as Cell[][],
+  };
+
+  const flattenSections = (): Cell[][] => [
+    ...sections.top,
+    ...sections.eyebrow,
+    ...sections.art,
+    ...sections.prompt,
+    ...sections.stats,
+    ...sections.agent,
+    ...sections.moon,
+  ];
+
+  const optionalSections: Array<keyof typeof sections> = [
+    "art",
+    "eyebrow",
+    "agent",
+    "prompt",
+  ];
+
+  let rows = flattenSections();
+  for (const section of optionalSections) {
+    if (rows.length <= maxRows) break;
+    sections[section] = [];
+    rows = flattenSections();
   }
 
-  rows.push(
-    renderStatsCells(
-      elapsed,
-      state.totalInputTokens,
-      state.totalOutputTokens,
-      state.commitCount,
-    ),
-  );
-
-  if (showAgent) {
-    rows.push([], []);
-    rows.push(...renderAgentMessageCells(state.lastMessage, state.status));
+  if (rows.length > maxRows) {
+    rows = rows.filter((row) => row.length > 0);
   }
 
-  rows.push([], []);
-  rows.push(...moonRows);
+  if (rows.length > maxRows) {
+    const nonMoonRows = [
+      ...sections.top,
+      ...sections.eyebrow,
+      ...sections.art,
+      ...sections.prompt,
+      ...sections.stats,
+      ...sections.agent,
+    ].filter((row) => row.length > 0);
+    const allowedMoonRows = Math.max(0, maxRows - nonMoonRows.length);
+    rows = [
+      ...nonMoonRows,
+      ...moonRows.filter((row) => row.length > 0).slice(-allowedMoonRows),
+    ];
+  }
 
   return rows;
 }
