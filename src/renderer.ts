@@ -25,7 +25,7 @@ const TICK_MS = 200;
 const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
-const MAX_MSG_LINE_LEN = 64;
+const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
 
 export type RendererExitReason = "interrupted" | "stopped";
@@ -249,11 +249,35 @@ function renderSideStarsCells(
   return cells;
 }
 
+function clampCellsToWidth(content: Cell[], width: number): Cell[] {
+  if (content.length <= width) return content;
+
+  const clamped: Cell[] = [];
+  let remaining = width;
+
+  for (let i = 0; i < content.length && remaining > 0; i++) {
+    const cell = content[i];
+    if (cell.width === 0) continue;
+    if (cell.width > remaining) break;
+
+    clamped.push(cell);
+    remaining -= cell.width;
+
+    if (cell.width === 2 && content[i + 1]?.width === 0) {
+      clamped.push(content[i + 1]);
+      i += 1;
+    }
+  }
+
+  return clamped;
+}
+
 function centerLineCells(content: Cell[], width: number): Cell[] {
-  const w = content.length;
+  const clamped = clampCellsToWidth(content, width);
+  const w = clamped.length;
   const pad = Math.max(0, Math.floor((width - w) / 2));
   const rightPad = Math.max(0, width - w - pad);
-  return [...emptyCells(pad), ...content, ...emptyCells(rightPad)];
+  return [...emptyCells(pad), ...clamped, ...emptyCells(rightPad)];
 }
 
 function renderResumeHintCells(width: number): Cell[] {
@@ -482,12 +506,18 @@ export class Renderer {
   private cachedHeight = 0;
   private prevCells: Cell[][] = [];
   private isFirstFrame = true;
+  private seedTop: number;
+  private seedBottom: number;
+  private seedSide: number;
 
   constructor(orchestrator: Orchestrator, prompt: string, agentName: string) {
     this.orchestrator = orchestrator;
     this.prompt = prompt;
     this.agentName = agentName;
     this.state = orchestrator.getState();
+    this.seedTop = Math.floor(Math.random() * 2147483646) + 1;
+    this.seedBottom = Math.floor(Math.random() * 2147483646) + 1;
+    this.seedSide = Math.floor(Math.random() * 2147483646) + 1;
     this.exitPromise = new Promise((resolve) => {
       this.exitResolve = resolve;
     });
@@ -550,17 +580,20 @@ export class Renderer {
         const star = s.char !== "·" ? { ...s, char: "·" } : s;
         return star.rest === "bright" ? { ...star, rest: "dim" } : star;
       };
-      this.topStars = generateStarField(w, h, STAR_DENSITY, 42).map((s) =>
-        shrinkBig(s, s.y >= topHeight - proximityRows),
+      this.topStars = generateStarField(w, h, STAR_DENSITY, this.seedTop).map(
+        (s) => shrinkBig(s, s.y >= topHeight - proximityRows),
       );
-      this.bottomStars = generateStarField(w, h, STAR_DENSITY, 137).map((s) =>
-        shrinkBig(s, s.y < proximityRows),
-      );
+      this.bottomStars = generateStarField(
+        w,
+        h,
+        STAR_DENSITY,
+        this.seedBottom,
+      ).map((s) => shrinkBig(s, s.y < proximityRows));
       this.sideStars = generateStarField(
         w,
         Math.max(BASE_CONTENT_ROWS, availableHeight),
         STAR_DENSITY,
-        99,
+        this.seedSide,
       );
       return true;
     }

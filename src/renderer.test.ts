@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, it, expect, vi } from "vitest";
+import * as renderer from "./renderer.js";
 import {
   Renderer,
   stripAnsi,
@@ -9,6 +10,7 @@ import {
   renderMoonStrip,
   renderStarFieldLines,
   buildFrame,
+  buildFrameCells,
   buildContentCells,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
@@ -82,6 +84,14 @@ describe("renderAgentMessage", () => {
     expect(plain).toContain("\u2026");
     expect(plain).not.toContain("Line four");
   });
+
+  it("keeps a trailing wide glyph intact at the message width boundary", () => {
+    expect(
+      renderAgentMessage(`${"A".repeat(62)}🌕`, "running")
+        .map(stripAnsi)
+        .filter(Boolean),
+    ).toEqual(["A".repeat(62), "🌕"]);
+  });
 });
 
 describe("renderMoonStrip", () => {
@@ -134,6 +144,35 @@ describe("renderStarFieldLines", () => {
 describe("buildFrame", () => {
   const stripCursorHome = (frame: string) =>
     frame.startsWith("\x1b[H") ? frame.slice(3) : frame;
+
+  it("wraps a trailing wide prompt glyph onto the next line instead of dropping it", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const lines = renderer
+      .buildContentLines(
+        `${"A".repeat(62)}🌕`,
+        "claude",
+        state,
+        "00:00:00",
+        Date.now(),
+      )
+      .map(stripAnsi);
+
+    expect(lines.slice(8, 11).filter(Boolean)).toEqual(["A".repeat(62), "🌕"]);
+  });
 
   it("shows the stop and resume hint on the second-to-last row with blank bottom padding", () => {
     const state: OrchestratorState = {
@@ -217,6 +256,47 @@ describe("buildFrame", () => {
     expect(plainLines.at(-1)?.trim()).toBe("");
   });
 
+  it("does not let wide agent text push side stars out of position", () => {
+    // Use width where (width - CONTENT_WIDTH) is even so sideWidth*2 + 63 = width
+    const terminalWidth = 83;
+    const terminalHeight = 30;
+    // Message that overflows CONTENT_WIDTH only because the trailing glyph is 2 cells wide.
+    const longMessage = `${"A".repeat(62)}🌕`;
+
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 500,
+      totalOutputTokens: 300,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: longMessage,
+    };
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      terminalWidth,
+      terminalHeight,
+    );
+
+    // Every row must be exactly terminalWidth — a wider agent message row
+    // would push the right-side stars out of alignment.
+    for (let r = 0; r < cells.length; r++) {
+      expect(cells[r]).toHaveLength(terminalWidth);
+    }
+  });
+
   it("keeps stats visible when moon rows exceed the content viewport", () => {
     const state: OrchestratorState = {
       status: "done",
@@ -298,6 +378,12 @@ describe("buildFrame", () => {
     expect(
       frameLines.slice(0, availableHeight).map((line) => line.trim()),
     ).toEqual(contentRows);
+  });
+});
+
+describe("renderer module exports", () => {
+  it("does not expose clampCellsToWidth", () => {
+    expect("clampCellsToWidth" in renderer).toBe(false);
   });
 });
 

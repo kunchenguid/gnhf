@@ -1,3 +1,5 @@
+import { graphemeWidth, splitGraphemes } from "./utils/terminal-width.js";
+
 // ── Cell types ───────────────────────────────────────────────
 
 export type Style = "normal" | "bold" | "dim";
@@ -5,7 +7,7 @@ export type Style = "normal" | "bold" | "dim";
 export interface Cell {
   char: string;
   style: Style;
-  /** 1 = normal char, 2 = wide (emoji), 0 = continuation of wide char */
+  /** 1 = normal grapheme, 2 = wide grapheme, 0 = continuation of a wide grapheme */
   width: number;
 }
 
@@ -20,14 +22,13 @@ export interface Change {
 const SPACE: Cell = { char: " ", style: "normal", width: 1 };
 
 export function makeCell(char: string, style: Style): Cell {
-  const cp = char.codePointAt(0) ?? 0;
-  return { char, style, width: cp > 0xffff ? 2 : 1 };
+  return { char, style, width: graphemeWidth(char) };
 }
 
 export function textToCells(text: string, style: Style): Cell[] {
   const cells: Cell[] = [];
-  for (const char of text) {
-    const cell = makeCell(char, style);
+  for (const grapheme of splitGraphemes(text)) {
+    const cell = makeCell(grapheme, style);
     cells.push(cell);
     if (cell.width === 2) {
       cells.push({ char: "", style: "normal", width: 0 });

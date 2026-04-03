@@ -47,6 +47,7 @@ You wake up to a branch full of clean work and a log of everything that happened
 - **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries and exponential backoff
 - **Agent-agnostic** — works with Claude Code, Codex, Rovo Dev, or OpenCode out of the box
+- **Terminal-safe rendering** — the live UI keeps wide Unicode text such as emoji and CJK glyphs aligned instead of clipping or shifting the frame
 
 ## Quick Start
 
