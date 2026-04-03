@@ -279,7 +279,9 @@ describe("buildFrame", () => {
       "00:01:00",
       now,
       availableHeight,
-    ).map(rowToString).map(stripAnsi);
+    )
+      .map(rowToString)
+      .map(stripAnsi);
     const frame = buildFrame(
       "my prompt",
       "claude",
@@ -293,9 +295,9 @@ describe("buildFrame", () => {
     );
     const frameLines = stripCursorHome(frame).split("\n").map(stripAnsi);
 
-    expect(frameLines.slice(0, availableHeight).map((line) => line.trim())).toEqual(
-      contentRows,
-    );
+    expect(
+      frameLines.slice(0, availableHeight).map((line) => line.trim()),
+    ).toEqual(contentRows);
   });
 });
 
@@ -344,7 +346,14 @@ describe("buildContentCells adaptive height", () => {
   });
 
   it("hides ASCII art first when height is insufficient", () => {
-    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0, 21);
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      21,
+    );
     const text = toText(rows);
     expect(text).not.toContain("┏━╸┏━┓");
     expect(text).toContain("g n h f");
@@ -354,7 +363,14 @@ describe("buildContentCells adaptive height", () => {
   });
 
   it("hides eyebrow after ASCII art", () => {
-    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0, 17);
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      17,
+    );
     const text = toText(rows);
     expect(text).not.toContain("┏━╸┏━┓");
     expect(text).not.toContain("g n h f");
@@ -364,7 +380,14 @@ describe("buildContentCells adaptive height", () => {
   });
 
   it("hides agent text after eyebrow", () => {
-    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0, 14);
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      14,
+    );
     const text = toText(rows);
     expect(text).not.toContain("┏━╸┏━┓");
     expect(text).not.toContain("g n h f");
@@ -375,7 +398,14 @@ describe("buildContentCells adaptive height", () => {
   });
 
   it("hides prompt text last", () => {
-    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0, 9);
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      9,
+    );
     const text = toText(rows);
     expect(text).not.toContain("┏━╸┏━┓");
     expect(text).not.toContain("g n h f");
@@ -386,7 +416,14 @@ describe("buildContentCells adaptive height", () => {
   });
 
   it("always keeps stats and moon strip even at minimum height", () => {
-    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0, 5);
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      5,
+    );
     const text = toText(rows);
     expect(text).toContain("00:01:00");
     expect(text).toMatch(/🌕/);

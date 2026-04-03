@@ -304,7 +304,11 @@ export function buildContentCells(
         state.commitCount,
       ),
     ] as Cell[][],
-    agent: [[], [], ...renderAgentMessageCells(state.lastMessage, state.status)],
+    agent: [
+      [],
+      [],
+      ...renderAgentMessageCells(state.lastMessage, state.status),
+    ],
     moon: [[], [], ...moonRows] as Cell[][],
   };
 
@@ -350,10 +354,7 @@ export function buildContentCells(
       allowedMoonRows === 0
         ? []
         : moonRows.filter((row) => row.length > 0).slice(-allowedMoonRows);
-    rows = [
-      ...nonMoonRows,
-      ...visibleMoonRows,
-    ];
+    rows = [...nonMoonRows, ...visibleMoonRows];
   }
 
   return rows;
