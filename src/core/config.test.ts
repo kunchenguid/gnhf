@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -17,6 +18,10 @@ const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 
+const HOME = "/mock-home";
+const CONFIG_DIR = join(HOME, ".gnhf");
+const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
+
 describe("loadConfig", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -29,17 +34,18 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
 
-    expect(mockMkdirSync).toHaveBeenCalledWith("/mock-home/.gnhf", {
+    expect(mockMkdirSync).toHaveBeenCalledWith(CONFIG_DIR, {
       recursive: true,
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      CONFIG_PATH,
+      "# Agent to use by default\nagent: claude\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -58,6 +64,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -71,13 +78,14 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "codex" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      CONFIG_PATH,
+      "# Agent to use by default\nagent: codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "codex",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -91,13 +99,14 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "rovodev" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      CONFIG_PATH,
+      "# Agent to use by default\nagent: rovodev\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "rovodev",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -111,13 +120,14 @@ describe("loadConfig", () => {
     const config = loadConfig({ agent: "opencode" });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n",
+      CONFIG_PATH,
+      "# Agent to use by default\nagent: opencode\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
       agent: "opencode",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -126,10 +136,7 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
 
-    expect(mockReadFileSync).toHaveBeenCalledWith(
-      "/mock-home/.gnhf/config.yml",
-      "utf-8",
-    );
+    expect(mockReadFileSync).toHaveBeenCalledWith(CONFIG_PATH, "utf-8");
     expect(config.agent).toBe("codex");
   });
 
@@ -140,18 +147,54 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 10,
+      preventSleep: true,
     });
+  });
+
+  it('coerces quoted "false" for preventSleep to a boolean false', () => {
+    mockReadFileSync.mockReturnValue('preventSleep: "false"\n');
+
+    const config = loadConfig();
+
+    expect(config).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+  });
+
+  it('coerces "off" for preventSleep to a boolean false', () => {
+    mockReadFileSync.mockReturnValue("preventSleep: off\n");
+
+    const config = loadConfig();
+
+    expect(config).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+  });
+
+  it("throws when preventSleep has an unrecognized value", () => {
+    mockReadFileSync.mockReturnValue("preventSleep: flase\n");
+
+    expect(() => loadConfig()).toThrow(/Invalid config value for preventSleep/);
   });
 
   it("overrides take precedence over file config and defaults", () => {
     mockReadFileSync.mockReturnValue(
-      "agent: codex\nmaxConsecutiveFailures: 10\n",
+      "agent: codex\nmaxConsecutiveFailures: 10\npreventSleep: false\n",
     );
 
-    const config = loadConfig({ agent: "claude", maxConsecutiveFailures: 3 });
+    const config = loadConfig({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -162,6 +205,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 
@@ -174,6 +218,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       maxConsecutiveFailures: 3,
+      preventSleep: true,
     });
   });
 });

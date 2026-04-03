@@ -1,4 +1,12 @@
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
@@ -18,9 +26,15 @@ const stubRunInfo: RunInfo = {
 };
 
 interface CliMockOverrides {
+  appendDebugLog?: ReturnType<typeof vi.fn>;
+  createAgent?: ReturnType<typeof vi.fn>;
+  env?: Record<string, string | undefined>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
+  readStdinText?: ReturnType<typeof vi.fn>;
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
   rendererStop?: ReturnType<typeof vi.fn>;
+  startSleepPrevention?: ReturnType<typeof vi.fn>;
+  stdinIsTTY?: boolean;
 }
 
 async function runCliWithMocks(
@@ -41,7 +55,14 @@ async function runCliWithMocks(
   }) as typeof process.exit);
 
   const loadConfig = vi.fn(() => config);
-  const createAgent = vi.fn(() => ({ name: config.agent }));
+  const createAgent =
+    overrides.createAgent ?? vi.fn(() => ({ name: config.agent }));
+  const appendDebugLog = overrides.appendDebugLog ?? vi.fn();
+  const readStdinText =
+    overrides.readStdinText ?? vi.fn(() => Promise.resolve(""));
+  const startSleepPrevention =
+    overrides.startSleepPrevention ??
+    vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -70,6 +91,7 @@ async function runCliWithMocks(
 
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/debug-log.js", () => ({ appendDebugLog }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
     createBranch: vi.fn(),
@@ -81,7 +103,11 @@ async function runCliWithMocks(
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
+  vi.doMock("./core/stdin.js", () => ({ readStdinText }));
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
+  vi.doMock("./core/sleep.js", () => ({
+    startSleepPrevention,
+  }));
   vi.doMock("./core/orchestrator.js", () => ({
     Orchestrator: class MockOrchestrator {
       constructor(...args: unknown[]) {
@@ -102,16 +128,49 @@ async function runCliWithMocks(
   }));
 
   process.argv = ["node", "gnhf", ...args];
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  Object.defineProperty(process.stdin, "isTTY", {
+    configurable: true,
+    value: overrides.stdinIsTTY ?? true,
+  });
+  const envEntries = Object.entries(overrides.env ?? {});
+  const originalEnv = new Map(
+    envEntries.map(([key]) => [key, process.env[key]]),
+  );
+  for (const [key, value] of envEntries) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 
   try {
     await import("./cli.js");
   } finally {
     process.argv = originalArgv;
+    if (originalIsTTY) {
+      Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+    }
+    for (const [key, value] of originalEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     stdoutWrite.mockRestore();
     exitSpy.mockRestore();
   }
 
-  return { loadConfig, createAgent, orchestratorCtor };
+  return {
+    appendDebugLog,
+    loadConfig,
+    createAgent,
+    orchestratorCtor,
+    readStdinText,
+    startSleepPrevention,
+  };
 }
 
 describe("cli", () => {
@@ -120,21 +179,32 @@ describe("cli", () => {
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation((() => undefined) as typeof process.exit);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
 
     process.argv = ["node", "gnhf", "-V"];
 
     try {
       vi.resetModules();
-      await import("./cli.js");
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
 
       expect(stdoutWrite).toHaveBeenCalledWith(`${packageVersion}\n`);
-      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(exitSpy).toHaveBeenNthCalledWith(1, 0);
+      expect(exitSpy).toHaveBeenNthCalledWith(2, 1);
     } finally {
       process.argv = originalArgv;
       stdoutWrite.mockRestore();
+      consoleError.mockRestore();
       exitSpy.mockRestore();
     }
   });
@@ -143,9 +213,10 @@ describe("cli", () => {
     const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
       agent: "codex",
       maxConsecutiveFailures: 3,
+      preventSleep: false,
     });
 
-    expect(loadConfig).toHaveBeenCalledWith(undefined);
+    expect(loadConfig).toHaveBeenCalledWith({});
     expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo);
   });
 
@@ -155,6 +226,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -168,6 +240,7 @@ describe("cli", () => {
       {
         agent: "rovodev",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -181,6 +254,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -194,6 +268,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
     );
 
@@ -202,6 +277,428 @@ describe("cli", () => {
       maxIterations: 12,
       maxTokens: 3456,
     });
+  });
+
+  it("treats --prevent-sleep as a runtime override without passing it to config bootstrap", async () => {
+    const { loadConfig, orchestratorCtor, startSleepPrevention } =
+      await runCliWithMocks(["ship it", "--prevent-sleep", "off"], {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      });
+
+    expect(loadConfig).toHaveBeenCalledWith({});
+    expect(startSleepPrevention).not.toHaveBeenCalled();
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor.mock.calls[0]?.[0]).toEqual({
+      agent: "claude",
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+  });
+
+  it("does not emit run:start from the Linux sleep-prevention wrapper process", async () => {
+    const appendDebugLog = vi.fn();
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({ type: "reexeced" as const, exitCode: 0 }),
+    );
+
+    await expect(
+      runCliWithMocks(
+        ["ship it"],
+        {
+          agent: "claude",
+          maxConsecutiveFailures: 3,
+          preventSleep: true,
+        },
+        { appendDebugLog, startSleepPrevention },
+      ),
+    ).rejects.toThrow(/process\.exit unexpectedly called/);
+
+    expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+    expect(appendDebugLog).not.toHaveBeenCalledWith(
+      "run:start",
+      expect.anything(),
+    );
+  });
+
+  it("passes the stdin prompt to Linux sleep-prevention re-exec via a temp file", async () => {
+    let promptFilePath: string | undefined;
+    const readStdinText = vi.fn(() => Promise.resolve("objective from stdin"));
+    const startSleepPrevention = vi.fn(async (_argv, deps) => {
+      promptFilePath = deps?.reexecEnv?.GNHF_REEXEC_STDIN_PROMPT_FILE;
+      expect(promptFilePath).toEqual(expect.any(String));
+      expect(deps?.reexecEnv?.GNHF_REEXEC_STDIN_PROMPT).toBeUndefined();
+      expect(readFileSync(promptFilePath!, "utf-8")).toBe(
+        "objective from stdin",
+      );
+      return { type: "skipped" as const, reason: "unsupported" };
+    });
+
+    await runCliWithMocks(
+      [],
+      {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      {
+        readStdinText,
+        startSleepPrevention,
+        stdinIsTTY: false,
+      },
+    );
+
+    expect(readStdinText).toHaveBeenCalledTimes(1);
+    expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+    expect(promptFilePath).toBeDefined();
+    expect(existsSync(promptFilePath!)).toBe(false);
+  });
+
+  it("uses the serialized stdin prompt file after Linux sleep-prevention re-exec", async () => {
+    const readStdinText = vi.fn(() => Promise.resolve("should not be read"));
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "skipped" as const,
+        reason: "already-inhibited",
+      }),
+    );
+    const promptDir = mkdtempSync(join(tmpdir(), "gnhf-stdin-"));
+    const promptPath = join(promptDir, "prompt.txt");
+    writeFileSync(promptPath, "objective from stdin", "utf-8");
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        [],
+        {
+          agent: "claude",
+          maxConsecutiveFailures: 3,
+          preventSleep: true,
+        },
+        {
+          env: {
+            GNHF_REEXEC_STDIN_PROMPT_FILE: promptPath,
+            GNHF_SLEEP_INHIBITED: "1",
+          },
+          readStdinText,
+          startSleepPrevention,
+          stdinIsTTY: false,
+        },
+      );
+
+      expect(readStdinText).not.toHaveBeenCalled();
+      expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+      expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+      expect(orchestratorCtor.mock.calls[0]?.[3]).toBe("objective from stdin");
+      expect(existsSync(promptPath)).toBe(false);
+      expect(existsSync(dirname(promptPath))).toBe(false);
+    } finally {
+      rmSync(promptDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to stdin when Linux sleep inhibition is inherited without a serialized prompt", async () => {
+    const readStdinText = vi.fn(() => Promise.resolve("objective from stdin"));
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "skipped" as const,
+        reason: "already-inhibited",
+      }),
+    );
+
+    const { orchestratorCtor } = await runCliWithMocks(
+      [],
+      {
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      {
+        env: {
+          GNHF_SLEEP_INHIBITED: "1",
+        },
+        readStdinText,
+        startSleepPrevention,
+        stdinIsTTY: false,
+      },
+    );
+
+    expect(readStdinText).toHaveBeenCalledTimes(1);
+    expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor.mock.calls[0]?.[3]).toBe("objective from stdin");
+  });
+
+  it("clears the serialized stdin prompt file path from process.env after reading it", async () => {
+    let inheritedPromptPath: string | undefined;
+    const createAgent = vi.fn(() => {
+      inheritedPromptPath = process.env.GNHF_REEXEC_STDIN_PROMPT_FILE;
+      return { name: "claude" };
+    });
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "skipped" as const,
+        reason: "already-inhibited",
+      }),
+    );
+    const promptDir = mkdtempSync(join(tmpdir(), "gnhf-stdin-"));
+    const promptPath = join(promptDir, "prompt.txt");
+    writeFileSync(promptPath, "sensitive prompt", "utf-8");
+
+    try {
+      await runCliWithMocks(
+        [],
+        {
+          agent: "claude",
+          maxConsecutiveFailures: 3,
+          preventSleep: true,
+        },
+        {
+          createAgent,
+          env: {
+            GNHF_REEXEC_STDIN_PROMPT_FILE: promptPath,
+            GNHF_SLEEP_INHIBITED: "1",
+          },
+          startSleepPrevention,
+        },
+      );
+
+      expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+      expect(createAgent).toHaveBeenCalledTimes(1);
+      expect(inheritedPromptPath).toBeUndefined();
+      expect(existsSync(promptPath)).toBe(false);
+    } finally {
+      rmSync(promptDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not recursively delete an untrusted prompt file parent directory", async () => {
+    const promptDir = mkdtempSync(join(tmpdir(), "gnhf-cli-test-"));
+    const promptPath = join(promptDir, "prompt-from-env.txt");
+    const siblingPath = join(promptDir, "keep.txt");
+    writeFileSync(promptPath, "prompt from env", "utf-8");
+    writeFileSync(siblingPath, "keep me", "utf-8");
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        [],
+        {
+          agent: "claude",
+          maxConsecutiveFailures: 3,
+          preventSleep: true,
+        },
+        {
+          env: {
+            GNHF_REEXEC_STDIN_PROMPT_FILE: promptPath,
+            GNHF_SLEEP_INHIBITED: "1",
+          },
+          startSleepPrevention: vi.fn(() =>
+            Promise.resolve({
+              type: "skipped" as const,
+              reason: "already-inhibited",
+            }),
+          ),
+        },
+      );
+
+      expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+      expect(orchestratorCtor.mock.calls[0]?.[3]).toBe("prompt from env");
+      expect(existsSync(promptDir)).toBe(true);
+      expect(existsSync(siblingPath)).toBe(true);
+    } finally {
+      rmSync(promptDir, { recursive: true, force: true });
+    }
+  });
+
+  it("signals Linux sleep-prevention re-exec readiness before loading config", async () => {
+    const loadConfig = vi.fn(() => ({
+      agent: "claude" as const,
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    }));
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "skipped" as const,
+        reason: "already-inhibited",
+      }),
+    );
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({ loadConfig }));
+    vi.doMock("./core/debug-log.js", () => ({ appendDebugLog: vi.fn() }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/stdin.js", () => ({
+      readStdinText: vi.fn(() => Promise.resolve("")),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention,
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn(() => ({
+          status: "running" as const,
+          currentIteration: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 0,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        }));
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      },
+    }));
+
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+
+    process.argv = ["node", "gnhf", "ship it"];
+    const originalSleepInhibited = process.env.GNHF_SLEEP_INHIBITED;
+    process.env.GNHF_SLEEP_INHIBITED = "1";
+
+    try {
+      await import("./cli.js");
+
+      expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+      expect(loadConfig).toHaveBeenCalledTimes(1);
+      expect(startSleepPrevention.mock.invocationCallOrder[0]).toBeLessThan(
+        loadConfig.mock.invocationCallOrder[0] ?? Infinity,
+      );
+    } finally {
+      process.argv = originalArgv;
+      if (originalSleepInhibited === undefined) {
+        delete process.env.GNHF_SLEEP_INHIBITED;
+      } else {
+        process.env.GNHF_SLEEP_INHIBITED = originalSleepInhibited;
+      }
+      stdoutWrite.mockRestore();
+      exitSpy.mockRestore();
+    }
+  });
+
+  it("does not start sleep prevention when quitting from the overwrite prompt", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({ type: "skipped" as const, reason: "unsupported" }),
+    );
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-test-"));
+    const promptPath = join(tempDir, "PROMPT.md");
+    writeFileSync(promptPath, "existing prompt", "utf-8");
+
+    vi.resetModules();
+    vi.doMock("node:readline", () => ({
+      createInterface: vi.fn(() => ({
+        question: (_question: string, callback: (answer: string) => void) => {
+          callback("q");
+        },
+        close: vi.fn(),
+      })),
+    }));
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
+      getLastIterationNumber: vi.fn(() => 3),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention,
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn();
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "new prompt"];
+
+    try {
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
+
+      expect(startSleepPrevention).not.toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenNthCalledWith(1, 0);
+      expect(exitSpy).toHaveBeenNthCalledWith(2, 1);
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("waits for orchestrator shutdown after the renderer exits", async () => {
@@ -219,6 +716,7 @@ describe("cli", () => {
       {
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
       { orchestratorStart, rendererWaitUntilExit },
     );
@@ -253,6 +751,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       },
       {
         orchestratorStart: vi.fn(() => Promise.resolve()),
@@ -289,6 +788,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         maxConsecutiveFailures: 3,
+        preventSleep: false,
       })),
     }));
     vi.doMock("./core/git.js", () => ({
@@ -317,6 +817,196 @@ describe("cli", () => {
           'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
         ),
       );
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+    }
+  });
+
+  it("uses the SIGTERM exit code when shutdown times out after SIGTERM", async () => {
+    vi.useFakeTimers();
+
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+    const processOn = vi.spyOn(process, "on");
+    const processOff = vi.spyOn(process, "off");
+    const signalHandlers = new Map<string, () => void>();
+    processOn.mockImplementation(((event: string, listener: () => void) => {
+      if (event === "SIGINT" || event === "SIGTERM") {
+        signalHandlers.set(event, listener);
+      }
+      return process;
+    }) as typeof process.on);
+    processOff.mockImplementation((() => process) as typeof process.off);
+
+    let resolveRendererExit!: () => void;
+    const rendererWaitUntilExit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRendererExit = resolve;
+        }),
+    );
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => new Promise<void>(() => {}));
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn(() => ({
+          status: "running" as const,
+          currentIteration: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 0,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        }));
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn(() => {
+          resolveRendererExit();
+        });
+        waitUntilExit = rendererWaitUntilExit;
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      const cliPromise = import("./cli.js");
+
+      await vi.waitFor(() => {
+        expect(signalHandlers.has("SIGTERM")).toBe(true);
+      });
+
+      signalHandlers.get("SIGTERM")?.();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await cliPromise;
+
+      expect(exitSpy).toHaveBeenCalledWith(143);
+      expect(exitSpy).not.toHaveBeenCalledWith(130);
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+      processOn.mockRestore();
+      processOff.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the SIGINT exit code when the renderer reports an interactive interrupt", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn(() => ({
+          status: "running" as const,
+          currentIteration: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 0,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        }));
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve("interrupted"));
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      await import("./cli.js");
+
+      expect(exitSpy).toHaveBeenCalledWith(130);
+      expect(exitSpy).not.toHaveBeenCalledWith(0);
     } finally {
       process.argv = originalArgv;
       stdoutWrite.mockRestore();

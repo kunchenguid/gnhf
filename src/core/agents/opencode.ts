@@ -1,4 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import {
@@ -9,6 +13,8 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
+import { appendDebugLog } from "../debug-log.js";
+import { shutdownChildProcess } from "./managed-process.js";
 
 interface OpenCodeMessagePart {
   type?: string;
@@ -77,6 +83,7 @@ interface OpenCodeDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  platform?: NodeJS.Platform;
   spawn?: typeof spawn;
 }
 
@@ -135,6 +142,21 @@ function buildPrompt(prompt: string): string {
     "Do not include any prose before or after the JSON.",
     `The JSON must match this schema exactly: ${JSON.stringify(AGENT_OUTPUT_SCHEMA)}`,
   ].join("\n");
+}
+
+/**
+ * On Windows with `shell: true`, `child.pid` is the `cmd.exe` wrapper, not
+ * the actual server process.  `taskkill /T` terminates the entire process
+ * tree rooted at that PID so the real server doesn't survive shutdown.
+ */
+async function killWindowsProcessTree(pid: number): Promise<void> {
+  try {
+    execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
+      stdio: "ignore",
+    });
+  } catch {
+    // Best-effort: the process may have already exited.
+  }
 }
 
 function createAbortError(): Error {
@@ -225,6 +247,7 @@ export class OpenCodeAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private platform: NodeJS.Platform;
   private spawnFn: typeof spawn;
   private server: OpenCodeServer | null = null;
   private closingPromise: Promise<void> | null = null;
@@ -233,6 +256,7 @@ export class OpenCodeAgent implements Agent {
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
+    this.platform = deps.platform ?? process.platform;
     this.spawnFn = deps.spawn ?? spawn;
   }
 
@@ -309,7 +333,8 @@ export class OpenCodeAgent implements Agent {
     }
 
     const port = await this.getPortFn();
-    const detached = process.platform !== "win32";
+    const isWindows = this.platform === "win32";
+    const detached = !isWindows;
     const child = this.spawnFn(
       "opencode",
       [
@@ -323,6 +348,7 @@ export class OpenCodeAgent implements Agent {
       {
         cwd,
         detached,
+        shell: isWindows,
         stdio: ["ignore", "pipe", "pipe"],
         env: buildOpencodeChildEnv(),
       },
@@ -363,6 +389,7 @@ export class OpenCodeAgent implements Agent {
     });
 
     this.server = server;
+    appendDebugLog("opencode:spawn", { cwd, port, detached });
     server.readyPromise = this.waitForHealthy(server, signal).catch(
       async (error) => {
         await this.shutdownServer();
@@ -789,57 +816,24 @@ export class OpenCodeAgent implements Agent {
     }
 
     const server = this.server;
-    const waitForClose = new Promise<void>((resolve) => {
-      if (server.closed) {
-        resolve();
-        return;
+    appendDebugLog("opencode:shutdown", { cwd: server.cwd, port: server.port });
+
+    this.closingPromise = (
+      this.platform === "win32" && server.child.pid
+        ? killWindowsProcessTree(server.child.pid)
+        : shutdownChildProcess(server.child, {
+            detached: server.detached,
+            killProcess: this.killProcessFn,
+            timeoutMs: 3_000,
+          })
+    ).finally(() => {
+      if (this.server === server) {
+        this.server = null;
       }
-      server.child.once("close", () => resolve());
+      this.closingPromise = null;
     });
-
-    try {
-      this.signalServer(server, "SIGTERM");
-    } catch {
-      // Best effort only.
-    }
-
-    const forceKill = new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (!server.closed) {
-          try {
-            this.signalServer(server, "SIGKILL");
-          } catch {
-            // Best effort only.
-          }
-        }
-        resolve();
-      }, 3_000);
-      timer.unref?.();
-    });
-
-    this.closingPromise = Promise.race([waitForClose, forceKill]).finally(
-      () => {
-        if (this.server === server) {
-          this.server = null;
-        }
-        this.closingPromise = null;
-      },
-    );
 
     await this.closingPromise;
-  }
-
-  private signalServer(server: OpenCodeServer, signal: NodeJS.Signals): void {
-    if (server.detached && server.child.pid) {
-      try {
-        this.killProcessFn(-server.child.pid, signal);
-        return;
-      } catch {
-        // Fall back to killing the direct child below.
-      }
-    }
-
-    server.child.kill(signal);
   }
 
   private async requestJSON<T>(

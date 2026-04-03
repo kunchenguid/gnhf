@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
@@ -29,6 +30,8 @@ import {
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 import { setupRun, appendNotes, resumeRun } from "./run.js";
 
+const P = "/project";
+
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockAppendFileSync = vi.mocked(appendFileSync);
@@ -45,37 +48,37 @@ describe("setupRun", () => {
   });
 
   it("creates the run directory recursively", () => {
-    setupRun("test-run-1", "fix bugs", "abc123", "/project");
-    expect(mockMkdirSync).toHaveBeenCalledWith("/project/.git/info", {
+    setupRun("test-run-1", "fix bugs", "abc123", P);
+    expect(mockMkdirSync).toHaveBeenCalledWith(join(P, ".git", "info"), {
       recursive: true,
     });
     expect(mockMkdirSync).toHaveBeenCalledWith(
-      "/project/.gnhf/runs/test-run-1",
+      join(P, ".gnhf", "runs", "test-run-1"),
       { recursive: true },
     );
   });
 
   it("writes the ignore rule to .git/info/exclude", () => {
-    setupRun("run-abc", "test", "abc123", "/project");
+    setupRun("run-abc", "test", "abc123", P);
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/project/.git/info/exclude",
+      join(P, ".git", "info", "exclude"),
       ".gnhf/runs/\n",
       "utf-8",
     );
   });
 
   it("writes PROMPT.md with the prompt text", () => {
-    setupRun("run-abc", "improve coverage", "abc123", "/project");
+    setupRun("run-abc", "improve coverage", "abc123", P);
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/project/.gnhf/runs/run-abc/prompt.md",
+      join(P, ".gnhf", "runs", "run-abc", "prompt.md"),
       "improve coverage",
       "utf-8",
     );
   });
 
   it("writes notes.md with header and objective", () => {
-    setupRun("run-abc", "improve coverage", "abc123", "/project");
+    setupRun("run-abc", "improve coverage", "abc123", P);
     const notesCall = mockWriteFileSync.mock.calls.find(
       (call) => typeof call[0] === "string" && call[0].endsWith("notes.md"),
     );
@@ -87,7 +90,7 @@ describe("setupRun", () => {
   });
 
   it("writes output-schema.json with valid JSON schema", () => {
-    setupRun("run-abc", "test", "abc123", "/project");
+    setupRun("run-abc", "test", "abc123", P);
     const schemaCall = mockWriteFileSync.mock.calls.find(
       (call) =>
         typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
@@ -103,42 +106,42 @@ describe("setupRun", () => {
   });
 
   it("writes the branch base commit for new runs", () => {
-    setupRun("run-abc", "test", "abc123", "/project");
+    setupRun("run-abc", "test", "abc123", P);
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/project/.gnhf/runs/run-abc/base-commit",
+      join(P, ".gnhf", "runs", "run-abc", "base-commit"),
       "abc123\n",
       "utf-8",
     );
   });
 
   it("preserves the existing branch base commit on overwrite", () => {
-    mockExistsSync.mockImplementation(
-      (path) => path === "/project/.gnhf/runs/run-abc/base-commit",
-    );
+    const baseCommitPath = join(P, ".gnhf", "runs", "run-abc", "base-commit");
+    mockExistsSync.mockImplementation((path) => path === baseCommitPath);
     mockReadFileSync.mockImplementation((path) =>
-      path === "/project/.gnhf/runs/run-abc/base-commit" ? "old123\n" : "",
+      path === baseCommitPath ? "old123\n" : "",
     );
 
-    setupRun("run-abc", "test", "new456", "/project");
+    setupRun("run-abc", "test", "new456", P);
 
     expect(mockWriteFileSync).not.toHaveBeenCalledWith(
-      "/project/.gnhf/runs/run-abc/base-commit",
+      baseCommitPath,
       "new456\n",
       "utf-8",
     );
   });
 
   it("returns correct RunInfo paths", () => {
-    const info = setupRun("my-run", "prompt text", "abc123", "/project");
+    const runDir = join(P, ".gnhf", "runs", "my-run");
+    const info = setupRun("my-run", "prompt text", "abc123", P);
     expect(info).toEqual({
       runId: "my-run",
-      runDir: "/project/.gnhf/runs/my-run",
-      promptPath: "/project/.gnhf/runs/my-run/prompt.md",
-      notesPath: "/project/.gnhf/runs/my-run/notes.md",
-      schemaPath: "/project/.gnhf/runs/my-run/output-schema.json",
+      runDir,
+      promptPath: join(runDir, "prompt.md"),
+      notesPath: join(runDir, "notes.md"),
+      schemaPath: join(runDir, "output-schema.json"),
       baseCommit: "abc123",
-      baseCommitPath: "/project/.gnhf/runs/my-run/base-commit",
+      baseCommitPath: join(runDir, "base-commit"),
     });
   });
 });
@@ -149,14 +152,13 @@ describe("resumeRun", () => {
   });
 
   it("refreshes output-schema.json to the current JSON schema", () => {
-    mockExistsSync.mockImplementation(
-      (path) => path === "/project/.gnhf/runs/run-abc",
-    );
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    mockExistsSync.mockImplementation((path) => path === runDir);
 
-    resumeRun("run-abc", "/project");
+    resumeRun("run-abc", P);
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/project/.gnhf/runs/run-abc/output-schema.json",
+      join(runDir, "output-schema.json"),
       expect.any(String),
       "utf-8",
     );
@@ -169,34 +171,30 @@ describe("resumeRun", () => {
   });
 
   it("reads the stored base commit when present", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const baseCommitPath = join(runDir, "base-commit");
     mockExistsSync.mockImplementation(
-      (path) =>
-        path === "/project/.gnhf/runs/run-abc" ||
-        path === "/project/.gnhf/runs/run-abc/base-commit",
+      (path) => path === runDir || path === baseCommitPath,
     );
     mockReadFileSync.mockImplementation((path) =>
-      path === "/project/.gnhf/runs/run-abc/base-commit" ? "abc123\n" : "",
+      path === baseCommitPath ? "abc123\n" : "",
     );
 
-    const info = resumeRun("run-abc", "/project");
+    const info = resumeRun("run-abc", P);
 
     expect(info.baseCommit).toBe("abc123");
   });
 
   it("backfills missing base-commit for legacy runs", () => {
-    mockExistsSync.mockImplementation(
-      (path) => path === "/project/.gnhf/runs/run-abc",
-    );
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    mockExistsSync.mockImplementation((path) => path === runDir);
     mockFindLegacyRunBaseCommit.mockReturnValue("legacy123");
 
-    const info = resumeRun("run-abc", "/project");
+    const info = resumeRun("run-abc", P);
 
-    expect(mockFindLegacyRunBaseCommit).toHaveBeenCalledWith(
-      "run-abc",
-      "/project",
-    );
+    expect(mockFindLegacyRunBaseCommit).toHaveBeenCalledWith("run-abc", P);
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      "/project/.gnhf/runs/run-abc/base-commit",
+      join(runDir, "base-commit"),
       "legacy123\n",
       "utf-8",
     );
@@ -204,15 +202,14 @@ describe("resumeRun", () => {
   });
 
   it("falls back to HEAD when a legacy run has no recoverable base commit", () => {
-    mockExistsSync.mockImplementation(
-      (path) => path === "/project/.gnhf/runs/run-abc",
-    );
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    mockExistsSync.mockImplementation((path) => path === runDir);
     mockFindLegacyRunBaseCommit.mockReturnValue(null);
     mockGetHeadCommit.mockReturnValue("head456");
 
-    const info = resumeRun("run-abc", "/project");
+    const info = resumeRun("run-abc", P);
 
-    expect(mockGetHeadCommit).toHaveBeenCalledWith("/project");
+    expect(mockGetHeadCommit).toHaveBeenCalledWith(P);
     expect(info.baseCommit).toBe("head456");
   });
 });

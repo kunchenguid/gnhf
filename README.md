@@ -18,10 +18,10 @@
       src="https://img.shields.io/github/actions/workflow/status/kunchenguid/gnhf/release-please.yml?style=flat-square&label=release"
   /></a>
   <a
-    href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"
+    href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"
     ><img
       alt="Platform"
-      src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"
+      src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"
   /></a>
   <a href="https://x.com/kunchenguid"
     ><img
@@ -63,6 +63,7 @@ $ gnhf "reduce complexity of the codebase without changing functionality" \
 ```
 
 Run `gnhf` from inside a Git repository with a clean working tree. If you are starting from a plain directory, run `git init` first.
+`gnhf` supports macOS, Linux, and Windows.
 
 ## Install
 
@@ -143,12 +144,13 @@ npm link
 
 ### Flags
 
-| Flag                   | Description                                                | Default                |
-| ---------------------- | ---------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`      | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`) | config file (`claude`) |
-| `--max-iterations <n>` | Abort after `n` total iterations                           | unlimited              |
-| `--max-tokens <n>`     | Abort after `n` total input+output tokens                  | unlimited              |
-| `--version`            | Show version                                               |                        |
+| Flag                     | Description                                                        | Default                |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)         | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                   | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                          | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
+| `--version`              | Show version                                                       |                        |
 
 ## Configuration
 
@@ -160,11 +162,24 @@ agent: claude
 
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
+
+# Prevent the machine from sleeping during a run
+preventSleep: true
 ```
 
 If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
 
-CLI flags override config file values. The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
+The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+When sleep prevention is enabled, `gnhf` uses the native mechanism for your OS: `caffeinate` on macOS, `systemd-inhibit` on Linux, and a small PowerShell helper backed by `SetThreadExecutionState` on Windows.
+
+## Debug Logs
+
+Set `GNHF_DEBUG_LOG_PATH` to capture lifecycle events as JSONL while debugging a run:
+
+```sh
+GNHF_DEBUG_LOG_PATH=/tmp/gnhf-debug.jsonl gnhf "ship it"
+```
 
 ## Agents
 
@@ -182,7 +197,8 @@ CLI flags override config file values. The iteration and token caps are runtime-
 ```sh
 npm run build          # Build with tsdown
 npm run dev            # Watch mode
-npm test               # Run tests (vitest)
+npm test               # Build, then run unit tests (vitest)
+npm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
 npm run lint           # ESLint
 npm run format         # Prettier
 ```

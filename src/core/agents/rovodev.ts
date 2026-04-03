@@ -8,6 +8,8 @@ import type {
   AgentRunOptions,
   TokenUsage,
 } from "./types.js";
+import { appendDebugLog } from "../debug-log.js";
+import { shutdownChildProcess } from "./managed-process.js";
 
 interface RovoDevRequestUsageEvent {
   input_tokens?: number;
@@ -213,7 +215,7 @@ export class RovoDevAgent implements Agent {
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },
-    );
+    ) as unknown as ChildProcessWithoutNullStreams;
 
     const server: RovoDevServer = {
       baseUrl: `http://127.0.0.1:${port}`,
@@ -250,6 +252,7 @@ export class RovoDevAgent implements Agent {
     });
 
     this.server = server;
+    appendDebugLog("rovodev:spawn", { cwd, port, detached });
     server.readyPromise = this.waitForHealthy(server, signal).catch(
       async (error) => {
         await this.shutdownServer();
@@ -266,10 +269,10 @@ export class RovoDevAgent implements Agent {
     signal?: AbortSignal,
   ): Promise<void> {
     const deadline = Date.now() + 30_000;
-    let spawnError: Error | null = null;
+    let spawnErrorMessage: string | null = null;
 
     server.child.once("error", (error) => {
-      spawnError = error;
+      spawnErrorMessage = error.message;
     });
 
     while (Date.now() < deadline) {
@@ -277,8 +280,8 @@ export class RovoDevAgent implements Agent {
         throw createAbortError();
       }
 
-      if (spawnError) {
-        throw new Error(`Failed to spawn rovodev: ${spawnError.message}`);
+      if (spawnErrorMessage) {
+        throw new Error(`Failed to spawn rovodev: ${spawnErrorMessage}`);
       }
 
       if (server.closed) {
@@ -605,57 +608,20 @@ export class RovoDevAgent implements Agent {
     }
 
     const server = this.server;
-    const waitForClose = new Promise<void>((resolve) => {
-      if (server.closed) {
-        resolve();
-        return;
+    appendDebugLog("rovodev:shutdown", { cwd: server.cwd, port: server.port });
+
+    this.closingPromise = shutdownChildProcess(server.child, {
+      detached: server.detached,
+      killProcess: this.killProcessFn,
+      timeoutMs: 3_000,
+    }).finally(() => {
+      if (this.server === server) {
+        this.server = null;
       }
-      server.child.once("close", () => resolve());
+      this.closingPromise = null;
     });
-
-    try {
-      this.signalServer(server, "SIGTERM");
-    } catch {
-      // Best effort only.
-    }
-
-    const forceKill = new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (!server.closed) {
-          try {
-            this.signalServer(server, "SIGKILL");
-          } catch {
-            // Best effort only.
-          }
-        }
-        resolve();
-      }, 3_000);
-      timer.unref?.();
-    });
-
-    this.closingPromise = Promise.race([waitForClose, forceKill]).finally(
-      () => {
-        if (this.server === server) {
-          this.server = null;
-        }
-        this.closingPromise = null;
-      },
-    );
 
     await this.closingPromise;
-  }
-
-  private signalServer(server: RovoDevServer, signal: NodeJS.Signals): void {
-    if (server.detached && server.child.pid) {
-      try {
-        this.killProcessFn(-server.child.pid, signal);
-        return;
-      } catch {
-        // Fall back to killing the direct child below.
-      }
-    }
-
-    server.child.kill(signal);
   }
 
   private async requestJSON<T>(

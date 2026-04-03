@@ -28,6 +28,8 @@ const MAX_MSG_LINES = 3;
 const MAX_MSG_LINE_LEN = 64;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
 
+export type RendererExitReason = "interrupted" | "stopped";
+
 // ── ANSI helpers ─────────────────────────────────────────────
 
 export function stripAnsi(s: string): string {
@@ -422,8 +424,8 @@ export class Renderer {
   private agentName: string;
   private state: OrchestratorState;
   private interval: ReturnType<typeof setInterval> | null = null;
-  private exitResolve!: () => void;
-  private exitPromise: Promise<void>;
+  private exitResolve!: (reason: RendererExitReason) => void;
+  private exitPromise: Promise<RendererExitReason>;
   private topStars: Star[] = [];
   private bottomStars: Star[] = [];
   private sideStars: Star[] = [];
@@ -448,7 +450,7 @@ export class Renderer {
     });
 
     this.orchestrator.on("stopped", () => {
-      this.stop();
+      this.stop("stopped");
     });
 
     if (process.stdin.isTTY) {
@@ -456,7 +458,7 @@ export class Renderer {
       process.stdin.resume();
       process.stdin.on("data", (data) => {
         if (data[0] === 3) {
-          this.stop();
+          this.stop("interrupted");
           this.orchestrator.stop();
         }
       });
@@ -466,7 +468,7 @@ export class Renderer {
     this.render();
   }
 
-  stop(): void {
+  stop(reason: RendererExitReason = "stopped"): void {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
@@ -476,10 +478,10 @@ export class Renderer {
       process.stdin.pause();
       process.stdin.removeAllListeners("data");
     }
-    this.exitResolve();
+    this.exitResolve(reason);
   }
 
-  waitUntilExit(): Promise<void> {
+  waitUntilExit(): Promise<RendererExitReason> {
     return this.exitPromise;
   }
 

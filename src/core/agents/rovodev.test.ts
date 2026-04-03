@@ -333,6 +333,14 @@ describe("RovoDevAgent", () => {
   it("force terminates rovodev if shutdown exceeds the timeout", async () => {
     vi.useFakeTimers();
     const proc = createMockProcess();
+    vi.mocked(proc.kill).mockImplementation((signal?: NodeJS.Signals) => {
+      if (signal === "SIGKILL") {
+        queueMicrotask(() => {
+          proc.emit("close", 0, null);
+        });
+      }
+      return true;
+    });
     mockSpawn.mockReturnValue(proc);
 
     fetchMock
