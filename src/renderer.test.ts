@@ -11,7 +11,9 @@ import {
   renderStarFieldLines,
   buildFrame,
   buildFrameCells,
+  buildContentCells,
 } from "./renderer.js";
+import { rowToString } from "./renderer-diff.js";
 import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 
 describe("renderTitle", () => {
@@ -294,11 +296,263 @@ describe("buildFrame", () => {
       expect(cells[r]).toHaveLength(terminalWidth);
     }
   });
+
+  it("keeps stats visible when moon rows exceed the content viewport", () => {
+    const state: OrchestratorState = {
+      status: "done",
+      currentIteration: 660,
+      totalInputTokens: 1200,
+      totalOutputTokens: 800,
+      commitCount: 7,
+      iterations: Array.from({ length: 660 }, (_, index) => ({
+        iteration: index + 1,
+        success: true,
+      })),
+      successCount: 660,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const frame = buildFrame(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      80,
+      24,
+    );
+    const plainLines = stripCursorHome(frame).split("\n").map(stripAnsi);
+
+    expect(plainLines.join("\n")).toContain("7 commits");
+    expect(plainLines.join("\n")).toContain("1K in");
+    expect(plainLines.join("\n")).toContain("800 out");
+  });
+
+  it("uses the content builder height policy for the content viewport", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      currentIteration: 1,
+      totalInputTokens: 100,
+      totalOutputTokens: 50,
+      commitCount: 1,
+      iterations: [{ success: true }],
+      successCount: 1,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: "reading files",
+    };
+
+    const availableHeight = 22;
+    const now = state.startTime.getTime() + 60_000;
+    const contentRows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      now,
+      availableHeight,
+    )
+      .map(rowToString)
+      .map(stripAnsi);
+    const frame = buildFrame(
+      "my prompt",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      now,
+      63,
+      availableHeight + 2,
+    );
+    const frameLines = stripCursorHome(frame).split("\n").map(stripAnsi);
+
+    expect(
+      frameLines.slice(0, availableHeight).map((line) => line.trim()),
+    ).toEqual(contentRows);
+  });
 });
 
 describe("renderer module exports", () => {
   it("does not expose clampCellsToWidth", () => {
     expect("clampCellsToWidth" in renderer).toBe(false);
+  });
+});
+
+describe("buildContentCells adaptive height", () => {
+  const state: OrchestratorState = {
+    status: "running",
+    currentIteration: 1,
+    totalInputTokens: 100,
+    totalOutputTokens: 50,
+    commitCount: 1,
+    iterations: [{ success: true }],
+    successCount: 1,
+    failCount: 0,
+    consecutiveFailures: 0,
+    startTime: new Date("2026-01-01T00:00:00Z"),
+    waitingUntil: null,
+    lastMessage: "reading files",
+  };
+
+  const toText = (rows: ReturnType<typeof buildContentCells>): string =>
+    rows.map(rowToString).map(stripAnsi).join("\n");
+
+  it("includes all sections at full height", () => {
+    const rows = buildContentCells("my prompt", "claude", state, "00:01:00", 0);
+    const text = toText(rows);
+    expect(text).toContain("┏━╸┏━┓");
+    expect(text).toContain("g n h f");
+    expect(text).toContain("my prompt");
+    expect(text).toContain("reading files");
+    expect(text).toContain("00:01:00");
+    expect(rows).toHaveLength(22);
+  });
+
+  it("keeps the logo separated from both the eyebrow and prompt", () => {
+    const lines = buildContentCells("my prompt", "claude", state, "00:01:00", 0)
+      .map(rowToString)
+      .map(stripAnsi);
+
+    const eyebrowIndex = lines.findIndex((line) => line.includes("g n h f"));
+    const firstArtIndex = lines.findIndex((line) => line.includes("┏━╸┏━┓"));
+    const lastArtIndex = lines.findIndex((line) => line.includes("┗━┛┗━┛"));
+    const promptIndex = lines.findIndex((line) => line.includes("my prompt"));
+
+    expect(firstArtIndex - eyebrowIndex).toBe(3);
+    expect(promptIndex - lastArtIndex).toBe(2);
+  });
+
+  it("hides ASCII art first when height is insufficient", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      21,
+    );
+    const text = toText(rows);
+    expect(text).not.toContain("┏━╸┏━┓");
+    expect(text).toContain("g n h f");
+    expect(text).toContain("my prompt");
+    expect(text).toContain("reading files");
+    expect(rows.length).toBeLessThanOrEqual(21);
+  });
+
+  it("hides eyebrow after ASCII art", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      17,
+    );
+    const text = toText(rows);
+    expect(text).not.toContain("┏━╸┏━┓");
+    expect(text).not.toContain("g n h f");
+    expect(text).toContain("my prompt");
+    expect(text).toContain("reading files");
+    expect(rows.length).toBeLessThanOrEqual(17);
+  });
+
+  it("hides agent text after eyebrow", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      14,
+    );
+    const text = toText(rows);
+    expect(text).not.toContain("┏━╸┏━┓");
+    expect(text).not.toContain("g n h f");
+    expect(text).not.toContain("reading files");
+    expect(text).toContain("my prompt");
+    expect(text).toContain("00:01:00");
+    expect(rows.length).toBeLessThanOrEqual(14);
+  });
+
+  it("hides prompt text last", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      9,
+    );
+    const text = toText(rows);
+    expect(text).not.toContain("┏━╸┏━┓");
+    expect(text).not.toContain("g n h f");
+    expect(text).not.toContain("reading files");
+    expect(text).not.toContain("my prompt");
+    expect(text).toContain("00:01:00");
+    expect(rows.length).toBeLessThanOrEqual(9);
+  });
+
+  it("always keeps stats and moon strip even at minimum height", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      state,
+      "00:01:00",
+      0,
+      5,
+    );
+    const text = toText(rows);
+    expect(text).toContain("00:01:00");
+    expect(text).toMatch(/🌕/);
+    expect(rows.length).toBeLessThanOrEqual(5);
+  });
+
+  it("keeps stats visible when moon rows alone exceed the available height", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      {
+        ...state,
+        status: "done",
+        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+      },
+      "00:01:00",
+      0,
+      22,
+    );
+    const text = toText(rows);
+
+    expect(text).toContain("00:01:00");
+    expect(rows.length).toBeLessThanOrEqual(22);
+  });
+
+  it("drops all moon rows when no moon rows fit", () => {
+    const rows = buildContentCells(
+      "my prompt",
+      "claude",
+      {
+        ...state,
+        status: "done",
+        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+      },
+      "00:01:00",
+      0,
+      1,
+    );
+    const text = toText(rows);
+
+    expect(rows).toHaveLength(1);
+    expect(text).toContain("00:01:00");
+    expect(text).not.toMatch(/🌕/);
   });
 });
 

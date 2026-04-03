@@ -284,57 +284,102 @@ function renderResumeHintCells(width: number): Cell[] {
   return centerLineCells(textToCells(RESUME_HINT, "dim"), width);
 }
 
-function fitContentRows(contentRows: Cell[][], maxRows: number): Cell[][] {
-  if (contentRows.length <= maxRows) return contentRows;
-
-  const fitted = [...contentRows];
-
-  while (fitted.length > maxRows) {
-    const emptyRowIndex = fitted.findIndex((row) => row.length === 0);
-    if (emptyRowIndex === -1) break;
-    fitted.splice(emptyRowIndex, 1);
-  }
-
-  return fitted.length > maxRows
-    ? fitted.slice(fitted.length - maxRows)
-    : fitted;
-}
-
 // ── Build full frame (cell-based) ────────────────────────────
 
+/**
+ * Builds the centered content viewport for the renderer.
+ *
+ * When `availableHeight` is constrained, the layout drops optional sections in
+ * priority order (ASCII art, eyebrow, agent message, then prompt) so the stats
+ * row remains visible and any remaining space is used for the newest moon rows.
+ */
 export function buildContentCells(
   prompt: string,
   agentName: string,
   state: OrchestratorState,
   elapsed: string,
   now: number,
+  availableHeight?: number,
 ): Cell[][] {
-  const rows: Cell[][] = [];
   const isRunning = state.status === "running" || state.status === "waiting";
+  const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
+  const maxRows = availableHeight ?? Infinity;
+  if (maxRows <= 0) return [];
 
-  rows.push([]);
-  rows.push(...renderTitleCells(agentName));
-  rows.push([], []);
-
+  const titleCells = renderTitleCells(agentName);
+  const titleSpacer = titleCells[1] ?? [];
   const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
+  const promptRows: Cell[][] = [];
   for (let i = 0; i < MAX_PROMPT_LINES; i++) {
     const pl = promptLines[i] ?? "";
-    rows.push(pl ? textToCells(pl, "dim") : []);
+    promptRows.push(pl ? textToCells(pl, "dim") : []);
   }
 
-  rows.push([], []);
-  rows.push(
-    renderStatsCells(
-      elapsed,
-      state.totalInputTokens,
-      state.totalOutputTokens,
-      state.commitCount,
-    ),
-  );
-  rows.push([], []);
-  rows.push(...renderAgentMessageCells(state.lastMessage, state.status));
-  rows.push([], []);
-  rows.push(...renderMoonStripCells(state.iterations, isRunning, now));
+  const sections = {
+    top: [[]] as Cell[][],
+    eyebrow: [titleCells[0], [], []] as Cell[][],
+    art: titleCells.slice(2),
+    prompt: [titleSpacer, ...promptRows, [], []] as Cell[][],
+    stats: [
+      renderStatsCells(
+        elapsed,
+        state.totalInputTokens,
+        state.totalOutputTokens,
+        state.commitCount,
+      ),
+    ] as Cell[][],
+    agent: [
+      [],
+      [],
+      ...renderAgentMessageCells(state.lastMessage, state.status),
+    ],
+    moon: [[], [], ...moonRows] as Cell[][],
+  };
+
+  const flattenSections = (): Cell[][] => [
+    ...sections.top,
+    ...sections.eyebrow,
+    ...sections.art,
+    ...sections.prompt,
+    ...sections.stats,
+    ...sections.agent,
+    ...sections.moon,
+  ];
+
+  const optionalSections: Array<keyof typeof sections> = [
+    "art",
+    "eyebrow",
+    "agent",
+    "prompt",
+  ];
+
+  let rows = flattenSections();
+  for (const section of optionalSections) {
+    if (rows.length <= maxRows) break;
+    sections[section] = [];
+    rows = flattenSections();
+  }
+
+  if (rows.length > maxRows) {
+    rows = rows.filter((row) => row.length > 0);
+  }
+
+  if (rows.length > maxRows) {
+    const nonMoonRows = [
+      ...sections.top,
+      ...sections.eyebrow,
+      ...sections.art,
+      ...sections.prompt,
+      ...sections.stats,
+      ...sections.agent,
+    ].filter((row) => row.length > 0);
+    const allowedMoonRows = Math.max(0, maxRows - nonMoonRows.length);
+    const visibleMoonRows =
+      allowedMoonRows === 0
+        ? []
+        : moonRows.filter((row) => row.length > 0).slice(-allowedMoonRows);
+    rows = [...nonMoonRows, ...visibleMoonRows];
+  }
 
   return rows;
 }
@@ -353,8 +398,12 @@ export function buildFrameCells(
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
-  const contentRows = fitContentRows(
-    buildContentCells(prompt, agentName, state, elapsed, now),
+  const contentRows = buildContentCells(
+    prompt,
+    agentName,
+    state,
+    elapsed,
+    now,
     availableHeight,
   );
 
