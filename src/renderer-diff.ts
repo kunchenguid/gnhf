@@ -7,7 +7,7 @@ export type Style = "normal" | "bold" | "dim";
 export interface Cell {
   char: string;
   style: Style;
-  /** 1 = normal char, 2 = wide (emoji), 0 = continuation of wide char */
+  /** 1 = normal grapheme, 2 = wide grapheme, 0 = continuation of a wide grapheme */
   width: number;
 }
 
