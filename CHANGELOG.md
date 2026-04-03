@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.10](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.9...gnhf-v0.1.10) (2026-04-03)
+
+
+### Features
+
+* **renderer:** adapt content to viewport ([#20](https://github.com/kunchenguid/gnhf/issues/20)) ([592d80b](https://github.com/kunchenguid/gnhf/commit/592d80b6d9befb9a38f44cc19346e736c01a5220))
+* **renderer:** randomize star field seeds ([#22](https://github.com/kunchenguid/gnhf/issues/22)) ([e658f32](https://github.com/kunchenguid/gnhf/commit/e658f32004bc54b66ef3c23fec85857f1132fece))
+
 ## [Unreleased]
 
 ### Features
