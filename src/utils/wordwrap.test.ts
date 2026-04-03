@@ -14,6 +14,14 @@ describe("wordWrap", () => {
     expect(wordWrap("abcdefghij", 5)).toEqual(["abcde", "fghij"]);
   });
 
+  it("treats BMP full-width characters as double-width", () => {
+    expect(wordWrap("漢A", 2)).toEqual(["漢", "A"]);
+  });
+
+  it("keeps ZWJ emoji graphemes intact when wrapping", () => {
+    expect(wordWrap("👨‍👩‍👧‍👦", 2)).toEqual(["👨‍👩‍👧‍👦"]);
+  });
+
   it("caps at maxLines with ellipsis on last line", () => {
     const text = "one two three four five six seven eight";
     const lines = wordWrap(text, 10, 2);

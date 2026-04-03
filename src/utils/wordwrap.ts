@@ -1,24 +1,17 @@
-function charWidth(char: string): number {
-  const cp = char.codePointAt(0) ?? 0;
-  return cp > 0xffff ? 2 : 1;
-}
-
-function stringWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    width += charWidth(char);
-  }
-  return width;
-}
+import {
+  graphemeWidth,
+  splitGraphemes,
+  stringWidth,
+} from "./terminal-width.js";
 
 function sliceToWidth(text: string, width: number): string {
   let result = "";
   let currentWidth = 0;
 
-  for (const char of text) {
-    const nextWidth = currentWidth + charWidth(char);
+  for (const grapheme of splitGraphemes(text)) {
+    const nextWidth = currentWidth + graphemeWidth(grapheme);
     if (nextWidth > width) break;
-    result += char;
+    result += grapheme;
     currentWidth = nextWidth;
   }
 
@@ -30,16 +23,16 @@ function splitByWidth(text: string, width: number): string[] {
   let current = "";
   let currentWidth = 0;
 
-  for (const char of text) {
-    const glyphWidth = charWidth(char);
+  for (const grapheme of splitGraphemes(text)) {
+    const glyphWidth = graphemeWidth(grapheme);
     if (current && currentWidth + glyphWidth > width) {
       lines.push(current);
-      current = char;
+      current = grapheme;
       currentWidth = glyphWidth;
       continue;
     }
 
-    current += char;
+    current += grapheme;
     currentWidth += glyphWidth;
   }
 

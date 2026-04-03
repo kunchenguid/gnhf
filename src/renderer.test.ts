@@ -12,7 +12,6 @@ import {
   buildFrame,
   buildFrameCells,
 } from "./renderer.js";
-import { rowToString, textToCells } from "./renderer-diff.js";
 import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 
 describe("renderTitle", () => {
@@ -297,18 +296,9 @@ describe("buildFrame", () => {
   });
 });
 
-describe("clampCellsToWidth", () => {
-  it("drops an overflowing wide glyph instead of splitting it", () => {
-    const clamp = (
-      renderer as {
-        clampCellsToWidth?: (cells: ReturnType<typeof textToCells>, width: number) => ReturnType<typeof textToCells>;
-      }
-    ).clampCellsToWidth;
-
-    expect(clamp).toBeTypeOf("function");
-    expect(
-      rowToString(clamp?.(textToCells(`${"A".repeat(62)}🌕`, "normal"), 63) ?? []),
-    ).toBe("A".repeat(62));
+describe("renderer module exports", () => {
+  it("does not expose clampCellsToWidth", () => {
+    expect("clampCellsToWidth" in renderer).toBe(false);
   });
 });
 

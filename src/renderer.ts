@@ -249,7 +249,7 @@ function renderSideStarsCells(
   return cells;
 }
 
-export function clampCellsToWidth(content: Cell[], width: number): Cell[] {
+function clampCellsToWidth(content: Cell[], width: number): Cell[] {
   if (content.length <= width) return content;
 
   const clamped: Cell[] = [];
