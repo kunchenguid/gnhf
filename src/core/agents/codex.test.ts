@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 vi.mock("node:child_process", () => ({
@@ -22,6 +22,10 @@ function createMockProcess() {
 }
 
 describe("CodexAgent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("does not use a shell for direct Windows launches", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -64,6 +68,40 @@ describe("CodexAgent", () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "C:\\tools\\codex.cmd",
+      [
+        "exec",
+        "test prompt",
+        "--json",
+        "--output-schema",
+        "/tmp/schema.json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--color",
+        "never",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    vi.mocked(execFileSync).mockReturnValue(
+      "C:\\tools\\codex-switch.cmd\r\n" as never,
+    );
+    const agent = new CodexAgent("/tmp/schema.json", {
+      bin: "codex-switch",
+      platform: "win32",
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "codex-switch",
       [
         "exec",
         "test prompt",

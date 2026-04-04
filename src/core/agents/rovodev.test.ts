@@ -232,6 +232,40 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    vi.mocked(execFileSync).mockReturnValue("C:\\tools\\acli.cmd\r\n" as never);
+    const windowsAgent = new RovoDevAgent(schemaPath, {
+      bin: "acli-switch",
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
+
+    await expect(
+      windowsAgent["ensureServer"]("/repo"),
+    ).resolves.toMatchObject({
+      cwd: "/repo",
+      detached: false,
+      port: 8765,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "acli-switch",
+      ["rovodev", "serve", "--disable-session-token", "8765"],
+      expect.objectContaining({
+        cwd: "/repo",
+        detached: false,
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      }),
+    );
+  });
+
   it("reuses the existing server process across runs", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

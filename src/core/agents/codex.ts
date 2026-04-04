@@ -38,7 +38,31 @@ function shouldUseWindowsShell(
   bin: string,
   platform: NodeJS.Platform,
 ): boolean {
-  return platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+  if (platform !== "win32") {
+    return false;
+  }
+
+  if (/\.(cmd|bat)$/i.test(bin)) {
+    return true;
+  }
+
+  if (/[\\/]/.test(bin)) {
+    return false;
+  }
+
+  try {
+    const resolved = execFileSync("where", [bin], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const firstMatch = resolved
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    return firstMatch ? /\.(cmd|bat)$/i.test(firstMatch) : false;
+  } catch {
+    return false;
+  }
 }
 
 function terminateCodexProcess(
