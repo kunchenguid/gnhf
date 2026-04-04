@@ -29,14 +29,22 @@ interface CodexTurnCompleted {
 
 type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 
+interface CodexAgentDeps {
+  bin?: string;
+  platform?: NodeJS.Platform;
+}
+
 export class CodexAgent implements Agent {
   name = "codex";
 
   private bin: string;
+  private platform: NodeJS.Platform;
   private schemaPath: string;
 
-  constructor(schemaPath: string, bin?: string) {
-    this.bin = bin ?? "codex";
+  constructor(schemaPath: string, binOrDeps: string | CodexAgentDeps = {}) {
+    const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
+    this.bin = deps.bin ?? "codex";
+    this.platform = deps.platform ?? process.platform;
     this.schemaPath = schemaPath;
   }
 
@@ -62,7 +70,12 @@ export class CodexAgent implements Agent {
           "--color",
           "never",
         ],
-        { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
+        {
+          cwd,
+          shell: this.platform === "win32",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        },
       );
 
       if (setupAbortHandler(signal, child, reject)) return;

@@ -42,13 +42,21 @@ interface ClaudeResultEvent {
 
 type ClaudeEvent = ClaudeAssistantEvent | ClaudeResultEvent | { type: string };
 
+interface ClaudeAgentDeps {
+  bin?: string;
+  platform?: NodeJS.Platform;
+}
+
 export class ClaudeAgent implements Agent {
   name = "claude";
 
   private bin: string;
+  private platform: NodeJS.Platform;
 
-  constructor(bin?: string) {
-    this.bin = bin ?? "claude";
+  constructor(binOrDeps: string | ClaudeAgentDeps = {}) {
+    const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
+    this.bin = deps.bin ?? "claude";
+    this.platform = deps.platform ?? process.platform;
   }
 
   run(
@@ -73,7 +81,12 @@ export class ClaudeAgent implements Agent {
           JSON.stringify(AGENT_OUTPUT_SCHEMA),
           "--dangerously-skip-permissions",
         ],
-        { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
+        {
+          cwd,
+          shell: this.platform === "win32",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        },
       );
 
       if (setupAbortHandler(signal, child, reject)) return;

@@ -55,6 +55,37 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows so wrapper shims can launch", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new ClaudeAgent({
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },

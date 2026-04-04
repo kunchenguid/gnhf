@@ -5,6 +5,8 @@ import yaml from "js-yaml";
 
 export type AgentName = "claude" | "codex" | "rovodev" | "opencode";
 
+const AGENT_NAMES = ["claude", "codex", "rovodev", "opencode"] as const;
+
 export interface Config {
   agent: AgentName;
   agentPathOverride: Partial<Record<AgentName, string>>;
@@ -70,7 +72,7 @@ function normalizeAgentPathOverride(
     );
   }
 
-  const validNames = new Set<string>(["claude", "codex", "rovodev", "opencode"]);
+  const validNames = new Set<string>(AGENT_NAMES);
   const result: Partial<Record<AgentName, string>> = {};
 
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
@@ -146,23 +148,59 @@ function isMissingConfigError(error: unknown): boolean {
     : error.message.includes("ENOENT");
 }
 
+function serializeAgentPathOverride(
+  agentPathOverride: Partial<Record<AgentName, string>>,
+): string {
+  const serializedOverrides = Object.fromEntries(
+    AGENT_NAMES.flatMap((name) => {
+      const value = agentPathOverride[name];
+      return value === undefined ? [] : [[name, value] as const];
+    }),
+  );
+
+  if (Object.keys(serializedOverrides).length === 0) {
+    return "";
+  }
+
+  return yaml
+    .dump(
+      { agentPathOverride: serializedOverrides },
+      { lineWidth: -1, noRefs: true, sortKeys: false },
+    )
+    .trimEnd();
+}
+
 function serializeConfig(config: Config): string {
-  return `# Agent to use by default
-agent: ${config.agent}
+  const agentPathOverrideSection = serializeAgentPathOverride(
+    config.agentPathOverride,
+  );
+  const lines = [
+    "# Agent to use by default",
+    `agent: ${config.agent}`,
+    "",
+    "# Custom paths to agent binaries (optional)",
+    "# Paths may be absolute, ~-prefixed, or relative to this config directory.",
+    "# Note: rovodev overrides must point to an acli-compatible binary.",
+    "# agentPathOverride:",
+    "#   claude: /path/to/custom-claude",
+    "#   codex: /path/to/custom-codex",
+  ];
 
-# Custom paths to agent binaries (optional)
-# Paths may be absolute, ~-prefixed, or relative to this config directory.
-# Note: rovodev overrides must point to an acli-compatible binary.
-# agentPathOverride:
-#   claude: /path/to/custom-claude
-#   codex: /path/to/custom-codex
+  if (agentPathOverrideSection) {
+    lines.push(...agentPathOverrideSection.split("\n"));
+  }
 
-# Abort after this many consecutive failures
-maxConsecutiveFailures: ${config.maxConsecutiveFailures}
+  lines.push(
+    "",
+    "# Abort after this many consecutive failures",
+    `maxConsecutiveFailures: ${config.maxConsecutiveFailures}`,
+    "",
+    "# Prevent the machine from sleeping during a run",
+    `preventSleep: ${config.preventSleep}`,
+    "",
+  );
 
-# Prevent the machine from sleeping during a run
-preventSleep: ${config.preventSleep}
-`;
+  return lines.join("\n");
 }
 
 export function loadConfig(overrides?: Partial<Config>): Config {

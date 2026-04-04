@@ -92,6 +92,36 @@ describe("loadConfig", () => {
     });
   });
 
+  it("writes agentPathOverride values when bootstrapping a missing config file", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({
+      agentPathOverride: {
+        claude: "/usr/local/bin/claude-wrapper",
+        codex: "./bin/codex-wrapper",
+      },
+    });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\nagentPathOverride:\n  claude: /usr/local/bin/claude-wrapper\n  codex: /mock-home/.gnhf/bin/codex-wrapper\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "claude",
+      agentPathOverride: {
+        claude: "/usr/local/bin/claude-wrapper",
+        codex: "/mock-home/.gnhf/bin/codex-wrapper",
+      },
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
+  });
+
   it("supports bootstrapping rovodev as the configured agent", () => {
     mockReadFileSync.mockImplementation(() => {
       const error = new Error("ENOENT");
