@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -39,7 +39,7 @@ describe("loadConfig", () => {
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
@@ -81,7 +81,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: codex\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      "# Agent to use by default\nagent: codex\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
@@ -106,16 +106,24 @@ describe("loadConfig", () => {
       },
     });
 
+    const resolvedClaude = resolve("/usr/local/bin/claude-wrapper");
+    const resolvedCodex = resolve(CONFIG_DIR, "bin", "codex-wrapper");
+
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\nagentPathOverride:\n  claude: /usr/local/bin/claude-wrapper\n  codex: /mock-home/.gnhf/bin/codex-wrapper\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      expect.stringContaining(`claude: ${resolvedClaude}`),
+      "utf-8",
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      expect.stringContaining(`codex: ${resolvedCodex}`),
       "utf-8",
     );
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {
-        claude: "/usr/local/bin/claude-wrapper",
-        codex: "/mock-home/.gnhf/bin/codex-wrapper",
+        claude: resolvedClaude,
+        codex: resolvedCodex,
       },
       maxConsecutiveFailures: 3,
       preventSleep: true,
@@ -133,7 +141,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: rovodev\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      "# Agent to use by default\nagent: rovodev\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
@@ -155,7 +163,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: opencode\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      "# Agent to use by default\nagent: opencode\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
       "utf-8",
     );
     expect(config).toEqual({
@@ -270,7 +278,9 @@ describe("loadConfig", () => {
     );
 
     const config = loadConfig();
-    expect(config.agentPathOverride.claude).toBe("/mock-home/bin/my-claude");
+    expect(config.agentPathOverride.claude).toBe(
+      resolve(join(HOME, "bin", "my-claude")),
+    );
   });
 
   it("resolves relative paths in agentPathOverride against the config directory", () => {
@@ -280,7 +290,7 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
     expect(config.agentPathOverride.codex).toBe(
-      join(HOME, ".gnhf", "bin", "my-codex"),
+      resolve(CONFIG_DIR, "bin", "my-codex"),
     );
   });
 
@@ -290,7 +300,9 @@ describe("loadConfig", () => {
     );
 
     const config = loadConfig();
-    expect(config.agentPathOverride.claude).toBe("/usr/local/bin/my-claude");
+    expect(config.agentPathOverride.claude).toBe(
+      resolve("/usr/local/bin/my-claude"),
+    );
   });
 
   it("preserves bare executable names in agentPathOverride", () => {
@@ -304,26 +316,26 @@ describe("loadConfig", () => {
   });
 
   it("throws when agentPathOverride contains an unknown agent name", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentPathOverride:\n  unknown: /bin/x\n",
-    );
+    mockReadFileSync.mockReturnValue("agentPathOverride:\n  unknown: /bin/x\n");
 
-    expect(() => loadConfig()).toThrow(/Invalid agent name in agentPathOverride/);
+    expect(() => loadConfig()).toThrow(
+      /Invalid agent name in agentPathOverride/,
+    );
   });
 
   it("throws when agentPathOverride value is not a string", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentPathOverride:\n  claude: 42\n",
-    );
+    mockReadFileSync.mockReturnValue("agentPathOverride:\n  claude: 42\n");
 
-    expect(() => loadConfig()).toThrow(/Invalid path for agentPathOverride.claude/);
+    expect(() => loadConfig()).toThrow(
+      /Invalid path for agentPathOverride.claude/,
+    );
   });
 
   it("throws when agentPathOverride value is blank", () => {
-    mockReadFileSync.mockReturnValue(
-      'agentPathOverride:\n  claude: "   "\n',
-    );
+    mockReadFileSync.mockReturnValue('agentPathOverride:\n  claude: "   "\n');
 
-    expect(() => loadConfig()).toThrow(/Invalid path for agentPathOverride.claude/);
+    expect(() => loadConfig()).toThrow(
+      /Invalid path for agentPathOverride.claude/,
+    );
   });
 });

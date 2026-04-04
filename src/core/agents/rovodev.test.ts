@@ -68,6 +68,7 @@ describe("RovoDevAgent", () => {
     agent = new RovoDevAgent(schemaPath, {
       fetch: fetchMock as typeof fetch,
       getPort,
+      platform: "linux",
     });
   });
 
@@ -135,7 +136,7 @@ describe("RovoDevAgent", () => {
       ["rovodev", "serve", "--disable-session-token", "8765"],
       expect.objectContaining({
         cwd: "/repo",
-        detached: process.platform !== "win32",
+        detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       }),
@@ -211,9 +212,7 @@ describe("RovoDevAgent", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
 
-    await expect(
-      windowsAgent["ensureServer"]("/repo"),
-    ).resolves.toMatchObject({
+    await expect(windowsAgent["ensureServer"]("/repo")).resolves.toMatchObject({
       cwd: "/repo",
       detached: false,
       port: 8765,
@@ -245,9 +244,7 @@ describe("RovoDevAgent", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
 
-    await expect(
-      windowsAgent["ensureServer"]("/repo"),
-    ).resolves.toMatchObject({
+    await expect(windowsAgent["ensureServer"]("/repo")).resolves.toMatchObject({
       cwd: "/repo",
       detached: false,
       port: 8765,

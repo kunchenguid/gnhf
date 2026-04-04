@@ -263,7 +263,11 @@ describe("cli", () => {
     );
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "opencode" });
-    expect(createAgent).toHaveBeenCalledWith("opencode", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "opencode",
+      stubRunInfo,
+      undefined,
+    );
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {

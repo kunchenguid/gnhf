@@ -68,7 +68,9 @@ describe("createAgent", () => {
 
   it("creates a RovoDevAgent when name is 'rovodev'", () => {
     const agent = createAgent("rovodev", stubRunInfo);
-    expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, { bin: undefined });
+    expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
+      bin: undefined,
+    });
     expect(agent.name).toBe("rovodev");
   });
 
