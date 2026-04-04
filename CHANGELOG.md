@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.10...gnhf-v0.1.11) (2026-04-04)
+
+
+### Features
+
+* **config:** add agent path overrides ([#24](https://github.com/kunchenguid/gnhf/issues/24)) ([c8a71c6](https://github.com/kunchenguid/gnhf/commit/c8a71c61019fd4795dabe3e5bdda4e7a44771855))
+
 ## [0.1.10](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.9...gnhf-v0.1.10) (2026-04-03)
 
 
