@@ -263,6 +263,16 @@ describe("loadConfig", () => {
     expect(config.agentPathOverride.claude).toBe("/usr/local/bin/my-claude");
   });
 
+  it("preserves bare executable names in agentPathOverride", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentPathOverride:\n  claude: claude-code-switch\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentPathOverride.claude).toBe("claude-code-switch");
+  });
+
   it("throws when agentPathOverride contains an unknown agent name", () => {
     mockReadFileSync.mockReturnValue(
       "agentPathOverride:\n  unknown: /bin/x\n",
@@ -274,6 +284,14 @@ describe("loadConfig", () => {
   it("throws when agentPathOverride value is not a string", () => {
     mockReadFileSync.mockReturnValue(
       "agentPathOverride:\n  claude: 42\n",
+    );
+
+    expect(() => loadConfig()).toThrow(/Invalid path for agentPathOverride.claude/);
+  });
+
+  it("throws when agentPathOverride value is blank", () => {
+    mockReadFileSync.mockReturnValue(
+      'agentPathOverride:\n  claude: "   "\n',
     );
 
     expect(() => loadConfig()).toThrow(/Invalid path for agentPathOverride.claude/);

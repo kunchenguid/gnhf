@@ -39,6 +39,16 @@ function normalizePreventSleep(value: unknown): boolean | undefined {
  * regardless of the repo's cwd.  Absolute paths pass through unchanged.
  */
 function resolveConfigPath(raw: string, baseDir: string): string {
+  if (
+    raw !== "~" &&
+    !raw.startsWith("~/") &&
+    !raw.startsWith("~\\") &&
+    !raw.includes("/") &&
+    !raw.includes("\\")
+  ) {
+    return raw;
+  }
+
   const home = homedir();
   let expanded = raw;
   if (expanded === "~") {
@@ -72,6 +82,11 @@ function normalizeAgentPathOverride(
     if (typeof val !== "string") {
       throw new InvalidConfigError(
         `Invalid path for agentPathOverride.${key}: expected a string`,
+      );
+    }
+    if (val.trim() === "") {
+      throw new InvalidConfigError(
+        `Invalid path for agentPathOverride.${key}: expected a non-empty string`,
       );
     }
     result[key as AgentName] = resolveConfigPath(val, configDir);
