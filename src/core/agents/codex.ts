@@ -32,9 +32,11 @@ type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 export class CodexAgent implements Agent {
   name = "codex";
 
+  private bin: string;
   private schemaPath: string;
 
-  constructor(schemaPath: string) {
+  constructor(schemaPath: string, bin?: string) {
+    this.bin = bin ?? "codex";
     this.schemaPath = schemaPath;
   }
 
@@ -49,7 +51,7 @@ export class CodexAgent implements Agent {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
       const child = spawn(
-        "codex",
+        this.bin,
         [
           "exec",
           prompt,

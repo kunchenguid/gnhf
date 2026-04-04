@@ -346,7 +346,11 @@ program
         args: process.argv.slice(2),
       });
 
-      const agent = createAgent(config.agent, runInfo);
+      const agent = createAgent(
+        config.agent,
+        runInfo,
+        config.agentPathOverride[config.agent],
+      );
       const orchestrator = new Orchestrator(
         config,
         agent,

@@ -47,7 +47,6 @@ You wake up to a branch full of clean work and a log of everything that happened
 - **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries and exponential backoff
 - **Agent-agnostic** — works with Claude Code, Codex, Rovo Dev, or OpenCode out of the box
-- **Terminal-safe rendering** — the live UI keeps wide Unicode text such as emoji and CJK glyphs aligned instead of clipping or shifting the frame
 
 ## Quick Start
 
@@ -161,6 +160,11 @@ Config lives at `~/.gnhf/config.yml`:
 # Agent to use by default (claude, codex, rovodev, or opencode)
 agent: claude
 
+# Custom paths to agent binaries (optional)
+# agentPathOverride:
+#   claude: /path/to/custom-claude
+#   codex: /path/to/custom-codex
+
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
 
@@ -172,6 +176,18 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+
+### Custom Agent Paths
+
+Use `agentPathOverride` to point any agent at a custom binary — useful for wrappers like Claude Code Switch or custom Codex builds that accept the same flags and arguments as the original:
+
+```yaml
+agentPathOverride:
+  claude: ~/bin/claude-code-switch
+  codex: /usr/local/bin/my-codex-wrapper
+```
+
+Paths may be absolute, `~`-prefixed, or relative to the config directory (`~/.gnhf/`). The override replaces only the binary name; all standard arguments are preserved, so the replacement must be CLI-compatible with the original agent. For `rovodev`, the override must point to an `acli`-compatible binary since gnhf invokes it as `<bin> rovodev serve ...`.
 When sleep prevention is enabled, `gnhf` uses the native mechanism for your OS: `caffeinate` on macOS, `systemd-inhibit` on Linux, and a small PowerShell helper backed by `SetThreadExecutionState` on Windows.
 
 ## Debug Logs

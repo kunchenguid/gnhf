@@ -23,6 +23,7 @@ interface RovoDevSessionResponse {
 }
 
 interface RovoDevDeps {
+  bin?: string;
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
@@ -114,6 +115,7 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
 export class RovoDevAgent implements Agent {
   name = "rovodev";
 
+  private bin: string;
   private schemaPath: string;
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
@@ -123,6 +125,7 @@ export class RovoDevAgent implements Agent {
   private closingPromise: Promise<void> | null = null;
 
   constructor(schemaPath: string, deps: RovoDevDeps = {}) {
+    this.bin = deps.bin ?? "acli";
     this.schemaPath = schemaPath;
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
@@ -207,7 +210,7 @@ export class RovoDevAgent implements Agent {
     const port = await this.getPortFn();
     const detached = process.platform !== "win32";
     const child = this.spawnFn(
-      "acli",
+      this.bin,
       ["rovodev", "serve", "--disable-session-token", String(port)],
       {
         cwd,

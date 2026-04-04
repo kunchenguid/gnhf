@@ -1,16 +1,20 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
 
+export type AgentName = "claude" | "codex" | "rovodev" | "opencode";
+
 export interface Config {
-  agent: "claude" | "codex" | "rovodev" | "opencode";
+  agent: AgentName;
+  agentPathOverride: Partial<Record<AgentName, string>>;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
   agent: "claude",
+  agentPathOverride: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
@@ -28,7 +32,58 @@ function normalizePreventSleep(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function normalizeConfig(config: Partial<Config>): Partial<Config> {
+/**
+ * Resolve a user-supplied path against the config directory (~/.gnhf).
+ * Expands leading `~` or `~/` to the home directory, then resolves relative
+ * paths against `baseDir` so that entries like `./bin/codex` work predictably
+ * regardless of the repo's cwd.  Absolute paths pass through unchanged.
+ */
+function resolveConfigPath(raw: string, baseDir: string): string {
+  const home = homedir();
+  let expanded = raw;
+  if (expanded === "~") {
+    expanded = home;
+  } else if (expanded.startsWith("~/") || expanded.startsWith("~\\")) {
+    expanded = join(home, expanded.slice(2));
+  }
+  return resolve(baseDir, expanded);
+}
+
+function normalizeAgentPathOverride(
+  value: unknown,
+  configDir: string,
+): Partial<Record<AgentName, string>> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for agentPathOverride: expected an object mapping agent names to paths`,
+    );
+  }
+
+  const validNames = new Set<string>(["claude", "codex", "rovodev", "opencode"]);
+  const result: Partial<Record<AgentName, string>> = {};
+
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!validNames.has(key)) {
+      throw new InvalidConfigError(
+        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,
+      );
+    }
+    if (typeof val !== "string") {
+      throw new InvalidConfigError(
+        `Invalid path for agentPathOverride.${key}: expected a string`,
+      );
+    }
+    result[key as AgentName] = resolveConfigPath(val, configDir);
+  }
+
+  return result;
+}
+
+function normalizeConfig(
+  config: Partial<Config>,
+  configDir?: string,
+): Partial<Config> {
   const normalized: Partial<Config> = { ...config };
   const hasPreventSleep = Object.prototype.hasOwnProperty.call(
     config,
@@ -47,6 +102,25 @@ function normalizeConfig(config: Partial<Config>): Partial<Config> {
     normalized.preventSleep = preventSleep;
   }
 
+  const hasAgentPathOverride = Object.prototype.hasOwnProperty.call(
+    config,
+    "agentPathOverride",
+  );
+  if (hasAgentPathOverride) {
+    const resolveDir = configDir ?? join(homedir(), ".gnhf");
+    const agentPathOverride = normalizeAgentPathOverride(
+      config.agentPathOverride,
+      resolveDir,
+    );
+    if (agentPathOverride === undefined) {
+      delete normalized.agentPathOverride;
+    } else {
+      normalized.agentPathOverride = agentPathOverride;
+    }
+  } else {
+    delete normalized.agentPathOverride;
+  }
+
   return normalized;
 }
 
@@ -60,6 +134,13 @@ function isMissingConfigError(error: unknown): boolean {
 function serializeConfig(config: Config): string {
   return `# Agent to use by default
 agent: ${config.agent}
+
+# Custom paths to agent binaries (optional)
+# Paths may be absolute, ~-prefixed, or relative to this config directory.
+# Note: rovodev overrides must point to an acli-compatible binary.
+# agentPathOverride:
+#   claude: /path/to/custom-claude
+#   codex: /path/to/custom-codex
 
 # Abort after this many consecutive failures
 maxConsecutiveFailures: ${config.maxConsecutiveFailures}
@@ -77,7 +158,10 @@ export function loadConfig(overrides?: Partial<Config>): Config {
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    fileConfig = normalizeConfig((yaml.load(raw) as Partial<Config>) ?? {});
+    fileConfig = normalizeConfig(
+      (yaml.load(raw) as Partial<Config>) ?? {},
+      configDir,
+    );
   } catch (error) {
     if (error instanceof InvalidConfigError) {
       throw error;

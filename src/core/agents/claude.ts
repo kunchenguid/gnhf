@@ -45,6 +45,12 @@ type ClaudeEvent = ClaudeAssistantEvent | ClaudeResultEvent | { type: string };
 export class ClaudeAgent implements Agent {
   name = "claude";
 
+  private bin: string;
+
+  constructor(bin?: string) {
+    this.bin = bin ?? "claude";
+  }
+
   run(
     prompt: string,
     cwd: string,
@@ -56,7 +62,7 @@ export class ClaudeAgent implements Agent {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
       const child = spawn(
-        "claude",
+        this.bin,
         [
           "-p",
           prompt,

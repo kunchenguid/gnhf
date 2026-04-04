@@ -80,6 +80,7 @@ interface OpenCodeStreamEvent {
 }
 
 interface OpenCodeDeps {
+  bin?: string;
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
@@ -244,6 +245,7 @@ function withTimeoutSignal(
 export class OpenCodeAgent implements Agent {
   name = "opencode";
 
+  private bin: string;
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
@@ -253,6 +255,7 @@ export class OpenCodeAgent implements Agent {
   private closingPromise: Promise<void> | null = null;
 
   constructor(deps: OpenCodeDeps = {}) {
+    this.bin = deps.bin ?? "opencode";
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
@@ -336,7 +339,7 @@ export class OpenCodeAgent implements Agent {
     const isWindows = this.platform === "win32";
     const detached = !isWindows;
     const child = this.spawnFn(
-      "opencode",
+      this.bin,
       [
         "serve",
         "--hostname",

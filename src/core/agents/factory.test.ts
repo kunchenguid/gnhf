@@ -56,25 +56,25 @@ const stubRunInfo: RunInfo = {
 describe("createAgent", () => {
   it("creates a ClaudeAgent when name is 'claude'", () => {
     const agent = createAgent("claude", stubRunInfo);
-    expect(ClaudeAgent).toHaveBeenCalled();
+    expect(ClaudeAgent).toHaveBeenCalledWith(undefined);
     expect(agent.name).toBe("claude");
   });
 
   it("creates a CodexAgent when name is 'codex'", () => {
     const agent = createAgent("codex", stubRunInfo);
-    expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath);
+    expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, undefined);
     expect(agent.name).toBe("codex");
   });
 
   it("creates a RovoDevAgent when name is 'rovodev'", () => {
     const agent = createAgent("rovodev", stubRunInfo);
-    expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath);
+    expect(RovoDevAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, { bin: undefined });
     expect(agent.name).toBe("rovodev");
   });
 
   it("creates an OpenCodeAgent when name is 'opencode'", () => {
     const agent = createAgent("opencode", stubRunInfo);
-    expect(OpenCodeAgent).toHaveBeenCalled();
+    expect(OpenCodeAgent).toHaveBeenCalledWith({ bin: undefined });
     expect(agent.name).toBe("opencode");
   });
 });
