@@ -1,4 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import type {
@@ -27,6 +31,7 @@ interface RovoDevDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  platform?: NodeJS.Platform;
   spawn?: typeof spawn;
 }
 
@@ -59,6 +64,31 @@ function createAbortError(): Error {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function shouldUseWindowsShell(
+  bin: string,
+  platform: NodeJS.Platform,
+): boolean {
+  return platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+}
+
+function terminateRovoDevProcess(
+  child: ReturnType<typeof spawn>,
+  platform: NodeJS.Platform,
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Best-effort: the process may have already exited.
+    }
+    return;
+  }
+
+  child.kill("SIGTERM");
 }
 
 function getAvailablePort(): Promise<number> {
@@ -120,6 +150,7 @@ export class RovoDevAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private platform: NodeJS.Platform;
   private spawnFn: typeof spawn;
   private server: RovoDevServer | null = null;
   private closingPromise: Promise<void> | null = null;
@@ -130,6 +161,7 @@ export class RovoDevAgent implements Agent {
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
+    this.platform = deps.platform ?? process.platform;
     this.spawnFn = deps.spawn ?? spawn;
   }
 
@@ -208,13 +240,14 @@ export class RovoDevAgent implements Agent {
     }
 
     const port = await this.getPortFn();
-    const detached = process.platform !== "win32";
+    const detached = this.platform !== "win32";
     const child = this.spawnFn(
       this.bin,
       ["rovodev", "serve", "--disable-session-token", String(port)],
       {
         cwd,
         detached,
+        shell: shouldUseWindowsShell(this.bin, this.platform),
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },
@@ -613,11 +646,36 @@ export class RovoDevAgent implements Agent {
     const server = this.server;
     appendDebugLog("rovodev:shutdown", { cwd: server.cwd, port: server.port });
 
-    this.closingPromise = shutdownChildProcess(server.child, {
-      detached: server.detached,
-      killProcess: this.killProcessFn,
-      timeoutMs: 3_000,
-    }).finally(() => {
+    this.closingPromise =
+      this.platform === "win32"
+        ? new Promise<void>((resolve) => {
+            const handleClose = () => {
+              server.child.off("close", handleClose);
+              resolve();
+            };
+
+            server.child.on("close", handleClose);
+
+            try {
+              terminateRovoDevProcess(server.child, this.platform);
+            } catch {
+              server.child.off("close", handleClose);
+              resolve();
+              return;
+            }
+
+            setTimeout(() => {
+              server.child.off("close", handleClose);
+              resolve();
+            }, 100).unref?.();
+          })
+        : shutdownChildProcess(server.child, {
+            detached: server.detached,
+            killProcess: this.killProcessFn,
+            timeoutMs: 3_000,
+          });
+
+    this.closingPromise = this.closingPromise.finally(() => {
       if (this.server === server) {
         this.server = null;
       }

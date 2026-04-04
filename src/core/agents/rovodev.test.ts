@@ -8,10 +8,11 @@ import type { Mock } from "vitest";
 import { RovoDevAgent } from "./rovodev.js";
 
 vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(),
   spawn: vi.fn(),
 }));
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -198,6 +199,39 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("uses a shell on Windows for cmd wrapper paths", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new RovoDevAgent(schemaPath, {
+      bin: "C:\\tools\\acli.cmd",
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
+
+    await expect(
+      windowsAgent["ensureServer"]("/repo"),
+    ).resolves.toMatchObject({
+      cwd: "/repo",
+      detached: false,
+      port: 8765,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "C:\\tools\\acli.cmd",
+      ["rovodev", "serve", "--disable-session-token", "8765"],
+      expect.objectContaining({
+        cwd: "/repo",
+        detached: false,
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      }),
+    );
+  });
+
   it("reuses the existing server process across runs", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -377,6 +411,48 @@ describe("RovoDevAgent", () => {
 
     await closePromise;
     vi.useRealTimers();
+  });
+
+  it("kills the full process tree on Windows when closing", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 6789 });
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new RovoDevAgent(schemaPath, {
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            'data: {"index":0,"part":{"content":"{\\"success\\":true,\\"summary\\":\\"done\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}","part_kind":"text"},"event_kind":"part_start"}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    await windowsAgent.run("test", "/repo");
+    await windowsAgent.close();
+
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledWith(
+      "taskkill",
+      ["/T", "/F", "/PID", "6789"],
+      { stdio: "ignore" },
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
   });
 
   it("cancels and deletes the session after an abort", async () => {
