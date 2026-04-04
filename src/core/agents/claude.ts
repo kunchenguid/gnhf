@@ -47,6 +47,13 @@ interface ClaudeAgentDeps {
   platform?: NodeJS.Platform;
 }
 
+function shouldUseWindowsShell(
+  bin: string,
+  platform: NodeJS.Platform,
+): boolean {
+  return platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+}
+
 function terminateClaudeProcess(
   child: ReturnType<typeof spawn>,
   platform: NodeJS.Platform,
@@ -101,7 +108,7 @@ export class ClaudeAgent implements Agent {
         ],
         {
           cwd,
-          shell: this.platform === "win32",
+          shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         },

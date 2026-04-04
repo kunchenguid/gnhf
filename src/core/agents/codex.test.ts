@@ -22,7 +22,7 @@ function createMockProcess() {
 }
 
 describe("CodexAgent", () => {
-  it("uses a shell on Windows so wrapper shims can launch", () => {
+  it("does not use a shell for direct Windows launches", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const agent = new CodexAgent("/tmp/schema.json", {
@@ -33,6 +33,37 @@ describe("CodexAgent", () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "codex",
+      [
+        "exec",
+        "test prompt",
+        "--json",
+        "--output-schema",
+        "/tmp/schema.json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--color",
+        "never",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows for cmd wrapper paths", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CodexAgent("/tmp/schema.json", {
+      bin: "C:\\tools\\codex.cmd",
+      platform: "win32",
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "C:\\tools\\codex.cmd",
       [
         "exec",
         "test prompt",

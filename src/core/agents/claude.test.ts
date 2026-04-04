@@ -64,7 +64,7 @@ describe("ClaudeAgent", () => {
     );
   });
 
-  it("uses a shell on Windows so wrapper shims can launch", () => {
+  it("does not use a shell for direct Windows launches", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const windowsAgent = new ClaudeAgent({
@@ -75,6 +75,37 @@ describe("ClaudeAgent", () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "claude",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows for cmd wrapper paths", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new ClaudeAgent({
+      bin: "C:\\tools\\claude.cmd",
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "C:\\tools\\claude.cmd",
       [
         "-p",
         "test prompt",
