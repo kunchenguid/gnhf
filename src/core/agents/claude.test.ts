@@ -125,6 +125,40 @@ describe("ClaudeAgent", () => {
     );
   });
 
+  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    vi.mocked(execFileSync).mockReturnValue(
+      "C:\\tools\\claude-code-switch.cmd\r\n" as never,
+    );
+    const windowsAgent = new ClaudeAgent({
+      bin: "claude-code-switch",
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude-code-switch",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 5678 });
