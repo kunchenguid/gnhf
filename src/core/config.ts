@@ -38,7 +38,8 @@ function normalizePreventSleep(value: unknown): boolean | undefined {
  * Resolve a user-supplied path against the config directory (~/.gnhf).
  * Expands leading `~` or `~/` to the home directory, then resolves relative
  * paths against `baseDir` so that entries like `./bin/codex` work predictably
- * regardless of the repo's cwd.  Absolute paths pass through unchanged.
+ * regardless of the repo's cwd. Bare executable names and absolute paths pass
+ * through unchanged.
  */
 function resolveConfigPath(raw: string, baseDir: string): string {
   if (
@@ -179,7 +180,8 @@ function serializeConfig(config: Config): string {
     `agent: ${config.agent}`,
     "",
     "# Custom paths to agent binaries (optional)",
-    "# Paths may be absolute, ~-prefixed, or relative to this config directory.",
+    "# Paths may be absolute, bare executable names on PATH,",
+    "# ~-prefixed, or relative to this config directory.",
     "# Note: rovodev overrides must point to an acli-compatible binary.",
     "# agentPathOverride:",
     "#   claude: /path/to/custom-claude",

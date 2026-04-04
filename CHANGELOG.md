@@ -12,10 +12,12 @@
 
 ### Features
 
+* **config:** allow per-agent binary path overrides
 * **renderer:** randomize star field seeds between runs
 
 ### Bug Fixes
 
+* **agents:** support Windows cmd/bat agent wrappers and terminate overridden agent processes cleanly
 * **renderer:** keep wide Unicode graphemes wrapped and aligned in the live terminal UI
 
 ## [0.1.9](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.8...gnhf-v0.1.9) (2026-04-03)
