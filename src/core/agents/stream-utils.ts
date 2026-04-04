@@ -69,11 +69,14 @@ export function setupAbortHandler(
   signal: AbortSignal | undefined,
   child: ChildProcess,
   reject: (err: Error) => void,
+  abortChild: () => void = () => {
+    child.kill("SIGTERM");
+  },
 ): boolean {
   if (!signal) return false;
 
   const onAbort = () => {
-    child.kill("SIGTERM");
+    abortChild();
     reject(new Error("Agent was aborted"));
   };
   if (signal.aborted) {

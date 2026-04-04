@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   AGENT_OUTPUT_SCHEMA,
@@ -47,6 +47,24 @@ interface ClaudeAgentDeps {
   platform?: NodeJS.Platform;
 }
 
+function terminateClaudeProcess(
+  child: ReturnType<typeof spawn>,
+  platform: NodeJS.Platform,
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Best-effort: the process may have already exited.
+    }
+    return;
+  }
+
+  child.kill("SIGTERM");
+}
+
 export class ClaudeAgent implements Agent {
   name = "claude";
 
@@ -89,7 +107,13 @@ export class ClaudeAgent implements Agent {
         },
       );
 
-      if (setupAbortHandler(signal, child, reject)) return;
+      if (
+        setupAbortHandler(signal, child, reject, () =>
+          terminateClaudeProcess(child, this.platform),
+        )
+      ) {
+        return;
+      }
 
       let resultEvent: ClaudeResultEvent | null = null;
       const cumulative: TokenUsage = {

@@ -2,10 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 
 vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(),
   spawn: vi.fn(),
 }));
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { CodexAgent } from "./codex.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -15,6 +16,7 @@ function createMockProcess() {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
     stdin: null,
+    kill: vi.fn(),
   });
   return proc as typeof proc & ReturnType<typeof spawn>;
 }
@@ -48,5 +50,28 @@ describe("CodexAgent", () => {
         env: process.env,
       },
     );
+  });
+
+  it("kills the full process tree on Windows when aborted", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 6789 });
+    mockSpawn.mockReturnValue(proc);
+    const controller = new AbortController();
+    const agent = new CodexAgent("/tmp/schema.json", {
+      platform: "win32",
+    });
+
+    const promise = agent.run("test prompt", "/work/dir", {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow("Agent was aborted");
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledWith(
+      "taskkill",
+      ["/T", "/F", "/PID", "6789"],
+      { stdio: "ignore" },
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
   });
 });

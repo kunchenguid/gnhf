@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import type {
   Agent,
@@ -32,6 +32,24 @@ type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 interface CodexAgentDeps {
   bin?: string;
   platform?: NodeJS.Platform;
+}
+
+function terminateCodexProcess(
+  child: ReturnType<typeof spawn>,
+  platform: NodeJS.Platform,
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Best-effort: the process may have already exited.
+    }
+    return;
+  }
+
+  child.kill("SIGTERM");
 }
 
 export class CodexAgent implements Agent {
@@ -78,7 +96,13 @@ export class CodexAgent implements Agent {
         },
       );
 
-      if (setupAbortHandler(signal, child, reject)) return;
+      if (
+        setupAbortHandler(signal, child, reject, () =>
+          terminateCodexProcess(child, this.platform),
+        )
+      ) {
+        return;
+      }
 
       let lastAgentMessage: string | null = null;
       const cumulative: TokenUsage = {
