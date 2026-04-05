@@ -604,9 +604,90 @@ describe("OpenCodeAgent", () => {
     expect(vi.mocked(execFileSync)).toHaveBeenCalledWith(
       "taskkill",
       ["/T", "/F", "/PID", "5678"],
-      { stdio: "ignore" },
+      { stdio: "ignore", timeout: 1_000 },
     );
     expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a PowerShell descendant kill when taskkill times out on Windows", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 5678 });
+    mockSpawn.mockReturnValue(proc);
+
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(() => {
+        const error = new Error("taskkill timed out") as Error & {
+          code?: string;
+        };
+        error.code = "ETIMEDOUT";
+        throw error;
+      })
+      .mockImplementationOnce(
+        () =>
+          [
+            "  TCP    127.0.0.1:8765    0.0.0.0:0    LISTENING    8765",
+          ].join("\r\n"),
+      )
+      .mockImplementationOnce(() => Buffer.from(""));
+
+    const windowsAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "win32",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await windowsAgent.run("test", "/repo");
+    await windowsAgent.close();
+
+    expect(vi.mocked(execFileSync)).toHaveBeenNthCalledWith(
+      1,
+      "taskkill",
+      ["/T", "/F", "/PID", "5678"],
+      { stdio: "ignore", timeout: 1_000 },
+    );
+
+    expect(vi.mocked(execFileSync)).toHaveBeenNthCalledWith(
+      2,
+      "netstat",
+      ["-ano", "-p", "tcp"],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 1_000,
+      },
+    );
+    expect(vi.mocked(execFileSync)).toHaveBeenNthCalledWith(
+      3,
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Stop-Process -Id 8765 -Force -ErrorAction SilentlyContinue",
+      ],
+      { stdio: "ignore", timeout: 1_000 },
+    );
   });
 
   it("reuses the existing server process across runs in the same cwd", async () => {

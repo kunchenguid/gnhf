@@ -31,6 +31,7 @@ import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
 import { slugifyPrompt } from "./utils/slugify.js";
+import { getVisibleAgentNames, maybePromptForJulesSetup } from "./core/jules-tooling.js";
 
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
@@ -90,6 +91,17 @@ function ask(question: string): Promise<string> {
       resolve(answer.trim().toLowerCase());
     });
   });
+}
+
+function formatAgentList(agentNames: readonly string[]): string {
+  if (agentNames.length === 1) return `"${agentNames[0]}"`;
+  if (agentNames.length === 2) {
+    return `"${agentNames[0]}" or "${agentNames[1]}"`;
+  }
+
+  const quoted = agentNames.map((name) => `"${name}"`);
+  const last = quoted.pop();
+  return `${quoted.join(", ")}, or ${last}`;
 }
 
 function getSignalExitCode(signal: NodeJS.Signals): number {
@@ -164,10 +176,7 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option(
-    "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, opencode, gemini, copilot, or junie)",
-  )
+  .option("--agent <agent>", "Agent to use")
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -220,22 +229,32 @@ program
       let prompt = promptArg;
       let promptFromStdin = false;
 
+      let config = loadConfig({
+        agent: options.agent as (typeof AGENT_NAMES)[number] | undefined,
+        preventSleep: options.preventSleep,
+      });
+      config = await maybePromptForJulesSetup(
+        config,
+        process.env,
+        Boolean(process.stdin.isTTY),
+        {
+          ask,
+          write: (message) => process.stderr.write(message),
+        },
+      );
+
+      const visibleAgentNames = getVisibleAgentNames(config, process.env);
       const agentName = options.agent;
       if (
         agentName !== undefined &&
-        !AGENT_NAMES.includes(agentName as (typeof AGENT_NAMES)[number])
+        !visibleAgentNames.includes(agentName as (typeof AGENT_NAMES)[number])
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "gemini", "copilot", "junie", or "jules".`,
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "gemini", "copilot", or "junie".`,
+          `Unknown agent: ${options.agent}. Use ${formatAgentList(visibleAgentNames)}.`,
         );
         process.exit(1);
+        return;
       }
-
-      const config = loadConfig({
-        agent: agentName as (typeof AGENT_NAMES)[number] | undefined,
-        preventSleep: options.preventSleep,
-      });
 
       if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
         prompt = readReexecStdinPrompt(process.env);
@@ -397,6 +416,7 @@ program
             `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
           );
           process.exit(getSignalExitCode(shutdownSignal ?? "SIGINT"));
+          return;
         }
       } finally {
         process.off("SIGINT", handleSigInt);
@@ -410,7 +430,11 @@ program
 
       if (shutdownSignal) {
         process.exit(getSignalExitCode(shutdownSignal));
+        return;
       }
+
+      process.exit(0);
+      return;
     },
   );
 
@@ -427,6 +451,7 @@ function exitAltScreen() {
 function die(message: string): never {
   console.error(`\n  gnhf: ${humanizeErrorMessage(message)}\n`);
   process.exit(1);
+  throw new Error(`process.exit unexpectedly returned after fatal error: ${message}`);
 }
 
 try {

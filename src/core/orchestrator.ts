@@ -6,6 +6,7 @@ import type { RunInfo } from "./run.js";
 import { commitAll, getBranchCommitCount, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
+import { getJulesPromptGuidance } from "./jules-tooling.js";
 
 export interface IterationRecord {
   number: number;
@@ -169,6 +170,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           n: this.state.currentIteration,
           runId: this.runInfo.runId,
           prompt: this.prompt,
+          julesGuidance: getJulesPromptGuidance(
+            this.config.agent,
+            this.config,
+            process.env,
+          ),
         });
 
         this.activeIterationPromise = this.runIteration(iterationPrompt);

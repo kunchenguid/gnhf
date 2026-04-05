@@ -40,4 +40,25 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("Read .gnhf/runs/");
     expect(result).toContain("smallest logical unit");
   });
+
+  it("injects Jules guidance when Jules tooling is available", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "test",
+      julesGuidance: "Jules is available for remote delegation.",
+    });
+
+    expect(result).toContain("Jules is available for remote delegation.");
+  });
+
+  it("omits Jules guidance when Jules tooling is unavailable", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "test",
+    });
+
+    expect(result).not.toContain("Jules CLI/tooling is available");
+  });
 });

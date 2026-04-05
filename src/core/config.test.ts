@@ -39,12 +39,18 @@ describe("loadConfig", () => {
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      expect.stringContaining("agent: claude"),
+      "utf-8",
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      expect.stringContaining("# Jules setup state (optional)"),
       "utf-8",
     );
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -65,6 +71,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -81,12 +88,13 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: codex\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      expect.stringContaining("agent: codex"),
       "utf-8",
     );
     expect(config).toEqual({
       agent: "codex",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -125,6 +133,7 @@ describe("loadConfig", () => {
         claude: resolvedClaude,
         codex: resolvedCodex,
       },
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -141,12 +150,13 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: rovodev\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      expect.stringContaining("agent: rovodev"),
       "utf-8",
     );
     expect(config).toEqual({
       agent: "rovodev",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -163,15 +173,62 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: opencode\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      expect.stringContaining("agent: opencode"),
       "utf-8",
     );
     expect(config).toEqual({
       agent: "opencode",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
+  });
+
+  it("supports bootstrapping all newly added agents as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    for (const agent of [
+      "gemini",
+      "copilot",
+      "junie",
+      "jules",
+      "kilo",
+    ] as const) {
+      mockWriteFileSync.mockClear();
+
+      const config = loadConfig({ agent });
+
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        CONFIG_PATH,
+        expect.stringContaining(`agent: ${agent}`),
+        "utf-8",
+      );
+      expect(config).toMatchObject({ agent });
+    }
+  });
+
+  it("persists jules dismissal when bootstrapping a missing config file", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({
+      jules: { dismissed: true },
+    });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      expect.stringContaining("jules:\n  dismissed: true"),
+      "utf-8",
+    );
+    expect(config.jules).toEqual({ dismissed: true });
   });
 
   it("reads config from ~/.gnhf/config.yml", () => {
@@ -190,6 +247,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -203,6 +261,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -216,6 +275,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -241,9 +301,18 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
+  });
+
+  it("reads jules dismissal from config", () => {
+    mockReadFileSync.mockReturnValue("jules:\n  dismissed: true\n");
+
+    const config = loadConfig();
+
+    expect(config.jules).toEqual({ dismissed: true });
   });
 
   it("handles empty config file gracefully", () => {
@@ -253,6 +322,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      jules: undefined,
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -337,5 +407,11 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(
       /Invalid path for agentPathOverride.claude/,
     );
+  });
+
+  it("throws when jules.dismissed is not a boolean", () => {
+    mockReadFileSync.mockReturnValue('jules:\n  dismissed: "yes"\n');
+
+    expect(() => loadConfig()).toThrow(/Invalid config value for jules.dismissed/);
   });
 });

@@ -145,14 +145,78 @@ function buildPrompt(prompt: string): string {
   ].join("\n");
 }
 
-async function killWindowsProcessTree(pid: number): Promise<void> {
+function findWindowsProcessListeningOnPort(port: number): number | null {
+  try {
+    const output = execFileSync("netstat", ["-ano", "-p", "tcp"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1_000,
+    });
+
+    for (const line of output.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 5 || parts[0] !== "TCP") continue;
+      if (!parts[1]?.endsWith(`:${port}`)) continue;
+      if (parts[3] !== "LISTENING") continue;
+
+      const pid = Number.parseInt(parts[4] ?? "", 10);
+      if (Number.isInteger(pid) && pid > 0) {
+        return pid;
+      }
+    }
+  } catch {
+    // Best-effort only.
+  }
+
+  return null;
+}
+
+function forceStopWindowsProcess(pid: number): void {
+  try {
+    execFileSync(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
+      ],
+      {
+        stdio: "ignore",
+        timeout: 1_000,
+      },
+    );
+  } catch {
+    // Best-effort only.
+  }
+}
+
+async function killWindowsProcessTree(pid: number, port: number): Promise<void> {
   try {
     execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
       stdio: "ignore",
+      timeout: 1_000,
     });
-  } catch {
-    // Best-effort: the process may have already exited.
+    return;
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String(error.code)
+        : undefined;
+    if (code !== "ETIMEDOUT") {
+      return;
+    }
   }
+
+  const listeningPid = findWindowsProcessListeningOnPort(port);
+  if (!listeningPid || listeningPid === pid) {
+    return;
+  }
+
+  forceStopWindowsProcess(listeningPid);
 }
 
 function createAbortError(): Error {
@@ -869,7 +933,7 @@ export class ServeBasedAgent implements Agent {
 
     this.closingPromise = (
       this.platform === "win32" && server.child.pid
-        ? killWindowsProcessTree(server.child.pid)
+        ? killWindowsProcessTree(server.child.pid, server.port)
         : shutdownChildProcess(server.child, {
             detached: server.detached,
             killProcess: this.killProcessFn,
