@@ -10,7 +10,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
-import { loadConfig } from "./core/config.js";
+import { loadConfig, AGENT_NAMES } from "./core/config.js";
 import { appendDebugLog } from "./core/debug-log.js";
 import {
   ensureCleanWorkingTree,
@@ -223,15 +223,7 @@ program
       const agentName = options.agent;
       if (
         agentName !== undefined &&
-        agentName !== "claude" &&
-        agentName !== "codex" &&
-        agentName !== "rovodev" &&
-        agentName !== "opencode" &&
-        agentName !== "kilo" &&
-        agentName !== "gemini" &&
-        agentName !== "copilot" &&
-        agentName !== "junie" &&
-        agentName !== "jules"
+        !AGENT_NAMES.includes(agentName as (typeof AGENT_NAMES)[number])
       ) {
         console.error(
           `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "kilo", "gemini", "copilot", "junie", or "jules".`,

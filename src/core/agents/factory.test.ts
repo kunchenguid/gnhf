@@ -168,29 +168,3 @@ describe("createAgent", () => {
     expect(agent.name).toBe("jules");
   });
 });
-
-  it("creates a GeminiAgent when name is 'gemini'", () => {
-    const agent = createAgent("gemini", stubRunInfo);
-    expect(GeminiAgent).toHaveBeenCalledWith({ bin: undefined });
-    expect(agent.name).toBe("gemini");
-  });
-
-  it("creates a CopilotAgent when name is 'copilot'", () => {
-    const agent = createAgent("copilot", stubRunInfo);
-    expect(CopilotAgent).toHaveBeenCalledWith({ bin: undefined });
-    expect(agent.name).toBe("copilot");
-  });
-
-  it("creates a JunieAgent when name is 'junie'", () => {
-    const agent = createAgent("junie", stubRunInfo);
-    expect(JunieAgent).toHaveBeenCalledWith({ bin: undefined });
-    expect(agent.name).toBe("junie");
-  });
-
-  it("creates a JulesAgent wrapped in AsyncAgentAdapter when name is 'jules'", () => {
-    const agent = createAgent("jules", stubRunInfo);
-    expect(JulesAgent).toHaveBeenCalled();
-    expect(AsyncAgentAdapter).toHaveBeenCalled();
-    expect(agent.name).toBe("jules");
-  });
-});
