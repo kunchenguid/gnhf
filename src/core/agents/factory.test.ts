@@ -63,6 +63,23 @@ vi.mock("./junie.js", () => {
   return { JunieAgent };
 });
 
+vi.mock("./jules.js", () => {
+  const JulesAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "jules";
+  });
+  return { JulesAgent };
+});
+
+vi.mock("./async-adapter.js", () => {
+  const AsyncAgentAdapter = vi.fn(function (
+    this: Record<string, unknown>,
+    agent: { name: string },
+  ) {
+    this.name = agent.name;
+  });
+  return { AsyncAgentAdapter };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
@@ -71,6 +88,8 @@ import { RovoDevAgent } from "./rovodev.js";
 import { GeminiAgent } from "./gemini.js";
 import { CopilotAgent } from "./copilot.js";
 import { JunieAgent } from "./junie.js";
+import { JulesAgent } from "./jules.js";
+import { AsyncAgentAdapter } from "./async-adapter.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -126,5 +145,21 @@ describe("createAgent", () => {
     const agent = createAgent("junie", stubRunInfo);
     expect(JunieAgent).toHaveBeenCalledWith({ bin: undefined });
     expect(agent.name).toBe("junie");
+  });
+
+  it("creates a JulesAgent wrapped in AsyncAgentAdapter when name is 'jules'", () => {
+    const agent = createAgent("jules", stubRunInfo);
+    expect(JulesAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      platform: process.platform,
+    });
+    expect(AsyncAgentAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "jules" }),
+      {
+        pollIntervalMs: 30_000,
+        timeoutMs: 60 * 60 * 1000,
+      },
+    );
+    expect(agent.name).toBe("jules");
   });
 });

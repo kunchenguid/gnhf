@@ -90,7 +90,18 @@ async function runCliWithMocks(
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
-  vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/config.js", () => ({
+    loadConfig,
+    AGENT_NAMES: [
+      "claude",
+      "codex",
+      "rovodev",
+      "opencode",
+      "gemini",
+      "copilot",
+      "junie",
+    ],
+  }));
   vi.doMock("./core/debug-log.js", () => ({ appendDebugLog }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),

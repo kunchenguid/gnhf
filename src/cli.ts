@@ -166,7 +166,7 @@ program
   .argument("[prompt]", "The objective for the coding agent")
   .option(
     "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, opencode, gemini, copilot, or junie)",
+    "Agent to use (claude, codex, rovodev, opencode, gemini, copilot, junie, or jules)",
   )
   .option(
     "--max-iterations <n>",
@@ -227,13 +227,12 @@ program
       ) {
         console.error(
           `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "gemini", "copilot", "junie", or "jules".`,
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "gemini", "copilot", or "junie".`,
         );
         process.exit(1);
       }
 
       const config = loadConfig({
-        agent: agentName,
+        agent: agentName as (typeof AGENT_NAMES)[number] | undefined,
         preventSleep: options.preventSleep,
       });
 
