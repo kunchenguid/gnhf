@@ -217,7 +217,10 @@ describe("cli", () => {
       preventSleep: false,
     });
 
-    expect(loadConfig).toHaveBeenCalledWith({});
+    expect(loadConfig).toHaveBeenCalledWith({
+      agent: undefined,
+      preventSleep: undefined,
+    });
     expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined);
   });
 
@@ -232,7 +235,10 @@ describe("cli", () => {
       },
     );
 
-    expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
+    expect(loadConfig).toHaveBeenCalledWith({
+      agent: "claude",
+      preventSleep: undefined,
+    });
     expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo, undefined);
   });
 
@@ -247,7 +253,10 @@ describe("cli", () => {
       },
     );
 
-    expect(loadConfig).toHaveBeenCalledWith({ agent: "rovodev" });
+    expect(loadConfig).toHaveBeenCalledWith({
+      agent: "rovodev",
+      preventSleep: undefined,
+    });
     expect(createAgent).toHaveBeenCalledWith("rovodev", stubRunInfo, undefined);
   });
 
@@ -262,7 +271,10 @@ describe("cli", () => {
       },
     );
 
-    expect(loadConfig).toHaveBeenCalledWith({ agent: "opencode" });
+    expect(loadConfig).toHaveBeenCalledWith({
+      agent: "opencode",
+      preventSleep: undefined,
+    });
     expect(createAgent).toHaveBeenCalledWith(
       "opencode",
       stubRunInfo,
@@ -297,7 +309,10 @@ describe("cli", () => {
         preventSleep: false,
       });
 
-    expect(loadConfig).toHaveBeenCalledWith({});
+    expect(loadConfig).toHaveBeenCalledWith({
+      agent: undefined,
+      preventSleep: false,
+    });
     expect(startSleepPrevention).not.toHaveBeenCalled();
     expect(orchestratorCtor).toHaveBeenCalledTimes(1);
     expect(orchestratorCtor.mock.calls[0]?.[0]).toEqual({
