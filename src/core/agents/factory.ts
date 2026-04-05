@@ -8,6 +8,9 @@ import { RovoDevAgent } from "./rovodev.js";
 import { GeminiAgent } from "./gemini.js";
 import { CopilotAgent } from "./copilot.js";
 import { JunieAgent } from "./junie.js";
+import { JulesAgent } from "./jules.js";
+import { AsyncAgentAdapter } from "./async-adapter.js";
+import { KiloAgent } from "./kilo.js";
 
 export function createAgent(
   name: AgentName,
@@ -29,5 +32,17 @@ export function createAgent(
       return new CopilotAgent({ bin: pathOverride });
     case "junie":
       return new JunieAgent({ bin: pathOverride });
+    case "jules": {
+      const julesAgent = new JulesAgent({
+        bin: pathOverride,
+        platform: process.platform,
+      });
+      return new AsyncAgentAdapter(julesAgent, {
+        pollIntervalMs: 30_000,
+        timeoutMs: 60 * 60 * 1000,
+      });
+    }
+    case "kilo":
+      return new KiloAgent({ bin: pathOverride });
   }
 }

@@ -397,7 +397,6 @@ program
             `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
           );
           process.exit(getSignalExitCode(shutdownSignal ?? "SIGINT"));
-          return;
         }
       } finally {
         process.off("SIGINT", handleSigInt);
@@ -411,11 +410,7 @@ program
 
       if (shutdownSignal) {
         process.exit(getSignalExitCode(shutdownSignal));
-        return;
       }
-
-      process.exit(0);
-      return;
     },
   );
 
@@ -432,7 +427,6 @@ function exitAltScreen() {
 function die(message: string): never {
   console.error(`\n  gnhf: ${humanizeErrorMessage(message)}\n`);
   process.exit(1);
-  throw new Error(`process.exit unexpectedly returned after fatal error: ${message}`);
 }
 
 try {

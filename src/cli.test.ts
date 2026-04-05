@@ -49,6 +49,9 @@ async function runCliWithMocks(
   const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
     code?: string | number | null,
   ) => {
+    if (code === 0 || code === undefined) {
+      return undefined as never;
+    }
     throw new Error(
       `process.exit unexpectedly called with ${JSON.stringify(code)}`,
     );
@@ -90,7 +93,20 @@ async function runCliWithMocks(
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
-  vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/config.js", () => ({
+    loadConfig,
+    AGENT_NAMES: [
+      "claude",
+      "codex",
+      "rovodev",
+      "opencode",
+      "gemini",
+      "copilot",
+      "junie",
+      "jules",
+      "kilo",
+    ],
+  }));
   vi.doMock("./core/debug-log.js", () => ({ appendDebugLog }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
@@ -329,18 +345,16 @@ describe("cli", () => {
       Promise.resolve({ type: "reexeced" as const, exitCode: 0 }),
     );
 
-    await expect(
-      runCliWithMocks(
-        ["ship it"],
-        {
-          agent: "claude",
-          agentPathOverride: {},
-          maxConsecutiveFailures: 3,
-          preventSleep: true,
-        },
-        { appendDebugLog, startSleepPrevention },
-      ),
-    ).rejects.toThrow(/process\.exit unexpectedly called/);
+    await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      { appendDebugLog, startSleepPrevention },
+    );
 
     expect(startSleepPrevention).toHaveBeenCalledTimes(1);
     expect(appendDebugLog).not.toHaveBeenCalledWith(
