@@ -16,7 +16,7 @@ import {
 import { appendDebugLog } from "../debug-log.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
-interface OpenCodeMessagePart {
+interface ServeMessagePart {
   type?: string;
   text?: string;
   metadata?: {
@@ -26,7 +26,7 @@ interface OpenCodeMessagePart {
   };
 }
 
-interface OpenCodeTokens {
+interface ServeTokens {
   input?: number;
   output?: number;
   cache?: {
@@ -35,21 +35,21 @@ interface OpenCodeTokens {
   };
 }
 
-interface OpenCodeMessageResponse {
+interface ServeMessageResponse {
   info?: {
     id?: string;
     role?: string;
     structured?: AgentOutput;
-    tokens?: OpenCodeTokens;
+    tokens?: ServeTokens;
   };
-  parts?: OpenCodeMessagePart[];
+  parts?: ServeMessagePart[];
 }
 
-interface OpenCodeSessionResponse {
+interface ServeSessionResponse {
   id: string;
 }
 
-interface OpenCodeStreamEvent {
+interface ServeStreamEvent {
   directory?: string;
   payload?: {
     type?: string;
@@ -63,7 +63,7 @@ interface OpenCodeStreamEvent {
         messageID?: string;
         type?: string;
         text?: string;
-        tokens?: OpenCodeTokens;
+        tokens?: ServeTokens;
         metadata?: {
           openai?: {
             phase?: string;
@@ -73,13 +73,13 @@ interface OpenCodeStreamEvent {
       info?: {
         id?: string;
         role?: string;
-        tokens?: OpenCodeTokens;
+        tokens?: ServeTokens;
       };
     };
   };
 }
 
-interface OpenCodeDeps {
+export interface ServeAgentDeps {
   bin?: string;
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
@@ -88,7 +88,7 @@ interface OpenCodeDeps {
   spawn?: typeof spawn;
 }
 
-interface OpenCodeServer {
+export interface ServeAgentServer {
   baseUrl: string;
   child: ChildProcessWithoutNullStreams;
   closed: boolean;
@@ -108,7 +108,7 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-interface OpenCodeTextPartState {
+interface ServeTextPartState {
   phase?: string;
   text: string;
 }
@@ -127,7 +127,7 @@ const STRUCTURED_OUTPUT_FORMAT = {
   retryCount: 1,
 } as const;
 
-function buildOpencodeChildEnv(): NodeJS.ProcessEnv {
+function buildServeChildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.OPENCODE_SERVER_USERNAME;
   delete env.OPENCODE_SERVER_PASSWORD;
@@ -145,11 +145,6 @@ function buildPrompt(prompt: string): string {
   ].join("\n");
 }
 
-/**
- * On Windows with `shell: true`, `child.pid` is the `cmd.exe` wrapper, not
- * the actual server process.  `taskkill /T` terminates the entire process
- * tree rooted at that PID so the real server doesn't survive shutdown.
- */
 async function killWindowsProcessTree(pid: number): Promise<void> {
   try {
     execFileSync("taskkill", ["/T", "/F", "/PID", String(pid)], {
@@ -172,7 +167,7 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-function getAvailablePort(): Promise<number> {
+function getAvailablePort(label: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.unref();
@@ -181,7 +176,7 @@ function getAvailablePort(): Promise<number> {
       const address = server.address();
       if (!address || typeof address === "string") {
         server.close();
-        reject(new Error("Failed to allocate a port for opencode"));
+        reject(new Error(`Failed to allocate a port for ${label}`));
         return;
       }
 
@@ -223,7 +218,7 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function toUsage(tokens?: OpenCodeTokens): TokenUsage {
+function toUsage(tokens?: ServeTokens): TokenUsage {
   return {
     inputTokens: tokens?.input ?? 0,
     outputTokens: tokens?.output ?? 0,
@@ -242,22 +237,59 @@ function withTimeoutSignal(
   return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 }
 
-export class OpenCodeAgent implements Agent {
-  name = "opencode";
+export class ServeBasedAgent implements Agent {
+  name: string;
 
-  private bin: string;
-  private fetchFn: typeof fetch;
-  private getPortFn: () => Promise<number>;
-  private killProcessFn: typeof process.kill;
-  private platform: NodeJS.Platform;
-  private spawnFn: typeof spawn;
-  private server: OpenCodeServer | null = null;
-  private closingPromise: Promise<void> | null = null;
+  protected bin: string;
+  protected fetchFn: typeof fetch;
+  protected getPortFn: () => Promise<number>;
+  protected killProcessFn: typeof process.kill;
+  protected platform: NodeJS.Platform;
+  protected spawnFn: typeof spawn;
+  protected server: ServeAgentServer | null = null;
+  protected closingPromise: Promise<void> | null = null;
 
-  constructor(deps: OpenCodeDeps = {}) {
-    this.bin = deps.bin ?? "opencode";
+  protected get debugLogPrefix(): string {
+    return this.name;
+  }
+
+  protected get portLabel(): string {
+    return this.name;
+  }
+
+  protected get spawnErrorMessage(): string {
+    return `Failed to spawn ${this.name}`;
+  }
+
+  protected get exitedErrorMessage(): string {
+    return `${this.name} exited before becoming ready`;
+  }
+
+  protected get noStreamBodyError(): string {
+    return `${this.name} returned no event stream body`;
+  }
+
+  protected get noTextOutputError(): string {
+    return `${this.name} returned no text output`;
+  }
+
+  protected get parseResponseError(): string {
+    return `Failed to parse ${this.name} response`;
+  }
+
+  protected get parseOutputError(): string {
+    return `Failed to parse ${this.name} output`;
+  }
+
+  protected get requestErrorPrefix(): string {
+    return this.name;
+  }
+
+  constructor(deps: ServeAgentDeps & { name?: string } = {}) {
+    this.name = deps.name ?? "serve-agent";
+    this.bin = deps.bin ?? this.name;
     this.fetchFn = deps.fetch ?? fetch;
-    this.getPortFn = deps.getPort ?? getAvailablePort;
+    this.getPortFn = deps.getPort ?? (() => getAvailablePort(this.portLabel));
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
     this.platform = deps.platform ?? process.platform;
     this.spawnFn = deps.spawn ?? spawn;
@@ -317,10 +349,10 @@ export class OpenCodeAgent implements Agent {
     await this.shutdownServer();
   }
 
-  private async ensureServer(
+  protected async ensureServer(
     cwd: string,
     signal?: AbortSignal,
-  ): Promise<OpenCodeServer> {
+  ): Promise<ServeAgentServer> {
     if (this.server && !this.server.closed) {
       if (this.server.cwd !== cwd) {
         await this.shutdownServer();
@@ -328,11 +360,6 @@ export class OpenCodeAgent implements Agent {
         await this.server.readyPromise;
         return this.server;
       }
-    }
-
-    if (this.server && !this.server.closed) {
-      await this.server.readyPromise;
-      return this.server;
     }
 
     const port = await this.getPortFn();
@@ -353,11 +380,11 @@ export class OpenCodeAgent implements Agent {
         detached,
         shell: isWindows,
         stdio: ["ignore", "pipe", "pipe"],
-        env: buildOpencodeChildEnv(),
+        env: buildServeChildEnv(),
       },
     ) as unknown as ChildProcessWithoutNullStreams;
 
-    const server: OpenCodeServer = {
+    const server: ServeAgentServer = {
       baseUrl: `http://127.0.0.1:${port}`,
       child,
       closed: false,
@@ -392,7 +419,7 @@ export class OpenCodeAgent implements Agent {
     });
 
     this.server = server;
-    appendDebugLog("opencode:spawn", { cwd, port, detached });
+    appendDebugLog(`${this.debugLogPrefix}:spawn`, { cwd, port, detached });
     server.readyPromise = this.waitForHealthy(server, signal).catch(
       async (error) => {
         await this.shutdownServer();
@@ -404,61 +431,72 @@ export class OpenCodeAgent implements Agent {
     return server;
   }
 
-  private async waitForHealthy(
-    server: OpenCodeServer,
+  protected async waitForHealthy(
+    server: ServeAgentServer,
     signal?: AbortSignal,
   ): Promise<void> {
-    const deadline = Date.now() + 30_000;
-    let spawnErrorMessage: string | null = null;
+    const timeoutController = new AbortController();
+    const timeoutTimer = setTimeout(() => {
+      timeoutController.abort();
+    }, 30_000);
+    const combined = signal
+      ? AbortSignal.any([signal, timeoutController.signal])
+      : timeoutController.signal;
+    let spawnErr: string | null = null;
 
     server.child.once("error", (error) => {
-      spawnErrorMessage = error.message;
+      spawnErr = error.message;
     });
 
-    while (Date.now() < deadline) {
-      if (signal?.aborted) {
-        throw createAbortError();
-      }
-
-      if (spawnErrorMessage) {
-        throw new Error(`Failed to spawn opencode: ${spawnErrorMessage}`);
-      }
-
-      if (server.closed) {
-        const output = server.stderr.trim() || server.stdout.trim();
-        throw new Error(
-          output
-            ? `opencode exited before becoming ready: ${output}`
-            : "opencode exited before becoming ready",
-        );
-      }
-
-      try {
-        const response = await this.fetchFn(`${server.baseUrl}/global/health`, {
-          method: "GET",
-          signal,
-        });
-        if (response.ok) return;
-      } catch (error) {
-        if (isAbortError(error)) {
-          throw createAbortError();
+    const poll = async (): Promise<void> => {
+      while (!combined.aborted) {
+        if (spawnErr) {
+          throw new Error(`${this.spawnErrorMessage}: ${spawnErr}`);
         }
+
+        if (server.closed) {
+          const output = server.stderr.trim() || server.stdout.trim();
+          throw new Error(
+            output
+              ? `${this.exitedErrorMessage}: ${output}`
+              : this.exitedErrorMessage,
+          );
+        }
+
+        try {
+          const response = await this.fetchFn(
+            `${server.baseUrl}/global/health`,
+            {
+              method: "GET",
+              signal: combined,
+            },
+          );
+          if (response.ok) {
+            clearTimeout(timeoutTimer);
+            return;
+          }
+        } catch (error) {
+          if (isAbortError(error)) {
+            throw createAbortError();
+          }
+        }
+
+        await delay(250, combined);
       }
 
-      await delay(250, signal);
-    }
+      clearTimeout(timeoutTimer);
+      throw createAbortError();
+    };
 
-    throw new Error(
-      `Timed out waiting for opencode serve to become ready on port ${server.port}`,
-    );
+    await poll();
   }
 
-  private async createSession(
-    server: OpenCodeServer,
+  protected async createSession(
+    server: ServeAgentServer,
     cwd: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    const response = await this.requestJSON<OpenCodeSessionResponse>(
+    const response = await this.requestJSON<ServeSessionResponse>(
       server,
       "/session",
       {
@@ -474,8 +512,8 @@ export class OpenCodeAgent implements Agent {
     return response.id;
   }
 
-  private async streamMessage(
-    server: OpenCodeServer,
+  protected async streamMessage(
+    server: ServeAgentServer,
     sessionId: string,
     prompt: string,
     signal: AbortSignal,
@@ -495,7 +533,7 @@ export class OpenCodeAgent implements Agent {
     });
 
     if (!eventResponse.body) {
-      throw new Error("opencode returned no event stream body");
+      throw new Error(this.noStreamBodyError);
     }
 
     let messageRequestError: unknown = null;
@@ -528,44 +566,42 @@ export class OpenCodeAgent implements Agent {
       cacheReadTokens: 0,
       cacheCreationTokens: 0,
     };
-    const usageByMessageId = new Map<string, TokenUsage>();
-    const textParts = new Map<string, OpenCodeTextPartState>();
+    const prevUsageByMessageId = new Map<string, TokenUsage>();
+    const textParts = new Map<string, ServeTextPartState>();
     let lastText: string | null = null;
     let lastFinalAnswerText: string | null = null;
-    let lastUsageSignature = "0:0:0:0";
 
     const updateUsage = (
       messageId: string | undefined,
-      tokens?: OpenCodeTokens,
+      tokens?: ServeTokens,
     ) => {
       if (!messageId || !tokens) return;
-      usageByMessageId.set(messageId, toUsage(tokens));
-
-      let nextInputTokens = 0;
-      let nextOutputTokens = 0;
-      let nextCacheReadTokens = 0;
-      let nextCacheCreationTokens = 0;
-      for (const messageUsage of usageByMessageId.values()) {
-        nextInputTokens += messageUsage.inputTokens;
-        nextOutputTokens += messageUsage.outputTokens;
-        nextCacheReadTokens += messageUsage.cacheReadTokens;
-        nextCacheCreationTokens += messageUsage.cacheCreationTokens;
+      const prev = prevUsageByMessageId.get(messageId) ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      };
+      const next = toUsage(tokens);
+      const dInput = next.inputTokens - prev.inputTokens;
+      const dOutput = next.outputTokens - prev.outputTokens;
+      const dCacheRead = next.cacheReadTokens - prev.cacheReadTokens;
+      const dCacheWrite = next.cacheCreationTokens - prev.cacheCreationTokens;
+      if (
+        dInput === 0 &&
+        dOutput === 0 &&
+        dCacheRead === 0 &&
+        dCacheWrite === 0
+      ) {
+        prevUsageByMessageId.set(messageId, next);
+        return;
       }
-
-      const signature = [
-        nextInputTokens,
-        nextOutputTokens,
-        nextCacheReadTokens,
-        nextCacheCreationTokens,
-      ].join(":");
-      usage.inputTokens = nextInputTokens;
-      usage.outputTokens = nextOutputTokens;
-      usage.cacheReadTokens = nextCacheReadTokens;
-      usage.cacheCreationTokens = nextCacheCreationTokens;
-      if (signature !== lastUsageSignature) {
-        lastUsageSignature = signature;
-        onUsage?.({ ...usage });
-      }
+      usage.inputTokens += dInput;
+      usage.outputTokens += dOutput;
+      usage.cacheReadTokens += dCacheRead;
+      usage.cacheCreationTokens += dCacheWrite;
+      prevUsageByMessageId.set(messageId, next);
+      onUsage?.({ ...usage });
     };
 
     const emitText = (partId: string, nextText: string, phase?: string) => {
@@ -579,7 +615,7 @@ export class OpenCodeAgent implements Agent {
       onMessage?.(trimmed);
     };
 
-    const handleEvent = (event: OpenCodeStreamEvent) => {
+    const handleEvent = (event: ServeStreamEvent) => {
       const payload = event.payload;
       const properties = payload?.properties;
       if (!properties || properties.sessionID !== sessionId) return false;
@@ -634,14 +670,18 @@ export class OpenCodeAgent implements Agent {
     const processRawEvent = (rawEvent: string) => {
       if (!rawEvent.trim()) return;
 
-      const dataLines = rawEvent
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice("data:".length).trimStart());
-      if (dataLines.length === 0) return;
+      let dataContent = "";
+      for (const line of rawEvent.split(/\r?\n/)) {
+        if (line.startsWith("data:")) {
+          const content = line.slice(5).trimStart();
+          if (dataContent) dataContent += "\n";
+          dataContent += content;
+        }
+      }
+      if (!dataContent) return;
 
       try {
-        const event = JSON.parse(dataLines.join("\n")) as OpenCodeStreamEvent;
+        const event = JSON.parse(dataContent) as ServeStreamEvent;
         if (handleEvent(event)) {
           sawSessionIdle = true;
         }
@@ -719,6 +759,7 @@ export class OpenCodeAgent implements Agent {
     } finally {
       streamAbortController.abort();
       await reader.cancel().catch(() => undefined);
+      textParts.clear();
     }
 
     const messageResult = await messageRequest;
@@ -733,12 +774,12 @@ export class OpenCodeAgent implements Agent {
     }
 
     const body = messageResult.body;
-    let response: OpenCodeMessageResponse;
+    let response: ServeMessageResponse;
     try {
-      response = JSON.parse(body) as OpenCodeMessageResponse;
+      response = JSON.parse(body) as ServeMessageResponse;
     } catch (error) {
       throw new Error(
-        `Failed to parse opencode response: ${error instanceof Error ? error.message : String(error)}`,
+        `${this.parseResponseError}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -755,6 +796,8 @@ export class OpenCodeAgent implements Agent {
       }
     }
 
+    prevUsageByMessageId.clear();
+
     if (response.info?.structured) {
       return {
         output: response.info.structured,
@@ -764,7 +807,7 @@ export class OpenCodeAgent implements Agent {
 
     const outputText = lastFinalAnswerText ?? lastText;
     if (!outputText) {
-      throw new Error("opencode returned no text output");
+      throw new Error(this.noTextOutputError);
     }
 
     try {
@@ -774,13 +817,13 @@ export class OpenCodeAgent implements Agent {
       };
     } catch (error) {
       throw new Error(
-        `Failed to parse opencode output: ${error instanceof Error ? error.message : String(error)}`,
+        `${this.parseOutputError}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
 
-  private async deleteSession(
-    server: OpenCodeServer,
+  protected async deleteSession(
+    server: ServeAgentServer,
     sessionId: string,
   ): Promise<void> {
     try {
@@ -793,8 +836,8 @@ export class OpenCodeAgent implements Agent {
     }
   }
 
-  private async abortSession(
-    server: OpenCodeServer,
+  protected async abortSession(
+    server: ServeAgentServer,
     sessionId: string,
   ): Promise<void> {
     try {
@@ -807,7 +850,7 @@ export class OpenCodeAgent implements Agent {
     }
   }
 
-  private async shutdownServer(): Promise<void> {
+  protected async shutdownServer(): Promise<void> {
     if (!this.server || this.server.closed) {
       this.server = null;
       return;
@@ -819,7 +862,10 @@ export class OpenCodeAgent implements Agent {
     }
 
     const server = this.server;
-    appendDebugLog("opencode:shutdown", { cwd: server.cwd, port: server.port });
+    appendDebugLog(`${this.debugLogPrefix}:shutdown`, {
+      cwd: server.cwd,
+      port: server.port,
+    });
 
     this.closingPromise = (
       this.platform === "win32" && server.child.pid
@@ -839,8 +885,8 @@ export class OpenCodeAgent implements Agent {
     await this.closingPromise;
   }
 
-  private async requestJSON<T>(
-    server: OpenCodeServer,
+  protected async requestJSON<T>(
+    server: ServeAgentServer,
     path: string,
     options: RequestOptions,
   ): Promise<T> {
@@ -848,8 +894,8 @@ export class OpenCodeAgent implements Agent {
     return JSON.parse(body) as T;
   }
 
-  private async requestText(
-    server: OpenCodeServer,
+  protected async requestText(
+    server: ServeAgentServer,
     path: string,
     options: RequestOptions,
   ): Promise<string> {
@@ -857,14 +903,26 @@ export class OpenCodeAgent implements Agent {
     return await response.text();
   }
 
-  private async request(
-    server: OpenCodeServer,
+  protected async request(
+    server: ServeAgentServer,
     path: string,
     options: RequestOptions,
   ): Promise<Response> {
-    const headers = new Headers(options.headers);
+    const headers: Record<string, string> = {};
     if (options.body !== undefined) {
-      headers.set("content-type", "application/json");
+      headers["content-type"] = "application/json";
+    }
+    if (options.headers) {
+      const h = options.headers;
+      if (h instanceof Headers) {
+        for (const [k, v] of h.entries()) {
+          headers[k] = v;
+        }
+      } else {
+        for (const [k, v] of Object.entries(h as Record<string, string>)) {
+          headers[k] = v;
+        }
+      }
     }
 
     const signal = withTimeoutSignal(options.signal, options.timeoutMs);
@@ -877,12 +935,25 @@ export class OpenCodeAgent implements Agent {
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      let body = "";
+      try {
+        body = await response.text();
+      } catch {
+        body = "[could not read body]";
+      }
       throw new Error(
-        `opencode ${options.method} ${path} failed with ${response.status}: ${body}`,
+        `${this.requestErrorPrefix} ${options.method} ${path} failed with ${response.status}: ${body}`,
       );
     }
 
     return response;
+  }
+}
+
+export class OpenCodeAgent extends ServeBasedAgent {
+  name = "opencode";
+
+  constructor(deps: ServeAgentDeps = {}) {
+    super({ ...deps, name: "opencode" });
   }
 }

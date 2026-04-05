@@ -80,6 +80,13 @@ vi.mock("./async-adapter.js", () => {
   return { AsyncAgentAdapter };
 });
 
+vi.mock("./kilo.js", () => {
+  const KiloAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "kilo";
+  });
+  return { KiloAgent };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
@@ -90,6 +97,7 @@ import { CopilotAgent } from "./copilot.js";
 import { JunieAgent } from "./junie.js";
 import { JulesAgent } from "./jules.js";
 import { AsyncAgentAdapter } from "./async-adapter.js";
+import { KiloAgent } from "./kilo.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -161,5 +169,11 @@ describe("createAgent", () => {
       },
     );
     expect(agent.name).toBe("jules");
+  });
+
+  it("creates a KiloAgent when name is 'kilo'", () => {
+    const agent = createAgent("kilo", stubRunInfo);
+    expect(KiloAgent).toHaveBeenCalledWith({ bin: undefined });
+    expect(agent.name).toBe("kilo");
   });
 });
