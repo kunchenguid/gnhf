@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.11...gnhf-v0.1.12) (2026-04-05)
+
+
+### Bug Fixes
+
+* **cli:** clarify loop prompts and abort UI ([#26](https://github.com/kunchenguid/gnhf/issues/26)) ([90022c1](https://github.com/kunchenguid/gnhf/commit/90022c1df1d0456d67255c6d36dec968ffa9e943))
+
 ## [0.1.11](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.10...gnhf-v0.1.11) (2026-04-04)
 
 
