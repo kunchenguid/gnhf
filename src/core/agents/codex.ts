@@ -138,6 +138,16 @@ export class CodexAgent implements Agent {
     };
     child.stderr?.on("data", stderrHandler);
 
+    let sawOutput = false;
+    child.stdout?.once("data", () => {
+      sawOutput = true;
+    });
+
+    let sawOutput = false;
+    child.stdout?.once("data", () => {
+      sawOutput = true;
+    });
+
     let lastAgentMessage: string | null = null;
     const cumulative: TokenUsage = {
       inputTokens: 0,
@@ -200,6 +210,7 @@ export class CodexAgent implements Agent {
 
     const startupTimeout = new Promise<never>((_, reject) => {
       const timer = setTimeout(() => {
+        if (sawOutput) return;
         terminateCodexProcess(child, this.platform);
         reject(
           new Error(
