@@ -7,11 +7,7 @@ import type {
   TokenUsage,
   AgentRunOptions,
 } from "./types.js";
-import {
-  parseJSONLStream,
-  setupAbortHandler,
-  setupChildProcessHandlers,
-} from "./stream-utils.js";
+import { consumeJSONLStream } from "./stream-utils.js";
 
 interface CodexItemCompleted {
   type: "item.completed";
@@ -33,6 +29,9 @@ interface CodexAgentDeps {
   bin?: string;
   platform?: NodeJS.Platform;
 }
+
+const CODEX_STARTUP_TIMEOUT_MS = 60_000;
+const MAX_STDERR_BUFFER = 64 * 1024;
 
 function shouldUseWindowsShell(
   bin: string,
@@ -97,53 +96,60 @@ export class CodexAgent implements Agent {
     this.schemaPath = schemaPath;
   }
 
-  run(
+  async run(
     prompt: string,
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
     const { onUsage, onMessage, signal, logPath } = options ?? {};
+    const logStream = logPath ? createWriteStream(logPath) : null;
 
-    return new Promise((resolve, reject) => {
-      const logStream = logPath ? createWriteStream(logPath) : null;
+    if (signal?.aborted) {
+      logStream?.end();
+      throw new Error("Agent was aborted");
+    }
 
-      const child = spawn(
-        this.bin,
-        [
-          "exec",
-          prompt,
-          "--json",
-          "--output-schema",
-          this.schemaPath,
-          "--dangerously-bypass-approvals-and-sandbox",
-          "--color",
-          "never",
-        ],
-        {
-          cwd,
-          shell: shouldUseWindowsShell(this.bin, this.platform),
-          stdio: ["ignore", "pipe", "pipe"],
-          env: process.env,
-        },
-      );
+    const child = spawn(
+      this.bin,
+      [
+        "exec",
+        prompt,
+        "--json",
+        "--output-schema",
+        this.schemaPath,
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--color",
+        "never",
+      ],
+      {
+        cwd,
+        shell: shouldUseWindowsShell(this.bin, this.platform),
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
 
-      if (
-        setupAbortHandler(signal, child, reject, () =>
-          terminateCodexProcess(child, this.platform),
-        )
-      ) {
-        return;
+    let stderr = "";
+    const stderrHandler = (data: Buffer) => {
+      stderr += data.toString();
+      if (stderr.length > MAX_STDERR_BUFFER) {
+        stderr = stderr.slice(-MAX_STDERR_BUFFER);
       }
+    };
+    child.stderr?.on("data", stderrHandler);
 
-      let lastAgentMessage: string | null = null;
-      const cumulative: TokenUsage = {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      };
+    let lastAgentMessage: string | null = null;
+    const cumulative: TokenUsage = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
 
-      parseJSONLStream<CodexEvent>(child.stdout!, logStream, (event) => {
+    const streamPromise = consumeJSONLStream<CodexEvent>(
+      child,
+      logStream,
+      (event) => {
         if (
           event.type === "item.completed" &&
           "item" in event &&
@@ -160,25 +166,83 @@ export class CodexAgent implements Agent {
           cumulative.cacheReadTokens += u.cached_input_tokens ?? 0;
           onUsage?.({ ...cumulative });
         }
-      });
+      },
+    );
 
-      setupChildProcessHandlers(child, "codex", logStream, reject, () => {
-        if (!lastAgentMessage) {
-          reject(new Error("codex returned no agent message"));
-          return;
-        }
-
-        try {
-          const output = JSON.parse(lastAgentMessage) as AgentOutput;
-          resolve({ output, usage: cumulative });
-        } catch (err) {
-          reject(
-            new Error(
-              `Failed to parse codex output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
-        }
+    let exitCode: number | null = null;
+    const exitPromise = new Promise<number | null>((resolve) => {
+      child.once("close", (code) => {
+        logStream?.end();
+        child.stderr?.off("data", stderrHandler);
+        exitCode = code;
+        resolve(code);
       });
     });
+
+    const errorPromise = new Promise<never>((_, reject) => {
+      child.once("error", (err) => {
+        logStream?.end();
+        child.stderr?.off("data", stderrHandler);
+        reject(new Error(`Failed to spawn codex: ${err.message}`));
+      });
+    });
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      const onAbort = () => {
+        terminateCodexProcess(child, this.platform);
+        reject(new Error("Agent was aborted"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      child.once("close", () => {
+        signal?.removeEventListener("abort", onAbort);
+      });
+    });
+
+    const startupTimeout = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => {
+        terminateCodexProcess(child, this.platform);
+        reject(
+          new Error(
+            `codex did not produce output within ${CODEX_STARTUP_TIMEOUT_MS / 1000}s — it may be hanging on MCP startup or backpressure`,
+          ),
+        );
+      }, CODEX_STARTUP_TIMEOUT_MS);
+      timer.unref();
+      child.once("close", () => clearTimeout(timer));
+    });
+
+    try {
+      await Promise.race([
+        Promise.all([streamPromise, exitPromise]),
+        abortPromise,
+        errorPromise,
+        startupTimeout,
+      ]);
+    } catch (err) {
+      if (err instanceof Error && err.message === "Agent was aborted") {
+        throw err;
+      }
+      if (exitCode !== null && exitCode !== 0) {
+        throw new Error(`codex exited with code ${exitCode}: ${stderr}`);
+      }
+      throw err;
+    }
+
+    if (exitCode !== null && exitCode !== 0) {
+      throw new Error(`codex exited with code ${exitCode}: ${stderr}`);
+    }
+
+    if (!lastAgentMessage) {
+      throw new Error("codex returned no agent message");
+    }
+
+    try {
+      const output = JSON.parse(lastAgentMessage) as AgentOutput;
+      return { output, usage: cumulative };
+    } catch (err) {
+      throw new Error(
+        `Failed to parse codex output: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 }

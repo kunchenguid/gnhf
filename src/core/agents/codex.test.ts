@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
 
 vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
@@ -11,13 +12,25 @@ import { CodexAgent } from "./codex.js";
 
 const mockSpawn = vi.mocked(spawn);
 
-function createMockProcess() {
+function createMockProcess(jsonlLines: string[]) {
+  const stdout = Readable.from(
+    jsonlLines.map((line) => Buffer.from(line + "\n")),
+  );
+  const stderr = new Readable({
+    read() {},
+  }) as unknown as NodeJS.ReadableStream;
   const proc = Object.assign(new EventEmitter(), {
-    stdout: new EventEmitter(),
-    stderr: new EventEmitter(),
+    stdout,
+    stderr,
     stdin: null,
     kill: vi.fn(),
+    pid: 1234,
   });
+
+  stdout.on("end", () => {
+    setImmediate(() => proc.emit("close", 0));
+  });
+
   return proc as typeof proc & ReturnType<typeof spawn>;
 }
 
@@ -26,15 +39,37 @@ describe("CodexAgent", () => {
     vi.clearAllMocks();
   });
 
-  it("does not use a shell for direct Windows launches", () => {
-    const proc = createMockProcess();
+  const successJsonl = [
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        type: "agent_message",
+        text: JSON.stringify({
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        }),
+      },
+    }),
+    JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 },
+    }),
+  ];
+
+  it("does not use a shell for direct Windows launches", async () => {
+    const proc = createMockProcess(successJsonl);
     mockSpawn.mockReturnValue(proc);
+
     const agent = new CodexAgent("/tmp/schema.json", {
       platform: "win32",
     });
 
-    agent.run("test prompt", "/work/dir");
+    const result = await agent.run("test prompt", "/work/dir");
 
+    expect(result.output.success).toBe(true);
+    expect(result.output.summary).toBe("done");
     expect(mockSpawn).toHaveBeenCalledWith(
       "codex",
       [
@@ -56,15 +91,16 @@ describe("CodexAgent", () => {
     );
   });
 
-  it("uses a shell on Windows for cmd wrapper paths", () => {
-    const proc = createMockProcess();
+  it("uses a shell on Windows for cmd wrapper paths", async () => {
+    const proc = createMockProcess(successJsonl);
     mockSpawn.mockReturnValue(proc);
+
     const agent = new CodexAgent("/tmp/schema.json", {
       bin: "C:\\tools\\codex.cmd",
       platform: "win32",
     });
 
-    agent.run("test prompt", "/work/dir");
+    await agent.run("test prompt", "/work/dir");
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "C:\\tools\\codex.cmd",
@@ -87,18 +123,19 @@ describe("CodexAgent", () => {
     );
   });
 
-  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", () => {
-    const proc = createMockProcess();
+  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", async () => {
+    const proc = createMockProcess(successJsonl);
     mockSpawn.mockReturnValue(proc);
     vi.mocked(execFileSync).mockReturnValue(
       "C:\\tools\\codex-switch.cmd\r\n" as never,
     );
+
     const agent = new CodexAgent("/tmp/schema.json", {
       bin: "codex-switch",
       platform: "win32",
     });
 
-    agent.run("test prompt", "/work/dir");
+    await agent.run("test prompt", "/work/dir");
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "codex-switch",
@@ -122,7 +159,7 @@ describe("CodexAgent", () => {
   });
 
   it("kills the full process tree on Windows when aborted", async () => {
-    const proc = createMockProcess();
+    const proc = createMockProcess([]);
     Object.defineProperty(proc, "pid", { value: 6789 });
     mockSpawn.mockReturnValue(proc);
     const controller = new AbortController();
@@ -142,5 +179,33 @@ describe("CodexAgent", () => {
       { stdio: "ignore" },
     );
     expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it("rejects when codex exits with non-zero code", async () => {
+    const stderr = new Readable({
+      read() {},
+    }) as unknown as NodeJS.ReadableStream;
+    const stdout = Readable.from([]);
+    const proc = Object.assign(new EventEmitter(), {
+      stdout,
+      stderr,
+      stdin: null,
+      kill: vi.fn(),
+    }) as ReturnType<typeof spawn>;
+
+    mockSpawn.mockReturnValue(proc);
+
+    const agent = new CodexAgent("/tmp/schema.json", {
+      platform: "linux",
+    });
+
+    setImmediate(() => {
+      (stderr as EventEmitter).emit("data", Buffer.from("something went wrong"));
+      proc.emit("close", 1);
+    });
+
+    await expect(agent.run("test prompt", "/work/dir")).rejects.toThrow(
+      "codex exited with code 1: something went wrong",
+    );
   });
 });
