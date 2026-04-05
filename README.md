@@ -128,7 +128,7 @@ npm link
 ```
 
 - **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
-- **Runtime caps** — `--max-iterations` stops before the next iteration begins, while `--max-tokens` can abort mid-iteration once reported usage reaches the cap; uncommitted work is rolled back in either case
+- **Runtime caps** — `--max-iterations` stops before the next iteration begins, while `--max-tokens` can abort mid-iteration once reported usage reaches the cap; uncommitted work is rolled back in either case, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
 - **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off
