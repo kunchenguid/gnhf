@@ -14,7 +14,7 @@ export type AgentName =
   | "junie"
   | "jules";
 
-const AGENT_NAMES = [
+export const AGENT_NAMES = [
   "claude",
   "codex",
   "rovodev",
