@@ -166,7 +166,7 @@ program
   .argument("[prompt]", "The objective for the coding agent")
   .option(
     "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, opencode, or kilo)",
+    "Agent to use (claude, codex, rovodev, opencode, kilo, gemini, copilot, junie, or jules)",
   )
   .option(
     "--max-iterations <n>",
@@ -223,48 +223,22 @@ program
       const agentName = options.agent;
       if (
         agentName !== undefined &&
-        agentName !== "claude" &&
-        agentName !== "codex" &&
-        agentName !== "rovodev" &&
-        agentName !== "opencode" &&
-        agentName !== "kilo"
+        agentName !== "kilo" &&
+        agentName !== "gemini" &&
+        agentName !== "copilot" &&
+        agentName !== "junie" &&
+        agentName !== "jules"
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", or "kilo".`,
+          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "kilo", "gemini", "copilot", "junie", or "jules".`,
         );
         process.exit(1);
       }
 
-      const loadedConfig = loadConfig(
-        agentName
-          ? {
-              agent: agentName as
-                | "claude"
-                | "codex"
-                | "rovodev"
-                | "opencode"
-                | "kilo",
-            }
-          : {},
-      );
-      const config = {
-        ...loadedConfig,
-        ...(options.preventSleep === undefined
-          ? {}
-          : { preventSleep: options.preventSleep }),
-      };
-      if (
-        config.agent !== "claude" &&
-        config.agent !== "codex" &&
-        config.agent !== "rovodev" &&
-        config.agent !== "opencode" &&
-        config.agent !== "kilo"
-      ) {
-        console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", "opencode", or "kilo".`,
-        );
-        process.exit(1);
-      }
+      const config = loadConfig({
+        agent: agentName,
+        preventSleep: options.preventSleep,
+      });
 
       if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
         prompt = readReexecStdinPrompt(process.env);
@@ -307,6 +281,7 @@ program
             runInfo = initializeNewBranch(prompt, cwd);
           } else {
             process.exit(0);
+            return;
           }
         }
       } else {
@@ -338,6 +313,7 @@ program
           if (sleepPrevention.type === "reexeced") {
             reexeced = true;
             process.exit(sleepPrevention.exitCode);
+            return;
           }
           if (sleepPrevention.type === "active") {
             sleepPreventionCleanup = sleepPrevention.cleanup;
@@ -424,6 +400,7 @@ program
             `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
           );
           process.exit(getSignalExitCode(shutdownSignal ?? "SIGINT"));
+          return;
         }
       } finally {
         process.off("SIGINT", handleSigInt);
@@ -437,7 +414,11 @@ program
 
       if (shutdownSignal) {
         process.exit(getSignalExitCode(shutdownSignal));
+        return;
       }
+
+      process.exit(0);
+      return;
     },
   );
 
@@ -454,6 +435,7 @@ function exitAltScreen() {
 function die(message: string): never {
   console.error(`\n  gnhf: ${humanizeErrorMessage(message)}\n`);
   process.exit(1);
+  throw new Error(`process.exit unexpectedly returned after fatal error: ${message}`);
 }
 
 try {
