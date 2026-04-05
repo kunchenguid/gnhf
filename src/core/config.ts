@@ -8,22 +8,18 @@ export type AgentName =
   | "codex"
   | "rovodev"
   | "opencode"
-  | "kilo"
   | "gemini"
   | "copilot"
-  | "junie"
-  | "jules";
+  | "junie";
 
 const AGENT_NAMES = [
   "claude",
   "codex",
   "rovodev",
   "opencode",
-  "kilo",
   "gemini",
   "copilot",
   "junie",
-  "jules",
 ] as const;
 
 export interface Config {
@@ -98,7 +94,7 @@ function normalizeAgentPathOverride(
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!validNames.has(key)) {
       throw new InvalidConfigError(
-        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", "opencode", "kilo", "gemini", "copilot", "junie", or "jules".`,
+        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", "opencode", "gemini", "copilot", or "junie".`,
       );
     }
     if (typeof val !== "string") {
