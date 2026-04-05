@@ -29,6 +29,7 @@ interface CliMockOverrides {
   appendDebugLog?: ReturnType<typeof vi.fn>;
   createAgent?: ReturnType<typeof vi.fn>;
   env?: Record<string, string | undefined>;
+  maybePromptForJulesSetup?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
@@ -49,6 +50,9 @@ async function runCliWithMocks(
   const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
     code?: string | number | null,
   ) => {
+    if (code === 0 || code === undefined) {
+      return undefined as never;
+    }
     throw new Error(
       `process.exit unexpectedly called with ${JSON.stringify(code)}`,
     );
@@ -58,6 +62,8 @@ async function runCliWithMocks(
   const createAgent =
     overrides.createAgent ?? vi.fn(() => ({ name: config.agent }));
   const appendDebugLog = overrides.appendDebugLog ?? vi.fn();
+  const maybePromptForJulesSetup =
+    overrides.maybePromptForJulesSetup ?? vi.fn(async (cfg) => cfg);
   const readStdinText =
     overrides.readStdinText ?? vi.fn(() => Promise.resolve(""));
   const startSleepPrevention =
@@ -100,9 +106,29 @@ async function runCliWithMocks(
       "gemini",
       "copilot",
       "junie",
+      "jules",
+      "kilo",
     ],
   }));
   vi.doMock("./core/debug-log.js", () => ({ appendDebugLog }));
+  vi.doMock("./core/jules-tooling.js", () => ({
+    getVisibleAgentNames: vi.fn((cfg, env) => {
+      const base = [
+        "claude",
+        "codex",
+        "rovodev",
+        "opencode",
+        "gemini",
+        "copilot",
+        "junie",
+        "kilo",
+      ];
+      return env?.JULES_API_KEY && !cfg?.jules?.dismissed
+        ? [...base, "jules"]
+        : base;
+    }),
+    maybePromptForJulesSetup,
+  }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
     createBranch: vi.fn(),
@@ -177,6 +203,7 @@ async function runCliWithMocks(
   return {
     appendDebugLog,
     loadConfig,
+    maybePromptForJulesSetup,
     createAgent,
     orchestratorCtor,
     readStdinText,
@@ -293,6 +320,63 @@ describe("cli", () => {
     );
   });
 
+  it.each(["gemini", "copilot", "junie", "jules", "kilo"] as const)(
+    "accepts %s as an explicit --agent override",
+    async (agent) => {
+      const env = agent === "jules" ? { JULES_API_KEY: "secret" } : {};
+      const { loadConfig, createAgent } = await runCliWithMocks(
+        ["ship it", "--agent", agent],
+        {
+          agent,
+          agentPathOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        { env },
+      );
+
+      expect(loadConfig).toHaveBeenCalledWith({
+        agent,
+        preventSleep: undefined,
+      });
+      expect(createAgent).toHaveBeenCalledWith(agent, stubRunInfo, undefined);
+    },
+  );
+
+  it("hides jules from the CLI when it is not configured", async () => {
+    await expect(
+      runCliWithMocks(
+        ["ship it", "--agent", "jules"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+      ),
+    ).rejects.toThrow(/process\.exit unexpectedly called with 1/);
+  });
+
+  it("prompts for Jules setup once in interactive mode when not configured", async () => {
+    const maybePromptForJulesSetup = vi.fn(async (cfg) => cfg);
+
+    await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { maybePromptForJulesSetup },
+    );
+
+    expect(maybePromptForJulesSetup).toHaveBeenCalledTimes(1);
+    expect(
+      (maybePromptForJulesSetup.mock.calls[0] as unknown[] | undefined)?.[2],
+    ).toBe(true);
+  });
+
   it("passes max iteration and token caps to the orchestrator", async () => {
     const { orchestratorCtor } = await runCliWithMocks(
       ["ship it", "--max-iterations", "12", "--max-tokens", "3456"],
@@ -340,18 +424,16 @@ describe("cli", () => {
       Promise.resolve({ type: "reexeced" as const, exitCode: 0 }),
     );
 
-    await expect(
-      runCliWithMocks(
-        ["ship it"],
-        {
-          agent: "claude",
-          agentPathOverride: {},
-          maxConsecutiveFailures: 3,
-          preventSleep: true,
-        },
-        { appendDebugLog, startSleepPrevention },
-      ),
-    ).rejects.toThrow(/process\.exit unexpectedly called/);
+    await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      { appendDebugLog, startSleepPrevention },
+    );
 
     expect(startSleepPrevention).toHaveBeenCalledTimes(1);
     expect(appendDebugLog).not.toHaveBeenCalledWith(
@@ -812,6 +894,112 @@ describe("cli", () => {
     });
 
     await cliPromise;
+  });
+
+  it("exits with code 0 after a successful non-interrupted run", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "opencode",
+        agentPathOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+      AGENT_NAMES: [
+        "claude",
+        "codex",
+        "rovodev",
+        "opencode",
+        "gemini",
+        "copilot",
+        "junie",
+        "jules",
+        "kilo",
+      ],
+    }));
+    vi.doMock("./core/debug-log.js", () => ({ appendDebugLog: vi.fn() }));
+    vi.doMock("./core/jules-tooling.js", () => ({
+      getVisibleAgentNames: vi.fn(() => [
+        "claude",
+        "codex",
+        "rovodev",
+        "opencode",
+        "gemini",
+        "copilot",
+        "junie",
+        "kilo",
+      ]),
+      maybePromptForJulesSetup: vi.fn(async (cfg) => cfg),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/stdin.js", () => ({
+      readStdinText: vi.fn(() => Promise.resolve("")),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "opencode" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention: vi.fn(() =>
+        Promise.resolve({ type: "skipped", reason: "unsupported" }),
+      ),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn(() => ({
+          status: "running" as const,
+          currentIteration: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 0,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        }));
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve("stopped"));
+      }
+    }));
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      await import("./cli.js");
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      exitSpy.mockRestore();
+    }
   });
 
   it("prints a friendly message outside a git repository", async () => {

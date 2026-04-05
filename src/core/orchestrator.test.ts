@@ -14,15 +14,21 @@ vi.mock("../templates/iteration-prompt.js", () => ({
   buildIterationPrompt: vi.fn(() => "iteration prompt"),
 }));
 
+vi.mock("./jules-tooling.js", () => ({
+  getJulesPromptGuidance: vi.fn(() => undefined),
+}));
+
 import { commitAll } from "./git.js";
 import { appendNotes } from "./run.js";
 import { Orchestrator } from "./orchestrator.js";
+import { getJulesPromptGuidance } from "./jules-tooling.js";
 import type { Agent, AgentResult } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 
 const mockCommitAll = vi.mocked(commitAll);
 const mockAppendNotes = vi.mocked(appendNotes);
+const mockGetJulesPromptGuidance = vi.mocked(getJulesPromptGuidance);
 
 const config: Config = {
   agent: "claude",
@@ -62,6 +68,34 @@ describe("Orchestrator stop limits", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+  });
+
+  it("passes gated Jules guidance into the iteration prompt", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+    mockGetJulesPromptGuidance.mockReturnValue("Use Jules remotely.");
+    const { buildIterationPrompt } = await import("../templates/iteration-prompt.js");
+    const mockBuildIterationPrompt = vi.mocked(buildIterationPrompt);
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockBuildIterationPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        julesGuidance: "Use Jules remotely.",
+      }),
+    );
   });
 
   it("aborts before starting when the max iteration cap is already reached", async () => {

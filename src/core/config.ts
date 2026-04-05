@@ -29,6 +29,9 @@ export const AGENT_NAMES = [
 export interface Config {
   agent: AgentName;
   agentPathOverride: Partial<Record<AgentName, string>>;
+  jules?: {
+    dismissed?: boolean;
+  };
   maxConsecutiveFailures: number;
   preventSleep: boolean;
 }
@@ -117,6 +120,31 @@ function normalizeAgentPathOverride(
   return result;
 }
 
+function normalizeJulesConfig(
+  value: unknown,
+): Config["jules"] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for jules: expected an object`,
+    );
+  }
+
+  const raw = value as Record<string, unknown>;
+  const result: NonNullable<Config["jules"]> = {};
+
+  if (Object.prototype.hasOwnProperty.call(raw, "dismissed")) {
+    if (typeof raw.dismissed !== "boolean") {
+      throw new InvalidConfigError(
+        `Invalid config value for jules.dismissed: expected a boolean`,
+      );
+    }
+    result.dismissed = raw.dismissed;
+  }
+
+  return Object.keys(result).length > 0 ? result : {};
+}
+
 function normalizeConfig(
   config: Partial<Config>,
   configDir?: string,
@@ -156,6 +184,18 @@ function normalizeConfig(
     }
   } else {
     delete normalized.agentPathOverride;
+  }
+
+  const hasJules = Object.prototype.hasOwnProperty.call(config, "jules");
+  if (hasJules) {
+    const jules = normalizeJulesConfig(config.jules);
+    if (jules === undefined) {
+      delete normalized.jules;
+    } else {
+      normalized.jules = jules;
+    }
+  } else {
+    delete normalized.jules;
   }
 
   return normalized;
@@ -213,6 +253,25 @@ function serializeConfig(config: Config): string {
 
   lines.push(
     "",
+    "# Jules setup state (optional)",
+    "# jules:",
+    "#   dismissed: true",
+  );
+
+  if (config.jules && Object.keys(config.jules).length > 0) {
+    lines.push(
+      ...yaml
+        .dump(
+          { jules: config.jules },
+          { lineWidth: -1, noRefs: true, sortKeys: false },
+        )
+        .trimEnd()
+        .split("\n"),
+    );
+  }
+
+  lines.push(
+    "",
     "# Abort after this many consecutive failures",
     `maxConsecutiveFailures: ${config.maxConsecutiveFailures}`,
     "",
@@ -263,4 +322,11 @@ export function loadConfig(overrides?: Partial<Config>): Config {
   }
 
   return resolvedConfig;
+}
+
+export function saveConfig(config: Config): void {
+  const configDir = join(homedir(), ".gnhf");
+  const configPath = join(configDir, "config.yml");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(configPath, serializeConfig(config), "utf-8");
 }
