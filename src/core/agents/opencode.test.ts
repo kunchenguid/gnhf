@@ -513,6 +513,62 @@ describe("OpenCodeAgent", () => {
     );
   });
 
+  it("starts successfully without an external abort signal", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test prompt", "/repo")).resolves.toMatchObject({
+      output: expect.objectContaining({ summary: "done" }),
+    });
+  });
+
+  it("merges custom request headers", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await agent.run("test prompt", "/repo");
+
+    expect(
+      new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("accept"),
+    ).toBe("text/event-stream");
+  });
+
   it("kills the full process tree on Windows so the opencode server does not survive shutdown", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 5678 });

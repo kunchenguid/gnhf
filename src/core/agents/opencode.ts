@@ -441,7 +441,7 @@ export class ServeBasedAgent implements Agent {
     }, 30_000);
     const combined = signal
       ? AbortSignal.any([signal, timeoutController.signal])
-      : timeoutController.signal.signal;
+      : timeoutController.signal;
     let spawnErr: string | null = null;
 
     server.child.once("error", (error) => {
@@ -918,12 +918,6 @@ export class ServeBasedAgent implements Agent {
         for (const [k, v] of h.entries()) {
           headers[k] = v;
         }
-      } else {
-        for (const [k, v] of Object.entries(h as Record<string, string>)) {
-          headers[k] = v;
-        }
-      }
-    }
       } else {
         for (const [k, v] of Object.entries(h as Record<string, string>)) {
           headers[k] = v;
