@@ -166,7 +166,7 @@ program
   .argument("[prompt]", "The objective for the coding agent")
   .option(
     "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, or opencode)",
+    "Agent to use (claude, codex, rovodev, opencode, kilo, gemini, copilot, junie, or jules)",
   )
   .option(
     "--max-iterations <n>",
@@ -226,38 +226,23 @@ program
         agentName !== "claude" &&
         agentName !== "codex" &&
         agentName !== "rovodev" &&
-        agentName !== "opencode"
+        agentName !== "opencode" &&
+        agentName !== "kilo" &&
+        agentName !== "gemini" &&
+        agentName !== "copilot" &&
+        agentName !== "junie" &&
+        agentName !== "jules"
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", "kilo", "gemini", "copilot", "junie", or "jules".`,
         );
         process.exit(1);
       }
 
-      const loadedConfig = loadConfig(
-        agentName
-          ? {
-              agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
-            }
-          : {},
-      );
-      const config = {
-        ...loadedConfig,
-        ...(options.preventSleep === undefined
-          ? {}
-          : { preventSleep: options.preventSleep }),
-      };
-      if (
-        config.agent !== "claude" &&
-        config.agent !== "codex" &&
-        config.agent !== "rovodev" &&
-        config.agent !== "opencode"
-      ) {
-        console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
-        );
-        process.exit(1);
-      }
+      const config = loadConfig({
+        agent: agentName,
+        preventSleep: options.preventSleep,
+      });
 
       if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
         prompt = readReexecStdinPrompt(process.env);
