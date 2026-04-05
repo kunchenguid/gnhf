@@ -42,13 +42,6 @@ vi.mock("./opencode.js", () => {
   return { ServeBasedAgent, OpenCodeAgent };
 });
 
-vi.mock("./kilo.js", () => {
-  const KiloAgent = vi.fn(function (this: Record<string, unknown>) {
-    this.name = "kilo";
-  });
-  return { KiloAgent };
-});
-
 vi.mock("./gemini.js", () => {
   const GeminiAgent = vi.fn(function (this: Record<string, unknown>) {
     this.name = "gemini";
@@ -87,21 +80,11 @@ vi.mock("./async-adapter.js", () => {
   return { AsyncAgentAdapter };
 });
 
-vi.mock("./jules.js", () => {
-  const JulesAgent = vi.fn(function (this: Record<string, unknown>) {
-    this.name = "jules";
+vi.mock("./kilo.js", () => {
+  const KiloAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "kilo";
   });
-  return { JulesAgent };
-});
-
-vi.mock("./async-adapter.js", () => {
-  const AsyncAgentAdapter = vi.fn(function (
-    this: Record<string, unknown>,
-    agent: { name: string },
-  ) {
-    this.name = agent.name;
-  });
-  return { AsyncAgentAdapter };
+  return { KiloAgent };
 });
 
 import { createAgent } from "./factory.js";
@@ -109,12 +92,12 @@ import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
-import { KiloAgent } from "./kilo.js";
 import { GeminiAgent } from "./gemini.js";
 import { CopilotAgent } from "./copilot.js";
 import { JunieAgent } from "./junie.js";
 import { JulesAgent } from "./jules.js";
 import { AsyncAgentAdapter } from "./async-adapter.js";
+import { KiloAgent } from "./kilo.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -154,12 +137,6 @@ describe("createAgent", () => {
     expect(agent.name).toBe("opencode");
   });
 
-  it("creates a KiloAgent when name is 'kilo'", () => {
-    const agent = createAgent("kilo", stubRunInfo);
-    expect(KiloAgent).toHaveBeenCalledWith({ bin: undefined });
-    expect(agent.name).toBe("kilo");
-  });
-
   it("creates a GeminiAgent when name is 'gemini'", () => {
     const agent = createAgent("gemini", stubRunInfo);
     expect(GeminiAgent).toHaveBeenCalledWith({ bin: undefined });
@@ -184,7 +161,19 @@ describe("createAgent", () => {
       bin: undefined,
       platform: process.platform,
     });
-    expect(AsyncAgentAdapter).toHaveBeenCalled();
+    expect(AsyncAgentAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "jules" }),
+      {
+        pollIntervalMs: 30_000,
+        timeoutMs: 60 * 60 * 1000,
+      },
+    );
     expect(agent.name).toBe("jules");
+  });
+
+  it("creates a KiloAgent when name is 'kilo'", () => {
+    const agent = createAgent("kilo", stubRunInfo);
+    expect(KiloAgent).toHaveBeenCalledWith({ bin: undefined });
+    expect(agent.name).toBe("kilo");
   });
 });
