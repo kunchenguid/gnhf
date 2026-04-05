@@ -4,17 +4,7 @@ import {
   type TokenUsage,
 } from "./types.js";
 import { TextBasedAgent, type TextBasedAgentDeps } from "./text-based-agent.js";
-
-const JSON_FENCE_RE = /```(?:json)?\s*\n([\s\S]*?)\n\s*```/;
-const TRAILING_JSON_RE = /\{[\s\S]*\}\s*$/;
-
-function extractJson(text: string): string {
-  const fenceMatch = text.match(JSON_FENCE_RE);
-  if (fenceMatch) return fenceMatch[1];
-  const trailingMatch = text.match(TRAILING_JSON_RE);
-  if (trailingMatch) return trailingMatch[0];
-  return text;
-}
+import { extractJson } from "./json-utils.js";
 
 export class GeminiAgent extends TextBasedAgent {
   name = "gemini";
@@ -57,6 +47,7 @@ export class GeminiAgent extends TextBasedAgent {
   }
 
   protected parseUsage(_stdout: string): TokenUsage {
+    // TODO: Extract token usage from Gemini CLI output if available
     return {
       inputTokens: 0,
       outputTokens: 0,
