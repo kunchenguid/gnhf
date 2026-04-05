@@ -102,9 +102,10 @@ export abstract class TextBasedAgent implements Agent {
 
     child.stdout.on("data", (data: Buffer) => {
       const text = data.toString();
-      stdout += text;
-      if (stdout.length > MAX_OUTPUT_BUFFER) {
-        stdout = stdout.slice(-MAX_OUTPUT_BUFFER);
+      if (stdout.length + text.length > MAX_OUTPUT_BUFFER) {
+        stdout = (stdout + text).slice(-MAX_OUTPUT_BUFFER);
+      } else {
+        stdout += text;
       }
       logStream?.write(data);
       const cleaned = stripAnsi(text).trim();
@@ -112,7 +113,12 @@ export abstract class TextBasedAgent implements Agent {
     });
 
     child.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      const text = data.toString();
+      if (stderr.length + text.length > MAX_OUTPUT_BUFFER) {
+        stderr = (stderr + text).slice(-MAX_OUTPUT_BUFFER);
+      } else {
+        stderr += text;
+      }
       logStream?.write(data);
     });
 

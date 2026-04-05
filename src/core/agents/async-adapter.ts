@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   type Agent,
   type AgentResult,
@@ -11,7 +10,6 @@ import {
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 
-const TERMINAL_STATES = new Set(["completed", "failed"]);
 const POLLABLE_STATES = new Set([
   "queued",
   "planning",
