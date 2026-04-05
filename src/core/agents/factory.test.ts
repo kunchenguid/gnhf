@@ -30,10 +30,23 @@ vi.mock("./rovodev.js", () => {
 });
 
 vi.mock("./opencode.js", () => {
+  const ServeBasedAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps: { name?: string } = {},
+  ) {
+    this.name = deps.name ?? "serve-agent";
+  });
   const OpenCodeAgent = vi.fn(function (this: Record<string, unknown>) {
     this.name = "opencode";
   });
-  return { OpenCodeAgent };
+  return { ServeBasedAgent, OpenCodeAgent };
+});
+
+vi.mock("./kilo.js", () => {
+  const KiloAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "kilo";
+  });
+  return { KiloAgent };
 });
 
 import { createAgent } from "./factory.js";
@@ -41,6 +54,7 @@ import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
+import { KiloAgent } from "./kilo.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -78,5 +92,11 @@ describe("createAgent", () => {
     const agent = createAgent("opencode", stubRunInfo);
     expect(OpenCodeAgent).toHaveBeenCalledWith({ bin: undefined });
     expect(agent.name).toBe("opencode");
+  });
+
+  it("creates a KiloAgent when name is 'kilo'", () => {
+    const agent = createAgent("kilo", stubRunInfo);
+    expect(KiloAgent).toHaveBeenCalledWith({ bin: undefined });
+    expect(agent.name).toBe("kilo");
   });
 });
