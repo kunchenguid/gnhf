@@ -27,6 +27,7 @@ const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
 const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
+const DONE_HINT = "[ctrl+c to exit]";
 
 export type RendererExitReason = "interrupted" | "stopped";
 
@@ -280,8 +281,9 @@ function centerLineCells(content: Cell[], width: number): Cell[] {
   return [...emptyCells(pad), ...clamped, ...emptyCells(rightPad)];
 }
 
-function renderResumeHintCells(width: number): Cell[] {
-  return centerLineCells(textToCells(RESUME_HINT, "dim"), width);
+function renderResumeHintCells(width: number, done?: boolean): Cell[] {
+  const hint = done ? DONE_HINT : RESUME_HINT;
+  return centerLineCells(textToCells(hint, "dim"), width);
 }
 
 // ── Build full frame (cell-based) ────────────────────────────
@@ -444,7 +446,8 @@ export function buildFrameCells(
     frame.push(renderStarLineCells(bottomStars, terminalWidth, y, now));
   }
 
-  frame.push(renderResumeHintCells(terminalWidth));
+  const isDone = state.status === "aborted";
+  frame.push(renderResumeHintCells(terminalWidth, isDone));
   frame.push(emptyCells(terminalWidth));
 
   return frame;

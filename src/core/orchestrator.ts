@@ -63,6 +63,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeIterationPromise: Promise<RunIterationResult> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
+  private loopDone = false;
 
   private state: OrchestratorState = {
     status: "running",
@@ -109,6 +110,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   stop(): void {
     this.stopRequested = true;
     this.activeAbortController?.abort();
+
+    if (this.loopDone) {
+      this.emit("stopped");
+      return;
+    }
 
     if (this.stopPromise) return;
 
@@ -219,6 +225,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       } else {
         await this.closeAgent();
       }
+      this.loopDone = true;
     }
   }
 
