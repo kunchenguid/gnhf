@@ -3,9 +3,15 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
 
-export type AgentName = "claude" | "codex" | "rovodev" | "opencode";
+export type AgentName = "claude" | "codex" | "rovodev" | "opencode" | "jules";
 
-const AGENT_NAMES = ["claude", "codex", "rovodev", "opencode"] as const;
+const AGENT_NAMES = [
+  "claude",
+  "codex",
+  "rovodev",
+  "opencode",
+  "jules",
+] as const;
 
 export interface Config {
   agent: AgentName;
@@ -79,7 +85,7 @@ function normalizeAgentPathOverride(
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!validNames.has(key)) {
       throw new InvalidConfigError(
-        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,
+        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", "opencode", or "jules".`,
       );
     }
     if (typeof val !== "string") {
