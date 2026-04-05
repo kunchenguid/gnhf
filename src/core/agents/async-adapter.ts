@@ -45,24 +45,29 @@ export class AsyncAgentAdapter implements Agent {
     const timeoutMs = this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const startTime = Date.now();
 
-    const session = await this.asyncAgent.submit(prompt, cwd);
+    try {
+      const session = await Promise.race([
+        this.asyncAgent.submit(prompt, cwd),
+        waitForAbort(options?.signal),
+      ]);
 
-    process.stderr.write(`\n[${this.name}] Session started: ${session.url}\n`);
-    process.stderr.write(`[${this.name}] Monitor at: ${session.url}\n\n`);
+      process.stderr.write(
+        `\n[${this.name}] Session started: ${session.url}\n`,
+      );
+      process.stderr.write(`[${this.name}] Monitor at: ${session.url}\n\n`);
 
-    const result = await this.pollUntilDone(
-      session,
-      pollIntervalMs,
-      timeoutMs,
-      startTime,
-      options,
-    );
-
-    if (this.asyncAgent.close) {
-      await this.asyncAgent.close();
+      return await this.pollUntilDone(
+        session,
+        pollIntervalMs,
+        timeoutMs,
+        startTime,
+        options,
+      );
+    } finally {
+      if (this.asyncAgent.close) {
+        await this.asyncAgent.close();
+      }
     }
-
-    return result;
   }
 
   private async pollUntilDone(
@@ -108,7 +113,7 @@ export class AsyncAgentAdapter implements Agent {
         `[${this.name}] Session ${session.id} — ${pollResult.status} (${elapsed}s elapsed)\n`,
       );
 
-      await sleep(pollIntervalMs);
+      await sleep(pollIntervalMs, runOptions?.signal);
     }
   }
 
@@ -141,6 +146,24 @@ export class AsyncAgentAdapter implements Agent {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return Promise.race([
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    waitForAbort(signal),
+  ]);
+}
+
+function waitForAbort(signal?: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (!signal) return;
+    if (signal.aborted) {
+      reject(new Error("Agent was aborted"));
+      return;
+    }
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("Agent was aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
