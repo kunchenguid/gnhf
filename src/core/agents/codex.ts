@@ -138,6 +138,11 @@ export class CodexAgent implements Agent {
     };
     child.stderr?.on("data", stderrHandler);
 
+    let sawOutput = false;
+    child.stdout?.once("data", () => {
+      sawOutput = true;
+    });
+
     let lastAgentMessage: string | null = null;
     const cumulative: TokenUsage = {
       inputTokens: 0,
