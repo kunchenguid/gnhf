@@ -99,9 +99,18 @@ export abstract class TextBasedAgent implements Agent {
 
     let stdout = "";
     let stderr = "";
+    let startupTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearStartupTimer = () => {
+      if (startupTimer) {
+        clearTimeout(startupTimer);
+        startupTimer = null;
+      }
+    };
 
     child.stdout.on("data", (data: Buffer) => {
       const text = data.toString();
+      clearStartupTimer();
       if (stdout.length + text.length > MAX_OUTPUT_BUFFER) {
         stdout = (stdout + text).slice(-MAX_OUTPUT_BUFFER);
       } else {
@@ -114,6 +123,7 @@ export abstract class TextBasedAgent implements Agent {
 
     child.stderr.on("data", (data: Buffer) => {
       const text = data.toString();
+      clearStartupTimer();
       if (stderr.length + text.length > MAX_OUTPUT_BUFFER) {
         stderr = (stderr + text).slice(-MAX_OUTPUT_BUFFER);
       } else {
@@ -134,16 +144,17 @@ export abstract class TextBasedAgent implements Agent {
     });
 
     const startupTimeout = new Promise<never>((_, reject) => {
-      const timer = setTimeout(() => {
+      startupTimer = setTimeout(() => {
         terminateProcess(child, this.platform);
+        startupTimer = null;
         reject(
           new Error(
             `${this.name} did not produce output within ${STARTUP_TIMEOUT_MS / 1000}s`,
           ),
         );
       }, STARTUP_TIMEOUT_MS);
-      timer.unref();
-      child.once("close", () => clearTimeout(timer));
+      startupTimer.unref();
+      child.once("close", clearStartupTimer);
     });
 
     const exitPromise = new Promise<number | null>((resolve) => {
