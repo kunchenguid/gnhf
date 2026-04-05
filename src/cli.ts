@@ -166,7 +166,7 @@ program
   .argument("[prompt]", "The objective for the coding agent")
   .option(
     "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, or opencode)",
+    "Agent to use (claude, codex, rovodev, opencode, or kilo)",
   )
   .option(
     "--max-iterations <n>",
@@ -226,10 +226,11 @@ program
         agentName !== "claude" &&
         agentName !== "codex" &&
         agentName !== "rovodev" &&
-        agentName !== "opencode"
+        agentName !== "opencode" &&
+        agentName !== "kilo"
       ) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", "opencode", or "kilo".`,
         );
         process.exit(1);
       }
@@ -237,7 +238,12 @@ program
       const loadedConfig = loadConfig(
         agentName
           ? {
-              agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
+              agent: agentName as
+                | "claude"
+                | "codex"
+                | "rovodev"
+                | "opencode"
+                | "kilo",
             }
           : {},
       );
@@ -251,10 +257,11 @@ program
         config.agent !== "claude" &&
         config.agent !== "codex" &&
         config.agent !== "rovodev" &&
-        config.agent !== "opencode"
+        config.agent !== "opencode" &&
+        config.agent !== "kilo"
       ) {
         console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", "opencode", or "kilo".`,
         );
         process.exit(1);
       }
