@@ -5,6 +5,7 @@ import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
+import { KiloAgent } from "./kilo.js";
 
 export function createAgent(
   name: AgentName,
@@ -20,5 +21,7 @@ export function createAgent(
       return new OpenCodeAgent({ bin: pathOverride });
     case "rovodev":
       return new RovoDevAgent(runInfo.schemaPath, { bin: pathOverride });
+    case "kilo":
+      return new KiloAgent({ bin: pathOverride });
   }
 }
