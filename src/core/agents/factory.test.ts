@@ -87,6 +87,23 @@ vi.mock("./async-adapter.js", () => {
   return { AsyncAgentAdapter };
 });
 
+vi.mock("./jules.js", () => {
+  const JulesAgent = vi.fn(function (this: Record<string, unknown>) {
+    this.name = "jules";
+  });
+  return { JulesAgent };
+});
+
+vi.mock("./async-adapter.js", () => {
+  const AsyncAgentAdapter = vi.fn(function (
+    this: Record<string, unknown>,
+    agent: { name: string },
+  ) {
+    this.name = agent.name;
+  });
+  return { AsyncAgentAdapter };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CodexAgent } from "./codex.js";
@@ -163,7 +180,10 @@ describe("createAgent", () => {
 
   it("creates a JulesAgent wrapped in AsyncAgentAdapter when name is 'jules'", () => {
     const agent = createAgent("jules", stubRunInfo);
-    expect(JulesAgent).toHaveBeenCalled();
+    expect(JulesAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      platform: process.platform,
+    });
     expect(AsyncAgentAdapter).toHaveBeenCalled();
     expect(agent.name).toBe("jules");
   });

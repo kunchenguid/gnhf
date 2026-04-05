@@ -13,47 +13,18 @@ export class JulesAgent {
   private client: JulesClient;
   private platform: NodeJS.Platform;
 
-  constructor(deps: { platform?: NodeJS.Platform } = {}) {
+  constructor(deps: { bin?: string; platform?: NodeJS.Platform } = {}) {
+    // bin is accepted for API consistency but ignored — Jules is cloud-only
     this.client = new JulesClient();
     this.platform = deps.platform ?? process.platform;
   }
 
   async run(
-    prompt: string,
-    cwd: string,
+    _prompt: string,
+    _cwd: string,
     _options?: AgentRunOptions,
   ): Promise<AgentResult> {
-    const session = await this.submit(prompt, cwd);
-
-    let pollResult = await this.poll(session);
-    while (
-      pollResult.status !== "completed" &&
-      pollResult.status !== "failed"
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 30_000));
-      pollResult = await this.poll(session);
-    }
-
-    if (pollResult.status === "failed") {
-      throw new Error(
-        `Jules session failed: ${pollResult.reason ?? "Unknown reason"}`,
-      );
-    }
-
-    return {
-      output: {
-        success: true,
-        summary: pollResult.summary ?? `Jules completed session ${session.id}`,
-        key_changes_made: pollResult.keyChangesMade ?? [],
-        key_learnings: pollResult.keyLearnings ?? [],
-      },
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      },
-    };
+    throw new Error("JulesAgent must be wrapped by AsyncAgentAdapter");
   }
 
   async submit(prompt: string, cwd: string): Promise<AsyncAgentSession> {
@@ -61,7 +32,7 @@ export class JulesAgent {
     const session = await this.client.createSession({
       prompt,
       sourceContext: {
-        source: "gnhf",
+        source: "github",
         githubRepoContext: {
           startingBranch: this.getCurrentBranch(cwd),
         },
@@ -83,6 +54,9 @@ export class JulesAgent {
     switch (julesSession.state) {
       case "completed":
         const activities = await this.client.getActivities(session.id);
+        const pullRequestUrl = julesSession.outputs?.find(
+          (output) => output.pullRequest?.url,
+        )?.pullRequest?.url;
         const changes = activities
           .filter((a) => a.changeSet?.gitPatch?.unidiffPatch)
           .map(
@@ -95,6 +69,7 @@ export class JulesAgent {
           status: "completed",
           summary: julesSession.title ?? `Completed session ${session.id}`,
           keyChangesMade: changes,
+          pullRequestUrl,
         };
 
       case "failed":

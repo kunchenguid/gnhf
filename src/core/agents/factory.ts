@@ -35,7 +35,10 @@ export function createAgent(
     case "junie":
       return new JunieAgent({ bin: pathOverride });
     case "jules": {
-      const julesAgent = new JulesAgent({ platform: process.platform });
+      const julesAgent = new JulesAgent({
+        bin: pathOverride,
+        platform: process.platform,
+      });
       return new AsyncAgentAdapter(julesAgent, {
         pollIntervalMs: 30_000,
         timeoutMs: 60 * 60 * 1000,
