@@ -49,3 +49,59 @@ export interface Agent {
     options?: AgentRunOptions,
   ): Promise<AgentResult>;
 }
+
+export interface AsyncAgentSession {
+  id: string;
+  url: string;
+  repo?: string;
+}
+
+export interface AsyncAgentPollResult {
+  status:
+    | "queued"
+    | "planning"
+    | "awaiting_plan_approval"
+    | "in_progress"
+    | "completed"
+    | "failed";
+  reason?: string;
+  pullRequestUrl?: string;
+  patch?: string;
+  commitMessage?: string;
+  summary?: string;
+  keyChangesMade?: string[];
+  keyLearnings?: string[];
+}
+
+export interface AsyncAgent extends Agent {
+  submit(prompt: string, cwd: string): Promise<AsyncAgentSession>;
+  poll(session: AsyncAgentSession): Promise<AsyncAgentPollResult>;
+}
+
+export interface AsyncAgentSession {
+  id: string;
+  url: string;
+  repo?: string;
+}
+
+export interface AsyncAgentPollResult {
+  status:
+    | "queued"
+    | "planning"
+    | "awaiting_plan_approval"
+    | "in_progress"
+    | "completed"
+    | "failed";
+  reason?: string;
+  pullRequestUrl?: string;
+  patch?: string;
+  commitMessage?: string;
+  summary?: string;
+  keyChangesMade?: string[];
+  keyLearnings?: string[];
+}
+
+export interface AsyncAgent extends Agent {
+  submit(prompt: string, cwd: string): Promise<AsyncAgentSession>;
+  poll(session: AsyncAgentSession): Promise<AsyncAgentPollResult>;
+}
