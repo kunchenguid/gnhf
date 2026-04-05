@@ -144,20 +144,20 @@ npm link
 
 ### Flags
 
-| Flag                     | Description                                                                 | Default                |
-| ------------------------ | --------------------------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `kilo`, `rovodev`, `opencode`, or `jules`) | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                            | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                   | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)          | config file (`on`)     |
-| `--version`              | Show version                                                                |                        |
+| Flag                     | Description                                                                                               | Default                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `kilo`, `rovodev`, `opencode`, `gemini`, `copilot`, `junie`, or `jules`) | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                                                          | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                                 | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                        | config file (`on`)     |
+| `--version`              | Show version                                                                                              |                        |
 
 ## Configuration
 
 Config lives at `~/.gnhf/config.yml`:
 
 ```yaml
-# Agent to use by default (claude, codex, kilo, rovodev, opencode, or jules)
+# Agent to use by default (claude, codex, kilo, rovodev, opencode, gemini, copilot, junie, or jules)
 agent: claude
 
 # Custom paths to agent binaries (optional)
