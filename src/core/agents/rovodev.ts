@@ -12,7 +12,7 @@ import type {
   AgentRunOptions,
   TokenUsage,
 } from "./types.js";
-import { appendDebugLog } from "../debug-log.js";
+import { appendDebugLog, serializeError } from "../debug-log.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface RovoDevRequestUsageEvent {
@@ -198,6 +198,13 @@ export class RovoDevAgent implements Agent {
     const logStream = logPath ? createWriteStream(logPath) : null;
     const runController = new AbortController();
     let sessionId: string | null = null;
+    const runStartedAt = Date.now();
+
+    appendDebugLog("rovodev:run:start", {
+      cwd,
+      promptLength: prompt.length,
+      hasLogPath: logPath !== undefined,
+    });
 
     const onAbort = () => {
       runController.abort();
@@ -205,6 +212,7 @@ export class RovoDevAgent implements Agent {
 
     if (signal?.aborted) {
       logStream?.end();
+      appendDebugLog("rovodev:run:aborted-early", {});
       throw createAbortError();
     }
 
@@ -221,7 +229,7 @@ export class RovoDevAgent implements Agent {
         runController.signal,
       );
 
-      return await this.streamChat(
+      const result = await this.streamChat(
         server,
         sessionId,
         runController.signal,
@@ -229,10 +237,29 @@ export class RovoDevAgent implements Agent {
         onUsage,
         onMessage,
       );
+      appendDebugLog("rovodev:run:end", {
+        sessionId,
+        elapsedMs: Date.now() - runStartedAt,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+      });
+      return result;
     } catch (error) {
       if (runController.signal.aborted || isAbortError(error)) {
+        appendDebugLog("rovodev:run:aborted", {
+          sessionId,
+          elapsedMs: Date.now() - runStartedAt,
+        });
         throw createAbortError();
       }
+      appendDebugLog("rovodev:run:error", {
+        sessionId,
+        elapsedMs: Date.now() - runStartedAt,
+        error: serializeError(error),
+        serverStderr: this.server?.stderr.slice(-2048),
+        serverStdout: this.server?.stdout.slice(-2048),
+        serverClosed: this.server?.closed ?? true,
+      });
       throw error;
     } finally {
       signal?.removeEventListener("abort", onAbort);
@@ -304,21 +331,48 @@ export class RovoDevAgent implements Agent {
       }
     });
 
-    child.on("close", () => {
+    child.on("close", (code, closeSignal) => {
       server.closed = true;
+      appendDebugLog("rovodev:server:close", {
+        cwd: server.cwd,
+        port: server.port,
+        code,
+        signal: closeSignal,
+        stderr: server.stderr.slice(-2048),
+        stdout: server.stdout.slice(-2048),
+      });
       if (this.server === server) {
         this.server = null;
       }
     });
 
     this.server = server;
-    appendDebugLog("rovodev:spawn", { cwd, port, detached });
-    server.readyPromise = this.waitForHealthy(server, signal).catch(
-      async (error) => {
+    const spawnedAt = Date.now();
+    appendDebugLog("rovodev:spawn", {
+      cwd,
+      port,
+      detached,
+      pid: child.pid,
+      bin: this.bin,
+    });
+    server.readyPromise = this.waitForHealthy(server, signal)
+      .then(() => {
+        appendDebugLog("rovodev:server:ready", {
+          port,
+          elapsedMs: Date.now() - spawnedAt,
+        });
+      })
+      .catch(async (error) => {
+        appendDebugLog("rovodev:server:ready-failed", {
+          port,
+          elapsedMs: Date.now() - spawnedAt,
+          error: serializeError(error),
+          stderr: server.stderr.slice(-2048),
+          stdout: server.stdout.slice(-2048),
+        });
         await this.shutdownServer();
         throw error;
-      },
-    );
+      });
 
     await server.readyPromise;
     return server;
@@ -386,6 +440,9 @@ export class RovoDevAgent implements Agent {
         signal,
       },
     );
+    appendDebugLog("rovodev:session:create", {
+      sessionId: response.session_id,
+    });
     return response.session_id;
   }
 
@@ -427,7 +484,12 @@ export class RovoDevAgent implements Agent {
         sessionId,
         timeoutMs: 1_000,
       });
-    } catch {
+      appendDebugLog("rovodev:session:cancel", { sessionId });
+    } catch (error) {
+      appendDebugLog("rovodev:session:cancel-failed", {
+        sessionId,
+        error: serializeError(error),
+      });
       // Best effort only.
     }
   }
@@ -442,7 +504,12 @@ export class RovoDevAgent implements Agent {
         sessionId,
         timeoutMs: 1_000,
       });
-    } catch {
+      appendDebugLog("rovodev:session:delete", { sessionId });
+    } catch (error) {
+      appendDebugLog("rovodev:session:delete-failed", {
+        sessionId,
+        error: serializeError(error),
+      });
       // Best effort only.
     }
   }
@@ -455,6 +522,8 @@ export class RovoDevAgent implements Agent {
     onUsage?: (usage: TokenUsage) => void,
     onMessage?: (text: string) => void,
   ): Promise<AgentResult> {
+    const streamStartedAt = Date.now();
+    appendDebugLog("rovodev:stream:start", { sessionId });
     const response = await this.request(server, "/v3/stream_chat", {
       method: "GET",
       sessionId,
@@ -463,6 +532,7 @@ export class RovoDevAgent implements Agent {
     });
 
     if (!response.body) {
+      appendDebugLog("rovodev:stream:no-body", { sessionId });
       throw new Error("rovodev returned no response body");
     }
 
@@ -592,11 +662,20 @@ export class RovoDevAgent implements Agent {
       }
     };
 
+    let bytesRead = 0;
     while (true) {
       let readResult: ReadableStreamReadResult<Uint8Array>;
       try {
         readResult = await reader.read();
       } catch (error) {
+        appendDebugLog("rovodev:stream:error", {
+          sessionId,
+          elapsedMs: Date.now() - streamStartedAt,
+          bytesRead,
+          error: serializeError(error),
+          serverClosed: server.closed,
+          serverStderr: server.stderr.slice(-2048),
+        });
         if (isAbortError(error)) {
           throw createAbortError();
         }
@@ -608,6 +687,7 @@ export class RovoDevAgent implements Agent {
       const chunk = decoder.decode(readResult.value, { stream: true });
       logStream?.write(chunk);
       buffer += chunk;
+      bytesRead += chunk.length;
 
       while (true) {
         const lfBoundary = buffer.indexOf("\n\n");
@@ -639,17 +719,35 @@ export class RovoDevAgent implements Agent {
       handleEvent(buffer);
     }
 
+    appendDebugLog("rovodev:stream:end", {
+      sessionId,
+      elapsedMs: Date.now() - streamStartedAt,
+      bytesRead,
+    });
+
     const finalText = latestTextSegment.trim();
     if (!finalText) {
+      appendDebugLog("rovodev:output:missing", { sessionId });
       throw new Error("rovodev returned no text output");
     }
 
     try {
+      const output = JSON.parse(finalText) as AgentOutput;
+      appendDebugLog("rovodev:output:parsed", {
+        sessionId,
+        outputTextLength: finalText.length,
+      });
       return {
-        output: JSON.parse(finalText) as AgentOutput,
+        output,
         usage,
       };
     } catch (error) {
+      appendDebugLog("rovodev:output:parse-error", {
+        sessionId,
+        outputTextLength: finalText.length,
+        outputTextSample: finalText.slice(0, 512),
+        error: serializeError(error),
+      });
       throw new Error(
         `Failed to parse rovodev output: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -668,7 +766,12 @@ export class RovoDevAgent implements Agent {
     }
 
     const server = this.server;
-    appendDebugLog("rovodev:shutdown", { cwd: server.cwd, port: server.port });
+    const shutdownStartedAt = Date.now();
+    appendDebugLog("rovodev:shutdown", {
+      cwd: server.cwd,
+      port: server.port,
+      pid: server.child.pid,
+    });
 
     this.closingPromise =
       this.platform === "win32"
@@ -704,6 +807,10 @@ export class RovoDevAgent implements Agent {
         this.server = null;
       }
       this.closingPromise = null;
+      appendDebugLog("rovodev:shutdown:done", {
+        port: server.port,
+        elapsedMs: Date.now() - shutdownStartedAt,
+      });
     });
 
     await this.closingPromise;
@@ -732,16 +839,37 @@ export class RovoDevAgent implements Agent {
     }
 
     const signal = withTimeoutSignal(options.signal, options.timeoutMs);
-    const response = await this.fetchFn(`${server.baseUrl}${path}`, {
-      method: options.method,
-      headers,
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal,
-    });
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await this.fetchFn(`${server.baseUrl}${path}`, {
+        method: options.method,
+        headers,
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal,
+      });
+    } catch (error) {
+      appendDebugLog("rovodev:request:error", {
+        method: options.method,
+        path,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: options.timeoutMs,
+        error: serializeError(error),
+        serverClosed: server.closed,
+      });
+      throw error;
+    }
 
     if (!response.ok) {
       const body = await response.text();
+      appendDebugLog("rovodev:request:non-ok", {
+        method: options.method,
+        path,
+        status: response.status,
+        elapsedMs: Date.now() - startedAt,
+        bodySample: body.slice(0, 1024),
+      });
       throw new Error(
         `rovodev ${options.method} ${path} failed with ${response.status}: ${body}`,
       );

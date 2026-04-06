@@ -11,6 +11,16 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock("../debug-log.js", () => ({
+  appendDebugLog: vi.fn(),
+  initDebugLog: vi.fn(),
+  serializeError: vi.fn((err: unknown) =>
+    err instanceof Error
+      ? { name: err.name, message: err.message }
+      : { value: String(err) },
+  ),
+}));
+
 import { execFileSync, spawn } from "node:child_process";
 import { OpenCodeAgent } from "./opencode.js";
 import { AGENT_OUTPUT_SCHEMA } from "./types.js";

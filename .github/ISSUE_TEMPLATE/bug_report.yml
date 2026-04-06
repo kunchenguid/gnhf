@@ -1,0 +1,104 @@
+name: Bug report
+description: Something went wrong with a gnhf run
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! The single most useful thing you can include is gnhf's debug log from the run that failed.
+
+        **Where to find the log**
+
+        gnhf writes a JSONL debug log for every run to:
+
+        ```
+        <your-repo>/.gnhf/runs/<run-id>/gnhf.log
+        ```
+
+        It sits right next to `notes.md` in the same directory. Open the repo where you ran gnhf, then look under `.gnhf/runs/` — each run has its own folder. The folder name is a slug of your prompt, so if you ran multiple times pick the one matching the run that failed.
+
+        **What the log contains** — agent/orchestrator lifecycle events, request timings, error cause chains, and a rolling snapshot of opencode server stderr. It does **not** contain your prompt text or any credentials, but the run ID is derived from your prompt slug, so redact that if it's sensitive.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A short description of what you expected and what actually happened.
+      placeholder: I ran `gnhf "refactor the auth module" --agent opencode` and after about 5 minutes every iteration started failing with "[ERROR] fetch failed" in notes.md.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: The command you ran, the agent/model, and anything else you think matters.
+      placeholder: |
+        1. In a clean git repo
+        2. Run `gnhf "…" --agent opencode`
+        3. Wait for iteration 1 to finish
+    validations:
+      required: true
+
+  - type: input
+    id: gnhf-version
+    attributes:
+      label: gnhf version
+      description: Output of `gnhf --version`.
+      placeholder: "0.1.12"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - claude
+        - codex
+        - rovodev
+        - opencode
+        - other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model / provider (if relevant)
+      description: For opencode this is especially useful — which provider and model were you using?
+      placeholder: "minimax / MiniMax-M2.7-highspeed"
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Node version
+      description: From `node --version` and your OS.
+      placeholder: "macOS 14.5 / Node v22.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: debug-log
+    attributes:
+      label: Debug log (gnhf.log)
+      description: |
+        Please paste the contents of `.gnhf/runs/<run-id>/gnhf.log` from the failing run, or attach it as a file by dragging it into this field.
+
+        If the log is long, the most useful section is everything from the last successful `iteration:end` (or from `orchestrator:start` if no iterations succeeded) through the final error. Including the full file is best if you can.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: notes.md (optional)
+      description: Contents of `.gnhf/runs/<run-id>/notes.md` — this is where failed iterations record their `[ERROR] ...` or `[FAIL] ...` summaries.
+      render: markdown
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, hunches, related issues, whatever seems relevant.

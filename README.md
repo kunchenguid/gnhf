@@ -192,11 +192,9 @@ When sleep prevention is enabled, `gnhf` uses the native mechanism for your OS: 
 
 ## Debug Logs
 
-Set `GNHF_DEBUG_LOG_PATH` to capture lifecycle events as JSONL while debugging a run:
+Every run writes a JSONL debug log to `.gnhf/runs/<runId>/gnhf.log` alongside `notes.md`. Lifecycle events for the orchestrator, agent, and HTTP requests are captured with elapsed timings and (for failures) the full `error.cause` chain — which is what you need to tell a bare `TypeError: fetch failed` apart from an undici `UND_ERR_HEADERS_TIMEOUT`. The agent's own streaming output still goes to the per-iteration `iteration-<n>.jsonl` file next to it.
 
-```sh
-GNHF_DEBUG_LOG_PATH=/tmp/gnhf-debug.jsonl gnhf "ship it"
-```
+Including a snippet of `gnhf.log` is the single most useful thing you can attach when filing an issue.
 
 ## Agents
 

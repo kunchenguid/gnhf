@@ -3,7 +3,14 @@ import { join } from "node:path";
 import type { Agent, AgentOutput, TokenUsage } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
-import { commitAll, getBranchCommitCount, resetHard } from "./git.js";
+import { appendDebugLog, serializeError } from "./debug-log.js";
+import {
+  commitAll,
+  getBranchCommitCount,
+  getCurrentBranch,
+  getHeadCommit,
+  resetHard,
+} from "./git.js";
 import { appendNotes } from "./run.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 
@@ -109,6 +116,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
   stop(): void {
     this.stopRequested = true;
+    appendDebugLog("orchestrator:stop-requested", {
+      iteration: this.state.currentIteration,
+      hasActiveIteration: this.activeIterationPromise !== null,
+      loopDone: this.loopDone,
+    });
     this.activeAbortController?.abort();
 
     if (this.loopDone) {
@@ -152,6 +164,17 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.state.status = "running";
     this.emit("state", this.getState());
 
+    appendDebugLog("orchestrator:start", {
+      agent: this.agent.name,
+      runId: this.runInfo.runId,
+      startIteration: this.state.currentIteration,
+      maxIterations: this.limits.maxIterations,
+      maxTokens: this.limits.maxTokens,
+      maxConsecutiveFailures: this.config.maxConsecutiveFailures,
+      baseCommit: this.runInfo.baseCommit,
+      initialCommitCount: this.state.commitCount,
+    });
+
     try {
       while (!this.stopRequested) {
         const preIterationAbortReason = this.getPreIterationAbortReason();
@@ -171,13 +194,34 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           prompt: this.prompt,
         });
 
+        appendDebugLog("iteration:start", {
+          iteration: this.state.currentIteration,
+          promptLength: iterationPrompt.length,
+          consecutiveFailures: this.state.consecutiveFailures,
+          totalInputTokens: this.state.totalInputTokens,
+          totalOutputTokens: this.state.totalOutputTokens,
+          git: this.snapshotGitState(),
+        });
+
+        const iterationStartedAt = Date.now();
         this.activeIterationPromise = this.runIteration(iterationPrompt);
         const result = await this.activeIterationPromise;
         this.activeIterationPromise = null;
+        const iterationElapsedMs = Date.now() - iterationStartedAt;
+
         if (result.type === "stopped") {
+          appendDebugLog("iteration:stopped", {
+            iteration: this.state.currentIteration,
+            elapsedMs: iterationElapsedMs,
+          });
           break;
         }
         if (result.type === "aborted") {
+          appendDebugLog("iteration:aborted", {
+            iteration: this.state.currentIteration,
+            elapsedMs: iterationElapsedMs,
+            reason: result.reason,
+          });
           this.abort(result.reason);
           break;
         }
@@ -186,6 +230,19 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.state.iterations.push(record);
         this.emit("iteration:end", record);
         this.emit("state", this.getState());
+
+        appendDebugLog("iteration:end", {
+          iteration: record.number,
+          elapsedMs: iterationElapsedMs,
+          success: record.success,
+          summary: record.summary,
+          keyChanges: record.keyChanges.length,
+          keyLearnings: record.keyLearnings.length,
+          consecutiveFailures: this.state.consecutiveFailures,
+          totalInputTokens: this.state.totalInputTokens,
+          totalOutputTokens: this.state.totalOutputTokens,
+          commitCount: this.state.commitCount,
+        });
 
         const postIterationAbortReason = this.getPostIterationAbortReason();
         if (postIterationAbortReason) {
@@ -209,7 +266,18 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           this.state.waitingUntil = new Date(Date.now() + backoffMs);
           this.emit("state", this.getState());
 
+          appendDebugLog("backoff:start", {
+            iteration: this.state.currentIteration,
+            consecutiveFailures: this.state.consecutiveFailures,
+            backoffMs,
+          });
+
           await this.interruptibleSleep(backoffMs);
+
+          appendDebugLog("backoff:end", {
+            iteration: this.state.currentIteration,
+            stopRequested: this.stopRequested,
+          });
 
           this.state.waitingUntil = null;
           if (!this.stopRequested) {
@@ -226,6 +294,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         await this.closeAgent();
       }
       this.loopDone = true;
+      appendDebugLog("orchestrator:end", {
+        status: this.state.status,
+        iterations: this.state.currentIteration,
+        successCount: this.state.successCount,
+        failCount: this.state.failCount,
+        totalInputTokens: this.state.totalInputTokens,
+        totalOutputTokens: this.state.totalOutputTokens,
+        commitCount: this.state.commitCount,
+      });
     }
   }
 
@@ -262,12 +339,29 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       `iteration-${this.state.currentIteration}.jsonl`,
     );
 
+    const agentStartedAt = Date.now();
+    appendDebugLog("agent:run:start", {
+      iteration: this.state.currentIteration,
+      agent: this.agent.name,
+      logPath,
+    });
+
     try {
       const result = await this.agent.run(prompt, this.cwd, {
         onUsage,
         onMessage,
         signal: this.activeAbortController.signal,
         logPath,
+      });
+
+      appendDebugLog("agent:run:end", {
+        iteration: this.state.currentIteration,
+        elapsedMs: Date.now() - agentStartedAt,
+        success: result.output.success,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        cacheReadTokens: result.usage.cacheReadTokens,
+        cacheCreationTokens: result.usage.cacheCreationTokens,
       });
 
       if (this.stopRequested) {
@@ -286,18 +380,39 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         ),
       };
     } catch (err) {
+      const elapsedMs = Date.now() - agentStartedAt;
+
       if (
         this.pendingAbortReason &&
         err instanceof Error &&
         err.message === "Agent was aborted"
       ) {
+        appendDebugLog("agent:run:aborted", {
+          iteration: this.state.currentIteration,
+          elapsedMs,
+          reason: this.pendingAbortReason,
+        });
         resetHard(this.cwd);
         return { type: "aborted", reason: this.pendingAbortReason };
       }
 
       if (this.stopRequested) {
+        appendDebugLog("agent:run:stopped", {
+          iteration: this.state.currentIteration,
+          elapsedMs,
+        });
         return { type: "stopped" };
       }
+
+      // This is where diagnostics most often matter — particularly for
+      // `TypeError: fetch failed`, where the surface message is useless
+      // without the undici cause chain. Always serialize the full error
+      // before we collapse it to a string for the notes file.
+      appendDebugLog("agent:run:error", {
+        iteration: this.state.currentIteration,
+        elapsedMs,
+        error: serializeError(err),
+      });
 
       const summary = err instanceof Error ? err.message : String(err);
       return {
@@ -415,6 +530,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.state.status = "aborted";
     this.state.lastMessage = reason;
     this.state.waitingUntil = null;
+    appendDebugLog("orchestrator:abort", {
+      reason,
+      iteration: this.state.currentIteration,
+      consecutiveFailures: this.state.consecutiveFailures,
+    });
     this.emit("abort", reason);
     this.emit("state", this.getState());
   }
@@ -422,8 +542,28 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private async closeAgent(): Promise<void> {
     try {
       await this.agent.close?.();
-    } catch {
+    } catch (err) {
+      appendDebugLog("agent:close:error", {
+        error: serializeError(err),
+      });
       // Best-effort cleanup only.
+    }
+  }
+
+  private snapshotGitState(): Record<string, unknown> {
+    // Cheap diagnostic snapshot — catches "previous iteration's reset
+    // didn't land" and "we're on the wrong branch" bugs that otherwise
+    // look identical to real agent failures.
+    try {
+      return {
+        head: getHeadCommit(this.cwd),
+        branch: getCurrentBranch(this.cwd),
+        commitCount: this.state.commitCount,
+      };
+    } catch (err) {
+      return {
+        error: serializeError(err),
+      };
     }
   }
 }

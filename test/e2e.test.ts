@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -44,6 +45,32 @@ function readJsonLines(filePath: string): Record<string, unknown>[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/**
+ * Locate the gnhf.log file that the run wrote inside the repo. gnhf always
+ * writes to `<cwd>/.gnhf/runs/<runId>/gnhf.log`, and each test creates a
+ * fresh repo, so there's exactly one run dir.
+ */
+function findRunLogPath(cwd: string): string {
+  const runsDir = join(cwd, ".gnhf", "runs");
+  if (!existsSync(runsDir)) {
+    throw new Error(`No run directory found under ${runsDir}`);
+  }
+  const runs = readdirSync(runsDir);
+  if (runs.length === 0) {
+    throw new Error(`No runs found in ${runsDir}`);
+  }
+  // Each test uses a fresh repo, so there should be exactly one run dir.
+  // Assert that loudly rather than silently picking runs[0], which is
+  // alphabetical (not mtime) order and would mask bugs if a future test
+  // ever produced more than one run.
+  if (runs.length > 1) {
+    throw new Error(
+      `Expected exactly one run in ${runsDir}, found ${runs.length}: ${runs.join(", ")}`,
+    );
+  }
+  return join(runsDir, runs[0]!, "gnhf.log");
 }
 
 async function waitForLogEvent(
@@ -125,7 +152,6 @@ describe("gnhf e2e", () => {
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
     tempDirs.push(logDir);
     const mockLogPath = join(logDir, "mock-opencode.jsonl");
-    const debugLogPath = join(logDir, "gnhf-debug.jsonl");
 
     const result = await runCli(
       cwd,
@@ -135,7 +161,6 @@ describe("gnhf e2e", () => {
           ...process.env,
           PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
           GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-          GNHF_DEBUG_LOG_PATH: debugLogPath,
         },
       },
     );
@@ -148,8 +173,17 @@ describe("gnhf e2e", () => {
     expect(startEvent.command).toBe("serve");
     expect(isProcessAlive(Number(startEvent.pid))).toBe(false);
 
+    const debugLogPath = findRunLogPath(cwd);
     const debugEvents = readJsonLines(debugLogPath).map((entry) => entry.event);
     expect(debugEvents).toContain("run:start");
+    expect(debugEvents).toContain("orchestrator:start");
+    expect(debugEvents).toContain("iteration:start");
+    expect(debugEvents).toContain("iteration:end");
+    expect(debugEvents).toContain("agent:run:start");
+    expect(debugEvents).toContain("agent:run:end");
+    expect(debugEvents).toContain("opencode:spawn");
+    expect(debugEvents).toContain("opencode:run:start");
+    expect(debugEvents).toContain("opencode:run:end");
     expect(debugEvents).toContain("run:complete");
   }, 30_000);
 
@@ -216,7 +250,6 @@ describe("gnhf e2e", () => {
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
     tempDirs.push(logDir);
     const mockLogPath = join(logDir, "mock-opencode.jsonl");
-    const debugLogPath = join(logDir, "gnhf-debug.jsonl");
 
     const child = spawn(
       process.execPath,
@@ -227,7 +260,6 @@ describe("gnhf e2e", () => {
           ...process.env,
           PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
           GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-          GNHF_DEBUG_LOG_PATH: debugLogPath,
         },
         stdio: ["pipe", "pipe", "pipe"],
       },
@@ -261,7 +293,9 @@ describe("gnhf e2e", () => {
     expect(mockEvents).toContain("session:abort");
     expect(mockEvents).toContain("session:delete");
 
+    const debugLogPath = findRunLogPath(cwd);
     const debugEvents = readJsonLines(debugLogPath).map((entry) => entry.event);
     expect(debugEvents).toContain("signal:SIGINT");
+    expect(debugEvents).toContain("orchestrator:stop-requested");
   }, 30_000);
 });

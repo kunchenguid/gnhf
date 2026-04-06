@@ -140,6 +140,7 @@ describe("setupRun", () => {
       promptPath: join(runDir, "prompt.md"),
       notesPath: join(runDir, "notes.md"),
       schemaPath: join(runDir, "output-schema.json"),
+      logPath: join(runDir, "gnhf.log"),
       baseCommit: "abc123",
       baseCommitPath: join(runDir, "base-commit"),
     });
@@ -183,6 +184,7 @@ describe("resumeRun", () => {
     const info = resumeRun("run-abc", P);
 
     expect(info.baseCommit).toBe("abc123");
+    expect(info.logPath).toBe(join(runDir, "gnhf.log"));
   });
 
   it("backfills missing base-commit for legacy runs", () => {

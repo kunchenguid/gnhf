@@ -17,9 +17,12 @@ export interface RunInfo {
   promptPath: string;
   notesPath: string;
   schemaPath: string;
+  logPath: string;
   baseCommit: string;
   baseCommitPath: string;
 }
+
+const LOG_FILENAME = "gnhf.log";
 
 function writeSchemaFile(schemaPath: string): void {
   writeFileSync(
@@ -77,6 +80,8 @@ export function setupRun(
   const schemaPath = join(runDir, "output-schema.json");
   writeSchemaFile(schemaPath);
 
+  const logPath = join(runDir, LOG_FILENAME);
+
   const baseCommitPath = join(runDir, "base-commit");
   const hasStoredBaseCommit = existsSync(baseCommitPath);
   const resolvedBaseCommit = hasStoredBaseCommit
@@ -92,6 +97,7 @@ export function setupRun(
     promptPath,
     notesPath,
     schemaPath,
+    logPath,
     baseCommit: resolvedBaseCommit,
     baseCommitPath,
   };
@@ -107,6 +113,7 @@ export function resumeRun(runId: string, cwd: string): RunInfo {
   const notesPath = join(runDir, "notes.md");
   const schemaPath = join(runDir, "output-schema.json");
   writeSchemaFile(schemaPath);
+  const logPath = join(runDir, LOG_FILENAME);
   const baseCommitPath = join(runDir, "base-commit");
   const baseCommit = existsSync(baseCommitPath)
     ? readFileSync(baseCommitPath, "utf-8").trim()
@@ -118,6 +125,7 @@ export function resumeRun(runId: string, cwd: string): RunInfo {
     promptPath,
     notesPath,
     schemaPath,
+    logPath,
     baseCommit,
     baseCommitPath,
   };

@@ -3,11 +3,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("./git.js", () => ({
   commitAll: vi.fn(),
   getBranchCommitCount: vi.fn(() => 0),
+  getCurrentBranch: vi.fn(() => "gnhf/run-abc"),
+  getHeadCommit: vi.fn(() => "head123"),
   resetHard: vi.fn(),
 }));
 
 vi.mock("./run.js", () => ({
   appendNotes: vi.fn(),
+}));
+
+vi.mock("./debug-log.js", () => ({
+  appendDebugLog: vi.fn(),
+  initDebugLog: vi.fn(),
+  serializeError: vi.fn((err: unknown) =>
+    err instanceof Error
+      ? { name: err.name, message: err.message }
+      : { value: String(err) },
+  ),
 }));
 
 vi.mock("../templates/iteration-prompt.js", () => ({
@@ -37,6 +49,7 @@ const runInfo: RunInfo = {
   promptPath: "/repo/.gnhf/runs/run-abc/prompt.md",
   notesPath: "/repo/.gnhf/runs/run-abc/notes.md",
   schemaPath: "/repo/.gnhf/runs/run-abc/output-schema.json",
+  logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
   baseCommit: "base123",
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
 };

@@ -21,12 +21,14 @@ const stubRunInfo: RunInfo = {
   promptPath: "/repo/.gnhf/runs/run-abc/PROMPT.md",
   notesPath: "/repo/.gnhf/runs/run-abc/notes.md",
   schemaPath: "/repo/.gnhf/runs/run-abc/schema.json",
+  logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
   baseCommit: "abc123",
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
 };
 
 interface CliMockOverrides {
   appendDebugLog?: ReturnType<typeof vi.fn>;
+  initDebugLog?: ReturnType<typeof vi.fn>;
   createAgent?: ReturnType<typeof vi.fn>;
   env?: Record<string, string | undefined>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
@@ -58,6 +60,7 @@ async function runCliWithMocks(
   const createAgent =
     overrides.createAgent ?? vi.fn(() => ({ name: config.agent }));
   const appendDebugLog = overrides.appendDebugLog ?? vi.fn();
+  const initDebugLog = overrides.initDebugLog ?? vi.fn();
   const readStdinText =
     overrides.readStdinText ?? vi.fn(() => Promise.resolve(""));
   const startSleepPrevention =
@@ -91,7 +94,14 @@ async function runCliWithMocks(
 
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({ loadConfig }));
-  vi.doMock("./core/debug-log.js", () => ({ appendDebugLog }));
+  vi.doMock("./core/debug-log.js", () => ({
+    appendDebugLog,
+    initDebugLog,
+    serializeError: (err: unknown) =>
+      err instanceof Error
+        ? { name: err.name, message: err.message }
+        : { value: String(err) },
+  }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
     createBranch: vi.fn(),
@@ -543,7 +553,15 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({ loadConfig }));
-    vi.doMock("./core/debug-log.js", () => ({ appendDebugLog: vi.fn() }));
+    vi.doMock("./core/debug-log.js", () => ({
+      appendDebugLog: vi.fn(),
+      initDebugLog: vi.fn(),
+      serializeError: vi.fn((err: unknown) =>
+        err instanceof Error
+          ? { name: err.name, message: err.message }
+          : { value: String(err) },
+      ),
+    }));
     vi.doMock("./core/git.js", () => ({
       ensureCleanWorkingTree: vi.fn(),
       createBranch: vi.fn(),
