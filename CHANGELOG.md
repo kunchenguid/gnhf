@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.12...gnhf-v0.1.13) (2026-04-06)
+
+
+### Features
+
+* **core:** add detailed error logging ([#54](https://github.com/kunchenguid/gnhf/issues/54)) ([84eaa15](https://github.com/kunchenguid/gnhf/commit/84eaa15e740d35e81508a4dce91405656eb34ff3))
+
 ## [0.1.12](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.11...gnhf-v0.1.12) (2026-04-05)
 
 
