@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.14](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.13...gnhf-v0.1.14) (2026-04-07)
+
+
+### Features
+
+* **agents:** use prompt_async endpoint instead of blocking /message ([#56](https://github.com/kunchenguid/gnhf/issues/56)) ([ef5d6d3](https://github.com/kunchenguid/gnhf/commit/ef5d6d3c8c6634abccaebd28db59086cb294f8ee))
+
 ## [0.1.13](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.12...gnhf-v0.1.13) (2026-04-06)
 
 
