@@ -179,7 +179,9 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const match = req.url?.match(/^\/session\/([^/]+)(?:\/(message|abort))?$/);
+  const match = req.url?.match(
+    /^\/session\/([^/]+)(?:\/(message|prompt_async|abort))?$/,
+  );
   if (match?.[2] === "message" && req.method === "POST") {
     const sessionId = match[1];
     const body = await readJson(req);
@@ -215,6 +217,28 @@ const server = createServer(async (req, res) => {
         },
       ],
     });
+    return;
+  }
+
+  if (match?.[2] === "prompt_async" && req.method === "POST") {
+    const sessionId = match[1];
+    const body = await readJson(req);
+    const prompt = body.parts?.[0]?.text ?? "";
+    appendLog("message:start", { sessionId, prompt });
+
+    if (String(prompt).includes("slow cleanup")) {
+      req.on("close", () => {
+        appendLog("message:closed", { sessionId });
+      });
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    applyWorkspaceChange(sessionId);
+    emitCompletedEvents(sessionId, "mocked objective complete");
+    res.writeHead(204);
+    res.end();
     return;
   }
 

@@ -618,25 +618,20 @@ export class OpenCodeAgent implements Agent {
     let messageRequestError: unknown = null;
     const messageRequest = (async (): Promise<MessageRequestResult> => {
       try {
-        const body = await this.requestText(
-          server,
-          `/session/${sessionId}/message`,
-          {
-            method: "POST",
-            body: {
-              role: "user",
-              parts: [{ type: "text", text: prompt }],
-              format: STRUCTURED_OUTPUT_FORMAT,
-            },
-            signal,
+        await this.request(server, `/session/${sessionId}/prompt_async`, {
+          method: "POST",
+          body: {
+            role: "user",
+            parts: [{ type: "text", text: prompt }],
+            format: STRUCTURED_OUTPUT_FORMAT,
           },
-        );
+          signal,
+        });
         appendDebugLog("opencode:message-post:end", {
           sessionId,
           elapsedMs: Date.now() - messagePostStartedAt,
-          bodyLength: body.length,
         });
-        return { ok: true, body };
+        return { ok: true, body: "" };
       } catch (error) {
         messageRequestError = error;
         appendDebugLog("opencode:message-post:error", {
@@ -663,6 +658,7 @@ export class OpenCodeAgent implements Agent {
     let lastText: string | null = null;
     let lastFinalAnswerText: string | null = null;
     let lastUsageSignature = "0:0:0:0";
+    let structuredOutputFromSSE: AgentOutput | null = null;
 
     // Telemetry: capture "what was happening on the stream right up until
     // the failure" so the debug log can answer questions like "did the
@@ -822,6 +818,9 @@ export class OpenCodeAgent implements Agent {
         if (properties.info?.role === "assistant") {
           updateUsage(properties.info.id, properties.info.tokens);
         }
+        if (properties.info?.structured) {
+          structuredOutputFromSSE = properties.info.structured;
+        }
         return false;
       }
 
@@ -966,41 +965,26 @@ export class OpenCodeAgent implements Agent {
     }
 
     const body = messageResult.body;
-    let response: OpenCodeMessageResponse;
-    try {
-      response = JSON.parse(body) as OpenCodeMessageResponse;
-    } catch (error) {
-      appendDebugLog("opencode:response:parse-error", {
-        sessionId,
-        bodyLength: body.length,
-        bodySample: body.slice(0, 512),
-        error: serializeError(error),
-      });
-      throw new Error(
-        `Failed to parse opencode response: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    if (response.info?.role === "assistant") {
-      updateUsage(response.info.id, response.info.tokens);
-    }
-
-    for (const part of response.parts ?? []) {
-      if (part.type !== "text" || typeof part.text !== "string") continue;
-      if (!part.text.trim()) continue;
-      lastText = part.text;
-      if (part.metadata?.openai?.phase === "final_answer") {
-        lastFinalAnswerText = part.text;
+    if (body) {
+      try {
+        JSON.parse(body) as OpenCodeMessageResponse;
+      } catch (error) {
+        appendDebugLog("opencode:response:parse-error", {
+          sessionId,
+          bodyLength: body.length,
+          bodySample: body.slice(0, 512),
+          error: serializeError(error),
+        });
       }
     }
 
-    if (response.info?.structured) {
+    if (structuredOutputFromSSE) {
       appendDebugLog("opencode:output:structured", {
         sessionId,
-        source: "response.info.structured",
+        source: "sse",
       });
       return {
-        output: response.info.structured,
+        output: structuredOutputFromSSE,
         usage,
       };
     }
@@ -1009,8 +993,7 @@ export class OpenCodeAgent implements Agent {
     if (!outputText) {
       appendDebugLog("opencode:output:missing", {
         sessionId,
-        hasInfo: response.info !== undefined,
-        partCount: response.parts?.length ?? 0,
+        hasStructuredOutput: structuredOutputFromSSE !== null,
       });
       throw new Error("opencode returned no text output");
     }
