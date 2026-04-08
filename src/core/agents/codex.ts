@@ -31,6 +31,7 @@ type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 
 interface CodexAgentDeps {
   bin?: string;
+  extraArgs?: string[];
   platform?: NodeJS.Platform;
 }
 
@@ -83,16 +84,48 @@ function terminateCodexProcess(
   child.kill("SIGTERM");
 }
 
+function buildCodexArgs(
+  prompt: string,
+  schemaPath: string,
+  extraArgs?: string[],
+): string[] {
+  const userArgs = extraArgs ?? [];
+  const userSpecifiedExecutionMode = userArgs.some((arg) =>
+    arg === "--full-auto" ||
+    arg === "--dangerously-bypass-approvals-and-sandbox" ||
+    arg === "--sandbox" ||
+    arg === "-s" ||
+    arg === "--ask-for-approval" ||
+    arg === "-a",
+  );
+
+  return [
+    "exec",
+    ...userArgs,
+    prompt,
+    "--json",
+    "--output-schema",
+    schemaPath,
+    ...(userSpecifiedExecutionMode
+      ? []
+      : ["--dangerously-bypass-approvals-and-sandbox"]),
+    "--color",
+    "never",
+  ];
+}
+
 export class CodexAgent implements Agent {
   name = "codex";
 
   private bin: string;
+  private extraArgs?: string[];
   private platform: NodeJS.Platform;
   private schemaPath: string;
 
   constructor(schemaPath: string, binOrDeps: string | CodexAgentDeps = {}) {
     const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
     this.bin = deps.bin ?? "codex";
+    this.extraArgs = deps.extraArgs;
     this.platform = deps.platform ?? process.platform;
     this.schemaPath = schemaPath;
   }
@@ -109,16 +142,7 @@ export class CodexAgent implements Agent {
 
       const child = spawn(
         this.bin,
-        [
-          "exec",
-          prompt,
-          "--json",
-          "--output-schema",
-          this.schemaPath,
-          "--dangerously-bypass-approvals-and-sandbox",
-          "--color",
-          "never",
-        ],
+        buildCodexArgs(prompt, this.schemaPath, this.extraArgs),
         {
           cwd,
           shell: shouldUseWindowsShell(this.bin, this.platform),

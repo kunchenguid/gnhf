@@ -165,6 +165,15 @@ agent: claude
 #   claude: /path/to/custom-claude
 #   codex: /path/to/custom-codex
 
+# Per-agent CLI arg overrides (optional)
+# agentArgsOverride:
+#   codex:
+#     - -m
+#     - gpt-5.4
+#     - -c
+#     - model_reasoning_effort="high"
+#     - --full-auto
+
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
 
@@ -176,6 +185,8 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+
+Use `agentArgsOverride.<name>` to pass through additional CLI flags for a specific agent without needing a dedicated `gnhf` config field for each one. For example, the `codex` snippet above sets the model, reasoning effort, and full-auto mode directly. If you do not specify any Codex execution-mode flags there, `gnhf` keeps its current default of `--dangerously-bypass-approvals-and-sandbox`. If you do override Codex sandbox or approval flags, `gnhf` treats that as fully user-managed and will not add its default execution-mode flag for you.
 
 ### Custom Agent Paths
 

@@ -21,6 +21,8 @@ const mockWriteFileSync = vi.mocked(writeFileSync);
 const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
+const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
+  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort=\"high\"\n#     - --full-auto\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -39,7 +41,7 @@ describe("loadConfig", () => {
     });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: claude\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      BOOTSTRAP_CONFIG_TEMPLATE("claude"),
       "utf-8",
     );
     expect(config).toEqual({
@@ -81,7 +83,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: codex\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      BOOTSTRAP_CONFIG_TEMPLATE("codex"),
       "utf-8",
     );
     expect(config).toEqual({
@@ -141,7 +143,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: rovodev\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      BOOTSTRAP_CONFIG_TEMPLATE("rovodev"),
       "utf-8",
     );
     expect(config).toEqual({
@@ -163,7 +165,7 @@ describe("loadConfig", () => {
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       CONFIG_PATH,
-      "# Agent to use by default\nagent: opencode\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n",
+      BOOTSTRAP_CONFIG_TEMPLATE("opencode"),
       "utf-8",
     );
     expect(config).toEqual({
@@ -243,6 +245,18 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
+    });
+  });
+
+  it("reads per-agent extra args from config", () => {
+    mockReadFileSync.mockReturnValue(
+      'agentArgsOverride:\n  codex:\n    - -m\n    - gpt-5.4\n    - --full-auto\n',
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      codex: ["-m", "gpt-5.4", "--full-auto"],
     });
   });
 
@@ -336,6 +350,34 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig()).toThrow(
       /Invalid path for agentPathOverride.claude/,
+    );
+  });
+
+  it("throws when agentArgsOverride contains an unknown agent name", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  unknown:\n    - --flag\n",
+    );
+
+    expect(() => loadConfig()).toThrow(/Invalid agent name in agentArgsOverride/);
+  });
+
+  it("throws when agentArgsOverride.codex is not an array", () => {
+    mockReadFileSync.mockReturnValue(
+      'agentArgsOverride:\n  codex: "--full-auto"\n',
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for agentArgsOverride\.codex/,
+    );
+  });
+
+  it("throws when agentArgsOverride.codex contains blank values", () => {
+    mockReadFileSync.mockReturnValue(
+      'agentArgsOverride:\n  codex:\n    - "   "\n',
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for agentArgsOverride\.codex\[0\]/,
     );
   });
 });

@@ -121,6 +121,41 @@ describe("CodexAgent", () => {
     );
   });
 
+  it("passes configured extra args through to codex exec", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CodexAgent("/tmp/schema.json", {
+      extraArgs: [
+        "-m",
+        "gpt-5.4",
+        "-c",
+        'model_reasoning_effort="high"',
+        "--full-auto",
+      ],
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "codex",
+      [
+        "exec",
+        "-m",
+        "gpt-5.4",
+        "-c",
+        'model_reasoning_effort="high"',
+        "--full-auto",
+        "test prompt",
+        "--json",
+        "--output-schema",
+        "/tmp/schema.json",
+        "--color",
+        "never",
+      ],
+      expect.any(Object),
+    );
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 6789 });

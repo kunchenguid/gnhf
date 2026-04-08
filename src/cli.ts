@@ -238,13 +238,13 @@ program
         process.exit(1);
       }
 
-      const loadedConfig = loadConfig(
-        agentName
+      const loadedConfig = loadConfig({
+        ...(agentName
           ? {
               agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
             }
-          : {},
-      );
+          : {}),
+      });
       const config = {
         ...loadedConfig,
         ...(options.preventSleep === undefined
@@ -358,6 +358,7 @@ program
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
         preventSleep: config.preventSleep,
+        agentArgsOverride: config.agentArgsOverride?.[config.agent],
         platform: process.platform,
         nodeVersion: process.version,
         gnhfVersion: packageVersion,
@@ -367,6 +368,7 @@ program
         config.agent,
         runInfo,
         config.agentPathOverride[config.agent],
+        config.agentArgsOverride?.[config.agent],
       );
       const orchestrator = new Orchestrator(
         config,

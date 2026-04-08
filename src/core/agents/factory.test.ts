@@ -62,7 +62,24 @@ describe("createAgent", () => {
 
   it("creates a CodexAgent when name is 'codex'", () => {
     const agent = createAgent("codex", stubRunInfo);
-    expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, undefined);
+    expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
+      bin: undefined,
+      extraArgs: undefined,
+    });
+    expect(agent.name).toBe("codex");
+  });
+
+  it("passes per-agent extra args through to the CodexAgent", () => {
+    const agent = createAgent("codex", stubRunInfo, undefined, [
+      "-m",
+      "gpt-5.4",
+      "--full-auto",
+    ]);
+
+    expect(CodexAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
+      bin: undefined,
+      extraArgs: ["-m", "gpt-5.4", "--full-auto"],
+    });
     expect(agent.name).toBe("codex");
   });
 

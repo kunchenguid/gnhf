@@ -228,7 +228,12 @@ describe("cli", () => {
     });
 
     expect(loadConfig).toHaveBeenCalledWith({});
-    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("uses the explicit --agent flag as an override", async () => {
@@ -243,7 +248,12 @@ describe("cli", () => {
     );
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
-    expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("accepts rovodev as an explicit --agent override", async () => {
@@ -258,7 +268,12 @@ describe("cli", () => {
     );
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "rovodev" });
-    expect(createAgent).toHaveBeenCalledWith("rovodev", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "rovodev",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("accepts opencode as an explicit --agent override", async () => {
@@ -277,6 +292,26 @@ describe("cli", () => {
       "opencode",
       stubRunInfo,
       undefined,
+      undefined,
+    );
+  });
+
+  it("passes per-agent config through to agent creation", async () => {
+    const { createAgent } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      agentPathOverride: {},
+      agentArgsOverride: {
+        codex: ["-m", "gpt-5.4", "--full-auto"],
+      },
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      ["-m", "gpt-5.4", "--full-auto"],
     );
   });
 
