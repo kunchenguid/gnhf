@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.14...gnhf-v0.1.15) (2026-04-08)
+
+
+### Bug Fixes
+
+* Normalize changes and learnings to avoid JSON schema non-adherence to break the notes.md file ([#59](https://github.com/kunchenguid/gnhf/issues/59)) ([3b1427b](https://github.com/kunchenguid/gnhf/commit/3b1427b8eeaac7463da95c358e4bf8a510542772))
+
 ## [0.1.14](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.13...gnhf-v0.1.14) (2026-04-07)
 
 
