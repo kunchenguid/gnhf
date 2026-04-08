@@ -376,7 +376,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         record: this.recordFailure(
           `[FAIL] ${result.output.summary}`,
           result.output.summary,
-          result.output.key_learnings,
+          toStringArray(result.output.key_learnings),
         ),
       };
     } catch (err) {

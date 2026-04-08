@@ -73,6 +73,7 @@ interface OpenCodeStreamEvent {
       info?: {
         id?: string;
         role?: string;
+        structured?: AgentOutput;
         tokens?: OpenCodeTokens;
       };
     };
@@ -181,6 +182,10 @@ function isAgentAbortError(error: unknown): boolean {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function toNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function getAvailablePort(): Promise<number> {
@@ -610,43 +615,6 @@ export class OpenCodeAgent implements Agent {
       throw new Error("opencode returned no event stream body");
     }
 
-    const messagePostStartedAt = Date.now();
-    appendDebugLog("opencode:message-post:start", {
-      sessionId,
-      promptLength: prompt.length,
-    });
-    let messageRequestError: unknown = null;
-    const messageRequest = (async (): Promise<MessageRequestResult> => {
-      try {
-        await this.request(server, `/session/${sessionId}/prompt_async`, {
-          method: "POST",
-          body: {
-            role: "user",
-            parts: [{ type: "text", text: prompt }],
-            format: STRUCTURED_OUTPUT_FORMAT,
-          },
-          signal,
-        });
-        appendDebugLog("opencode:message-post:end", {
-          sessionId,
-          elapsedMs: Date.now() - messagePostStartedAt,
-        });
-        return { ok: true, body: "" };
-      } catch (error) {
-        messageRequestError = error;
-        appendDebugLog("opencode:message-post:error", {
-          sessionId,
-          elapsedMs: Date.now() - messagePostStartedAt,
-          error: serializeError(error),
-          serverClosed: server.closed,
-          serverStderr: server.stderr.slice(-2048),
-          streamTelemetry: buildTelemetry(),
-        });
-        streamAbortController.abort();
-        return { ok: false, error };
-      }
-    })();
-
     const usage: TokenUsage = {
       inputTokens: 0,
       outputTokens: 0,
@@ -704,6 +672,43 @@ export class OpenCodeAgent implements Agent {
       currentPhase,
       sawSessionIdle: (eventCounts["session.idle"] ?? 0) > 0,
     });
+
+    const messagePostStartedAt = Date.now();
+    appendDebugLog("opencode:message-post:start", {
+      sessionId,
+      promptLength: prompt.length,
+    });
+    let messageRequestError: unknown = null;
+    const messageRequest = (async (): Promise<MessageRequestResult> => {
+      try {
+        await this.request(server, `/session/${sessionId}/prompt_async`, {
+          method: "POST",
+          body: {
+            role: "user",
+            parts: [{ type: "text", text: prompt }],
+            format: STRUCTURED_OUTPUT_FORMAT,
+          },
+          signal,
+        });
+        appendDebugLog("opencode:message-post:end", {
+          sessionId,
+          elapsedMs: Date.now() - messagePostStartedAt,
+        });
+        return { ok: true, body: "" };
+      } catch (error) {
+        messageRequestError = error;
+        appendDebugLog("opencode:message-post:error", {
+          sessionId,
+          elapsedMs: Date.now() - messagePostStartedAt,
+          error: serializeError(error),
+          serverClosed: server.closed,
+          serverStderr: server.stderr.slice(-2048),
+          streamTelemetry: buildTelemetry(),
+        });
+        streamAbortController.abort();
+        return { ok: false, error };
+      }
+    })();
 
     // Stall watchdog: if the SSE stream goes silent (no non-heartbeat
     // events) for longer than a threshold, emit a single warning per
@@ -989,8 +994,10 @@ export class OpenCodeAgent implements Agent {
       };
     }
 
-    const outputText = lastFinalAnswerText ?? lastText;
-    if (!outputText) {
+    const outputText =
+      toNonEmptyString(lastFinalAnswerText) ?? toNonEmptyString(lastText);
+
+    if (outputText === null) {
       appendDebugLog("opencode:output:missing", {
         sessionId,
         hasStructuredOutput: structuredOutputFromSSE !== null,
@@ -998,12 +1005,14 @@ export class OpenCodeAgent implements Agent {
       throw new Error("opencode returned no text output");
     }
 
+    const finalOutputText = outputText;
+
     try {
-      const output = JSON.parse(outputText) as AgentOutput;
+      const output = JSON.parse(finalOutputText) as AgentOutput;
       appendDebugLog("opencode:output:structured", {
         sessionId,
         source: lastFinalAnswerText ? "final_answer" : "last_text",
-        outputTextLength: outputText.length,
+        outputTextLength: finalOutputText.length,
       });
       return {
         output,
@@ -1012,8 +1021,8 @@ export class OpenCodeAgent implements Agent {
     } catch (error) {
       appendDebugLog("opencode:output:parse-error", {
         sessionId,
-        outputTextLength: outputText.length,
-        outputTextSample: outputText.slice(0, 512),
+        outputTextLength: finalOutputText.length,
+        outputTextSample: finalOutputText.slice(0, 512),
         error: serializeError(error),
       });
       throw new Error(

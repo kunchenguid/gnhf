@@ -14,7 +14,25 @@ import {
   buildContentCells,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
-import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
+import type {
+  IterationRecord,
+  Orchestrator,
+  OrchestratorState,
+} from "./core/orchestrator.js";
+
+function createIteration(
+  overrides: Partial<IterationRecord> = {},
+): IterationRecord {
+  return {
+    number: 1,
+    success: true,
+    summary: "done",
+    keyChanges: [],
+    keyLearnings: [],
+    timestamp: new Date("2026-01-01T00:00:00Z"),
+    ...overrides,
+  };
+}
 
 describe("renderTitle", () => {
   it("renders the gnhf eyebrow above the ASCII art", () => {
@@ -216,15 +234,14 @@ describe("buildFrame", () => {
 
   it("keeps all moon rows visible on tight terminals by reserving a real footer row", () => {
     const state: OrchestratorState = {
-      status: "done",
+      status: "stopped",
       currentIteration: 61,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       commitCount: 0,
-      iterations: Array.from({ length: 61 }, (_, index) => ({
-        iteration: index + 1,
-        success: true,
-      })),
+      iterations: Array.from({ length: 61 }, (_, index) =>
+        createIteration({ number: index + 1, success: true }),
+      ),
       successCount: 61,
       failCount: 0,
       consecutiveFailures: 0,
@@ -299,15 +316,14 @@ describe("buildFrame", () => {
 
   it("keeps stats visible when moon rows exceed the content viewport", () => {
     const state: OrchestratorState = {
-      status: "done",
+      status: "stopped",
       currentIteration: 660,
       totalInputTokens: 1200,
       totalOutputTokens: 800,
       commitCount: 7,
-      iterations: Array.from({ length: 660 }, (_, index) => ({
-        iteration: index + 1,
-        success: true,
-      })),
+      iterations: Array.from({ length: 660 }, (_, index) =>
+        createIteration({ number: index + 1, success: true }),
+      ),
       successCount: 660,
       failCount: 0,
       consecutiveFailures: 0,
@@ -341,7 +357,7 @@ describe("buildFrame", () => {
       totalInputTokens: 100,
       totalOutputTokens: 50,
       commitCount: 1,
-      iterations: [{ success: true }],
+      iterations: [createIteration()],
       successCount: 1,
       failCount: 0,
       consecutiveFailures: 0,
@@ -394,7 +410,7 @@ describe("buildContentCells adaptive height", () => {
     totalInputTokens: 100,
     totalOutputTokens: 50,
     commitCount: 1,
-    iterations: [{ success: true }],
+    iterations: [createIteration()],
     successCount: 1,
     failCount: 0,
     consecutiveFailures: 0,
@@ -522,8 +538,10 @@ describe("buildContentCells adaptive height", () => {
       "claude",
       {
         ...state,
-        status: "done",
-        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+        status: "stopped",
+        iterations: Array.from({ length: 660 }, (_, index) =>
+          createIteration({ number: index + 1, success: true }),
+        ),
       },
       "00:01:00",
       0,
@@ -541,8 +559,10 @@ describe("buildContentCells adaptive height", () => {
       "claude",
       {
         ...state,
-        status: "done",
-        iterations: Array.from({ length: 660 }, () => ({ success: true })),
+        status: "stopped",
+        iterations: Array.from({ length: 660 }, (_, index) =>
+          createIteration({ number: index + 1, success: true }),
+        ),
       },
       "00:01:00",
       0,
@@ -599,11 +619,14 @@ describe("Renderer ctrl+c", () => {
       configurable: true,
       value: true,
     });
-    (
-      process.stdin as NodeJS.ReadStream & {
-        setRawMode: ReturnType<typeof vi.fn>;
-      }
-    ).setRawMode = vi.fn();
+    const setRawModeMock = vi.fn((mode: boolean) => {
+      void mode;
+      return process.stdin;
+    });
+    Object.defineProperty(process.stdin, "setRawMode", {
+      configurable: true,
+      value: setRawModeMock,
+    });
     process.stdin.resume = vi.fn();
     process.stdin.pause = vi.fn();
     process.stdin.on = vi.fn(
@@ -621,7 +644,11 @@ describe("Renderer ctrl+c", () => {
       renderer.start();
 
       expect(dataHandler).not.toBeNull();
-      dataHandler?.(Buffer.from([3]));
+      if (!dataHandler) {
+        throw new Error("expected renderer to register a data handler");
+      }
+      const onData = dataHandler as (data: Buffer) => void;
+      onData(Buffer.from([3]));
 
       await expect(renderer.waitUntilExit()).resolves.toBe("interrupted");
 
@@ -635,11 +662,10 @@ describe("Renderer ctrl+c", () => {
         configurable: true,
         value: originalIsTTY,
       });
-      (
-        process.stdin as NodeJS.ReadStream & {
-          setRawMode?: (mode: boolean) => void;
-        }
-      ).setRawMode = originalSetRawMode;
+      Object.defineProperty(process.stdin, "setRawMode", {
+        configurable: true,
+        value: originalSetRawMode,
+      });
       process.stdin.resume = originalResume;
       process.stdin.pause = originalPause;
       process.stdin.on = originalOn;

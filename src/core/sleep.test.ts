@@ -24,9 +24,9 @@ function createChildProcess(pid = 1234): ChildProcess {
   const child = Object.assign(new EventEmitter(), {
     exitCode: null,
     pid,
-    kill: vi.fn((signal?: NodeJS.Signals) => {
+    kill: vi.fn((signal?: number | NodeJS.Signals) => {
       child.emit("close", signal === "SIGKILL" ? 1 : 0, null);
-      return true;
+      return true as const;
     }),
     signalCode: null,
   });
@@ -97,7 +97,10 @@ describe("startSleepPrevention", () => {
     mockSpawn.mockImplementation(() => {
       queueMicrotask(() => {
         child.emit("spawn");
-        child.exitCode = 1;
+        Object.defineProperty(child, "exitCode", {
+          configurable: true,
+          value: 1,
+        });
       });
       return child as never;
     });
@@ -394,7 +397,7 @@ describe("startSleepPrevention", () => {
     vi.useFakeTimers();
 
     const child = createChildProcess();
-    const killProcess = vi.fn(() => true);
+    const killProcess: typeof process.kill = vi.fn(() => true as const);
     let handleSigTerm: (() => void) | undefined;
     const processOn = vi.fn((event: string, listener: () => void) => {
       if (event === "SIGTERM") handleSigTerm = listener;
@@ -439,7 +442,7 @@ describe("startSleepPrevention", () => {
 
   it("forwards signals received before waitForSpawn resolves", async () => {
     const child = createChildProcess();
-    const killProcess = vi.fn(() => true);
+    const killProcess: typeof process.kill = vi.fn(() => true as const);
     let handleSigInt: (() => void) | undefined;
     const processOn = vi.fn((event: string, listener: () => void) => {
       if (event === "SIGINT") handleSigInt = listener;
@@ -502,14 +505,16 @@ describe("startSleepPrevention", () => {
     vi.useFakeTimers();
 
     const child = createChildProcess();
-    const killProcess = vi.fn((pid: number, signal: NodeJS.Signals) => {
-      if (pid === -1234 && signal === "SIGTERM") {
-        queueMicrotask(() => {
-          child.emit("close", 0, null);
-        });
-      }
-      return true;
-    });
+    const killProcess: typeof process.kill = vi.fn(
+      (pid: number, signal?: string | number) => {
+        if (pid === -1234 && signal === "SIGTERM") {
+          queueMicrotask(() => {
+            child.emit("close", 0, null);
+          });
+        }
+        return true as const;
+      },
+    );
     mockSpawn.mockImplementation(() => {
       queueMicrotask(() => {
         child.emit("spawn");

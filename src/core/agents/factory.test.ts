@@ -49,6 +49,7 @@ const stubRunInfo: RunInfo = {
   promptPath: "/repo/.gnhf/runs/test-run/PROMPT.md",
   notesPath: "/repo/.gnhf/runs/test-run/notes.md",
   schemaPath: "/repo/.gnhf/runs/test-run/schema.json",
+  logPath: "/repo/.gnhf/runs/test-run/gnhf.log",
   baseCommit: "abc123",
   baseCommitPath: "/repo/.gnhf/runs/test-run/base-commit",
 };

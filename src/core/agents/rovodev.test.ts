@@ -31,7 +31,10 @@ function createMockProcess() {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
     stdin: null,
-    kill: vi.fn(),
+    kill: vi.fn((signal: number | NodeJS.Signals | undefined) => {
+      void signal;
+      return true;
+    }),
   });
   return proc as unknown as ChildProcessWithoutNullStreams;
 }
@@ -408,14 +411,16 @@ describe("RovoDevAgent", () => {
   it("force terminates rovodev if shutdown exceeds the timeout", async () => {
     vi.useFakeTimers();
     const proc = createMockProcess();
-    vi.mocked(proc.kill).mockImplementation((signal?: NodeJS.Signals) => {
-      if (signal === "SIGKILL") {
-        queueMicrotask(() => {
-          proc.emit("close", 0, null);
-        });
-      }
-      return true;
-    });
+    vi.mocked(proc.kill).mockImplementation(
+      (signal?: number | NodeJS.Signals) => {
+        if (signal === "SIGKILL") {
+          queueMicrotask(() => {
+            proc.emit("close", 0, null);
+          });
+        }
+        return true;
+      },
+    );
     mockSpawn.mockReturnValue(proc);
 
     fetchMock

@@ -7,7 +7,10 @@ function createChildProcess(pid = 1234): ChildProcess {
   return Object.assign(new EventEmitter(), {
     exitCode: null,
     pid,
-    kill: vi.fn(() => true),
+    kill: vi.fn((signal: number | NodeJS.Signals | undefined) => {
+      void signal;
+      return true as const;
+    }),
     signalCode: null,
   }) as unknown as ChildProcess;
 }
@@ -55,14 +58,16 @@ describe("shutdownChildProcess", () => {
 
   it("force kills the child when graceful shutdown times out", async () => {
     const child = createChildProcess();
-    vi.mocked(child.kill).mockImplementation((signal?: NodeJS.Signals) => {
-      if (signal === "SIGKILL") {
-        queueMicrotask(() => {
-          child.emit("close", 0, null);
-        });
-      }
-      return true;
-    });
+    vi.mocked(child.kill).mockImplementation(
+      (signal?: number | NodeJS.Signals) => {
+        if (signal === "SIGKILL") {
+          queueMicrotask(() => {
+            child.emit("close", 0, null);
+          });
+        }
+        return true as const;
+      },
+    );
 
     const closePromise = shutdownChildProcess(child, {
       detached: false,

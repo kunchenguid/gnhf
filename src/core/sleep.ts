@@ -144,7 +144,7 @@ async function waitForLinuxReexecReady(
     const settle = (
       result:
         | { type: "ready" }
-        | { type: "exit"; exitCode: number }
+        | { type: "exit"; exitCode: number; signal: NodeJS.Signals | null }
         | { type: "timeout" },
     ) => {
       if (settled) return;

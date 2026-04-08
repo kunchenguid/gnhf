@@ -13,6 +13,7 @@
     "lint": "eslint src",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test": "npm run build && vitest run",
     "test:e2e": "npm run build && vitest run test/e2e.test.ts",
     "test:coverage": "vitest run --coverage --exclude test/e2e.test.ts"
