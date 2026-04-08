@@ -10,7 +10,7 @@ const AGENT_NAMES = ["claude", "codex", "rovodev", "opencode"] as const;
 export interface Config {
   agent: AgentName;
   agentPathOverride: Partial<Record<AgentName, string>>;
-  agentArgsOverride?: Partial<Record<AgentName, string[]>>;
+  agentArgsOverride: Partial<Record<AgentName, string[]>>;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
 }
@@ -18,13 +18,14 @@ export interface Config {
 const DEFAULT_CONFIG: Config = {
   agent: "claude",
   agentPathOverride: {},
+  agentArgsOverride: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
 
 class InvalidConfigError extends Error {}
 
-function normalizeBooleanLike(value: unknown): boolean | undefined {
+function normalizePreventSleep(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return undefined;
 
@@ -33,6 +34,46 @@ function normalizeBooleanLike(value: unknown): boolean | undefined {
   if (value === "on") return true;
   if (value === "off") return false;
   return undefined;
+}
+
+function isReservedAgentArg(agent: AgentName, arg: string): boolean {
+  switch (agent) {
+    case "claude":
+      return (
+        arg === "-p" ||
+        arg === "--print" ||
+        arg === "--verbose" ||
+        arg === "--dangerously-skip-permissions" ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--json-schema" ||
+        arg.startsWith("--json-schema=")
+      );
+    case "codex":
+      return (
+        arg === "exec" ||
+        arg === "--json" ||
+        arg === "--output-schema" ||
+        arg.startsWith("--output-schema=") ||
+        arg === "--color" ||
+        arg.startsWith("--color=")
+      );
+    case "opencode":
+      return (
+        arg === "serve" ||
+        arg === "--hostname" ||
+        arg.startsWith("--hostname=") ||
+        arg === "--port" ||
+        arg.startsWith("--port=") ||
+        arg === "--print-logs"
+      );
+    case "rovodev":
+      return (
+        arg === "rovodev" ||
+        arg === "serve" ||
+        arg === "--disable-session-token"
+      );
+  }
 }
 
 /**
@@ -102,6 +143,7 @@ function normalizeAgentPathOverride(
 function normalizeAgentExtraArgs(
   value: unknown,
   label: string,
+  agent: AgentName,
 ): string[] | undefined {
   if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) {
@@ -121,6 +163,12 @@ function normalizeAgentExtraArgs(
     if (trimmed === "") {
       throw new InvalidConfigError(
         `Invalid config value for ${label}[${index}]: expected a non-empty string`,
+      );
+    }
+
+    if (isReservedAgentArg(agent, trimmed)) {
+      throw new InvalidConfigError(
+        `Invalid config value for ${label}[${index}]: "${trimmed}" is managed by gnhf and cannot be overridden`,
       );
     }
 
@@ -150,6 +198,7 @@ function normalizeAgentArgsOverride(
     const args = normalizeAgentExtraArgs(
       rawConfig,
       `agentArgsOverride.${key}`,
+      key as AgentName,
     );
     if (args !== undefined) {
       result[key as AgentName] = args;
@@ -168,7 +217,7 @@ function normalizeConfig(
     config,
     "preventSleep",
   );
-  const preventSleep = normalizeBooleanLike(config.preventSleep);
+  const preventSleep = normalizePreventSleep(config.preventSleep);
 
   if (preventSleep === undefined) {
     if (hasPreventSleep && config.preventSleep !== undefined) {
@@ -250,9 +299,9 @@ function serializeAgentPathOverride(
 }
 
 function serializeAgentArgsOverride(
-  agentArgsOverride?: Partial<Record<AgentName, string[]>>,
+  agentArgsOverride: Partial<Record<AgentName, string[]>>,
 ): string {
-  if (!agentArgsOverride || Object.keys(agentArgsOverride).length === 0) {
+  if (Object.keys(agentArgsOverride).length === 0) {
     return "";
   }
 
@@ -289,7 +338,7 @@ function serializeConfig(config: Config): string {
     "#     - -m",
     "#     - gpt-5.4",
     "#     - -c",
-    '#     - model_reasoning_effort=\"high\"',
+    '#     - model_reasoning_effort="high"',
     "#     - --full-auto",
   ];
 

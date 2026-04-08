@@ -273,6 +273,41 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("passes configured extra args through to rovodev serve", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new RovoDevAgent(schemaPath, {
+      extraArgs: ["--profile", "work"],
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      platform: "linux",
+    });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
+
+    await expect(configuredAgent["ensureServer"]("/repo")).resolves.toMatchObject(
+      {
+        cwd: "/repo",
+        port: 8765,
+      },
+    );
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "acli",
+      [
+        "rovodev",
+        "serve",
+        "--profile",
+        "work",
+        "--disable-session-token",
+        "8765",
+      ],
+      expect.objectContaining({
+        cwd: "/repo",
+      }),
+    );
+  });
+
   it("reuses the existing server process across runs", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

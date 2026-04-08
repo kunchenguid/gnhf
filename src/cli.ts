@@ -238,13 +238,13 @@ program
         process.exit(1);
       }
 
-      const loadedConfig = loadConfig({
-        ...(agentName
+      const loadedConfig = loadConfig(
+        agentName
           ? {
               agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
             }
-          : {}),
-      });
+          : {},
+      );
       const config = {
         ...loadedConfig,
         ...(options.preventSleep === undefined

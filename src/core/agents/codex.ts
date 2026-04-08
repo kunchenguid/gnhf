@@ -94,8 +94,10 @@ function buildCodexArgs(
     arg === "--full-auto" ||
     arg === "--dangerously-bypass-approvals-and-sandbox" ||
     arg === "--sandbox" ||
+    arg.startsWith("--sandbox=") ||
     arg === "-s" ||
     arg === "--ask-for-approval" ||
+    arg.startsWith("--ask-for-approval=") ||
     arg === "-a",
   );
 

@@ -39,6 +39,7 @@ const mockAppendNotes = vi.mocked(appendNotes);
 const config: Config = {
   agent: "claude",
   agentPathOverride: {},
+  agentArgsOverride: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };

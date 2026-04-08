@@ -81,6 +81,7 @@ interface OpenCodeStreamEvent {
 
 interface OpenCodeDeps {
   bin?: string;
+  extraArgs?: string[];
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
@@ -257,6 +258,7 @@ export class OpenCodeAgent implements Agent {
   name = "opencode";
 
   private bin: string;
+  private extraArgs?: string[];
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
@@ -267,6 +269,7 @@ export class OpenCodeAgent implements Agent {
 
   constructor(deps: OpenCodeDeps = {}) {
     this.bin = deps.bin ?? "opencode";
+    this.extraArgs = deps.extraArgs;
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
@@ -380,6 +383,7 @@ export class OpenCodeAgent implements Agent {
       this.bin,
       [
         "serve",
+        ...(this.extraArgs ?? []),
         "--hostname",
         "127.0.0.1",
         "--port",

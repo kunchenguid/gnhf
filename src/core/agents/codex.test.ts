@@ -156,6 +156,31 @@ describe("CodexAgent", () => {
     );
   });
 
+  it("suppresses the default dangerous flag when the user sets sandbox mode with = syntax", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CodexAgent("/tmp/schema.json", {
+      extraArgs: ["--sandbox=workspace-write"],
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "codex",
+      [
+        "exec",
+        "--sandbox=workspace-write",
+        "test prompt",
+        "--json",
+        "--output-schema",
+        "/tmp/schema.json",
+        "--color",
+        "never",
+      ],
+      expect.any(Object),
+    );
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 6789 });

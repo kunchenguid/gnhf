@@ -159,6 +159,33 @@ describe("ClaudeAgent", () => {
     );
   });
 
+  it("passes configured extra args through to claude", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({
+      extraArgs: ["--model", "sonnet", "--permission-mode=plan"],
+    });
+
+    configuredAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "--model",
+        "sonnet",
+        "--permission-mode=plan",
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+      ],
+      expect.any(Object),
+    );
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 5678 });

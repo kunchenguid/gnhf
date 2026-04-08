@@ -488,6 +488,44 @@ describe("OpenCodeAgent", () => {
     );
   });
 
+  it("passes configured extra args through to opencode serve", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new OpenCodeAgent({
+      extraArgs: ["--model", "gpt-5"],
+      fetch: fetchMock as typeof fetch,
+      getPort,
+    });
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ healthy: true, version: "1.3.13" }),
+    );
+
+    await expect(configuredAgent["ensureServer"]("/repo")).resolves.toMatchObject(
+      {
+        cwd: "/repo",
+        port: 8765,
+      },
+    );
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "opencode",
+      [
+        "serve",
+        "--model",
+        "gpt-5",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        "8765",
+        "--print-logs",
+      ],
+      expect.objectContaining({
+        cwd: "/repo",
+      }),
+    );
+  });
+
   it("uses a shell on Windows so PATH-resolved .cmd shims can launch", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

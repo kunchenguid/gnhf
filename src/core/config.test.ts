@@ -22,7 +22,7 @@ const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
-  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort=\"high\"\n#     - --full-auto\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
+  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -47,6 +47,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -67,6 +68,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -89,6 +91,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "codex",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -127,6 +130,7 @@ describe("loadConfig", () => {
         claude: resolvedClaude,
         codex: resolvedCodex,
       },
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -149,6 +153,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "rovodev",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -171,6 +176,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "opencode",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -192,6 +198,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -205,6 +212,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -218,6 +226,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -237,12 +246,14 @@ describe("loadConfig", () => {
     const config = loadConfig({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -260,6 +271,36 @@ describe("loadConfig", () => {
     });
   });
 
+  it("reads per-agent extra args for all supported agents", () => {
+    mockReadFileSync.mockReturnValue(
+      [
+        "agentArgsOverride:",
+        "  claude:",
+        "    - --model",
+        "    - sonnet",
+        "  codex:",
+        "    - -m",
+        "    - gpt-5.4",
+        "  rovodev:",
+        "    - --profile",
+        "    - work",
+        "  opencode:",
+        "    - --model",
+        "    - gpt-5",
+        "",
+      ].join("\n"),
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      claude: ["--model", "sonnet"],
+      codex: ["-m", "gpt-5.4"],
+      rovodev: ["--profile", "work"],
+      opencode: ["--model", "gpt-5"],
+    });
+  });
+
   it("handles empty config file gracefully", () => {
     mockReadFileSync.mockReturnValue("");
 
@@ -267,6 +308,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -281,6 +323,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -378,6 +421,26 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig()).toThrow(
       /Invalid config value for agentArgsOverride\.codex\[0\]/,
+    );
+  });
+
+  it("throws when agentArgsOverride.codex contains gnhf-managed flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  codex:\n    - --output-schema=custom.json\n",
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /agentArgsOverride\.codex\[0\].*managed by gnhf/,
+    );
+  });
+
+  it("throws when agentArgsOverride.rovodev contains gnhf-managed flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  rovodev:\n    - serve\n",
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /agentArgsOverride\.rovodev\[0\].*managed by gnhf/,
     );
   });
 });
