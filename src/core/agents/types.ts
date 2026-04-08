@@ -1,8 +1,8 @@
 export interface AgentOutput {
   success: boolean;
   summary: string;
-  key_changes_made: string[];
-  key_learnings: string[];
+  key_changes_made: unknown;
+  key_learnings: unknown;
 }
 
 export const AGENT_OUTPUT_SCHEMA = {
