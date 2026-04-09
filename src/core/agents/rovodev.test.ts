@@ -285,12 +285,12 @@ describe("RovoDevAgent", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "healthy" }));
 
-    await expect(configuredAgent["ensureServer"]("/repo")).resolves.toMatchObject(
-      {
-        cwd: "/repo",
-        port: 8765,
-      },
-    );
+    await expect(
+      configuredAgent["ensureServer"]("/repo"),
+    ).resolves.toMatchObject({
+      cwd: "/repo",
+      port: 8765,
+    });
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "acli",

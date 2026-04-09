@@ -501,12 +501,12 @@ describe("OpenCodeAgent", () => {
       jsonResponse({ healthy: true, version: "1.3.13" }),
     );
 
-    await expect(configuredAgent["ensureServer"]("/repo")).resolves.toMatchObject(
-      {
-        cwd: "/repo",
-        port: 8765,
-      },
-    );
+    await expect(
+      configuredAgent["ensureServer"]("/repo"),
+    ).resolves.toMatchObject({
+      cwd: "/repo",
+      port: 8765,
+    });
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "opencode",

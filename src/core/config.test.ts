@@ -261,7 +261,7 @@ describe("loadConfig", () => {
 
   it("reads per-agent extra args from config", () => {
     mockReadFileSync.mockReturnValue(
-      'agentArgsOverride:\n  codex:\n    - -m\n    - gpt-5.4\n    - --full-auto\n',
+      "agentArgsOverride:\n  codex:\n    - -m\n    - gpt-5.4\n    - --full-auto\n",
     );
 
     const config = loadConfig();
@@ -401,7 +401,9 @@ describe("loadConfig", () => {
       "agentArgsOverride:\n  unknown:\n    - --flag\n",
     );
 
-    expect(() => loadConfig()).toThrow(/Invalid agent name in agentArgsOverride/);
+    expect(() => loadConfig()).toThrow(
+      /Invalid agent name in agentArgsOverride/,
+    );
   });
 
   it("throws when agentArgsOverride.codex is not an array", () => {

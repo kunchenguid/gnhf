@@ -189,7 +189,9 @@ function normalizeAgentArgsOverride(
   const validNames = new Set<string>(AGENT_NAMES);
   const result: Partial<Record<AgentName, string[]>> = {};
 
-  for (const [key, rawConfig] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, rawConfig] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     if (!validNames.has(key)) {
       throw new InvalidConfigError(
         `Invalid agent name in agentArgsOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,

@@ -311,12 +311,11 @@ describe("cli", () => {
       preventSleep: false,
     });
 
-    expect(createAgent).toHaveBeenCalledWith(
-      "codex",
-      stubRunInfo,
-      undefined,
-      ["-m", "gpt-5.4", "--full-auto"],
-    );
+    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined, [
+      "-m",
+      "gpt-5.4",
+      "--full-auto",
+    ]);
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {
