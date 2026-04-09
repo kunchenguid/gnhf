@@ -62,6 +62,13 @@ $ gnhf "reduce complexity of the codebase without changing functionality" \
 # have a good nap
 ```
 
+```sh
+# Run multiple agents on the same repo simultaneously using worktrees
+$ gnhf --worktree "implement feature X" &
+$ gnhf --worktree "add tests for module Y" &
+$ gnhf --worktree "refactor the API layer" &
+```
+
 Run `gnhf` from inside a Git repository with a clean working tree. If you are starting from a plain directory, run `git init` first.
 `gnhf` supports macOS, Linux, and Windows.
 
@@ -133,6 +140,21 @@ npm link
 - **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off
 
+### Worktree Mode
+
+Pass `--worktree` to run each agent in an isolated [git worktree](https://git-scm.com/docs/git-worktree). This lets you launch multiple agents on the same repo simultaneously — each gets its own working directory and branch without interfering with the others or your main checkout.
+
+```
+<repo>/                              ← your repo (unchanged)
+<repo>-gnhf-worktrees/
+  ├── <run-slug-1>/                  ← worktree for agent 1
+  └── <run-slug-2>/                  ← worktree for agent 2
+```
+
+- Worktrees with commits are **preserved** after the run so you can review, merge, or cherry-pick the work. gnhf prints the path and cleanup command.
+- Worktrees with **no commits** are automatically removed on exit.
+- `--worktree` must be run from a non-gnhf branch (typically `main`).
+
 ## CLI Reference
 
 | Command                   | Description                                     |
@@ -150,6 +172,7 @@ npm link
 | `--max-iterations <n>`   | Abort after `n` total iterations                                   | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                          | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`             |
 | `--version`              | Show version                                                       |                        |
 
 ## Configuration
