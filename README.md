@@ -186,7 +186,11 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
 
-Use `agentArgsOverride.<name>` to pass through additional CLI flags for any supported agent without needing a dedicated `gnhf` config field for each one. For example, the `codex` snippet above sets the model, reasoning effort, and full-auto mode directly. If you do not specify any Codex execution-mode flags there, `gnhf` keeps its current default of `--dangerously-bypass-approvals-and-sandbox`. If you do override Codex sandbox or approval flags, `gnhf` treats that as fully user-managed and will not add its default execution-mode flag for you. Flags that `gnhf` manages itself for a given agent are rejected during config loading so users get a clear error instead of duplicate-argument ambiguity.
+`agentArgsOverride.<name>` lets you pass through extra CLI flags for any supported agent.
+
+- Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
+- For `codex` and `claude`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
+- Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity.
 
 ### Custom Agent Paths
 

@@ -436,6 +436,18 @@ describe("loadConfig", () => {
     );
   });
 
+  it("allows agentArgsOverride.claude to set the dangerous permission flag explicitly", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  claude:\n    - --dangerously-skip-permissions\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      claude: ["--dangerously-skip-permissions"],
+    });
+  });
+
   it("throws when agentArgsOverride.rovodev contains gnhf-managed flags", () => {
     mockReadFileSync.mockReturnValue(
       "agentArgsOverride:\n  rovodev:\n    - serve\n",

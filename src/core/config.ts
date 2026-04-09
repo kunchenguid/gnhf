@@ -43,7 +43,6 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-p" ||
         arg === "--print" ||
         arg === "--verbose" ||
-        arg === "--dangerously-skip-permissions" ||
         arg === "--output-format" ||
         arg.startsWith("--output-format=") ||
         arg === "--json-schema" ||
