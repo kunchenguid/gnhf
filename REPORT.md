@@ -111,3 +111,7 @@ gnhf --worktree "refactor the API layer" &
 ```
 
 Each agent gets its own isolated branch and working directory, so they won't interfere with each other. Worktrees with commits are preserved after the run; empty worktrees are cleaned up automatically.
+
+## Conclusion
+
+The `--worktree` feature is fully implemented, tested, and documented. It solves the original problem of running multiple agents on the same repo concurrently by leveraging git's native worktree mechanism. The implementation required minimal changes to the existing architecture (primarily injecting a different `effectiveCwd` into the orchestrator) and follows the same patterns used elsewhere in the codebase. All 334 tests pass across 29 test files with clean typecheck and lint.
