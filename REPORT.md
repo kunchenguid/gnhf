@@ -60,6 +60,17 @@ Added a `--worktree` flag that creates a separate git worktree for each agent ru
 - Added "Worktree Mode" section explaining architecture and behavior
 - Created this implementation report
 
+### Phase 4: End-to-End Testing
+
+**Files changed:** `test/e2e.test.ts`
+
+| Test Case | What It Validates |
+|-----------|-------------------|
+| Worktree with commits preserved | Full happy path: creates real git repo, runs `gnhf --worktree`, verifies worktree directory exists, branch is `gnhf/*`, agent commit is present, original repo is untouched on `main`, debug log records `worktree: true`, stderr shows preservation message |
+| Worktree cleanup on no commits | Sends SIGINT during a "slow cleanup" prompt (mock agent doesn't respond), verifies worktree directory is cleaned up after zero commits, original repo stays on `main` |
+
+These tests exercise the actual git worktree lifecycle against real temporary repositories (using the mock opencode agent), complementing the mock-based unit and CLI integration tests from phases 1–2.
+
 ## Architecture Notes
 
 - The existing architecture's separation of `cwd` from run metadata paths made worktree integration straightforward — the orchestrator accepts a `cwd` parameter and all agent work happens there
@@ -71,7 +82,7 @@ Added a `--worktree` flag that creates a separate git worktree for each agent ru
 ## Test Results
 
 All tests pass:
-- **332 total tests** across 29 test files
+- **334 total tests** across 29 test files
 - Typecheck: clean
 - Lint: clean
 
@@ -84,7 +95,8 @@ All tests pass:
 | `src/cli.ts` | +81 | ~1 | `--worktree` flag, `initializeWorktreeRun()`, cleanup logic |
 | `src/cli.test.ts` | +227 | ~17 | 4 CLI integration tests + mock infrastructure extensions |
 | `README.md` | ~25 | 0 | Worktree documentation in Quick Start, Flags, and new section |
-| `REPORT.md` | ~90 | 0 | This implementation report |
+| `test/e2e.test.ts` | +95 | 0 | 2 end-to-end tests exercising real git worktree operations |
+| `REPORT.md` | ~105 | 0 | This implementation report |
 
 ## Usage
 
