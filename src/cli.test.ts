@@ -31,7 +31,12 @@ interface CliMockOverrides {
   initDebugLog?: ReturnType<typeof vi.fn>;
   createAgent?: ReturnType<typeof vi.fn>;
   env?: Record<string, string | undefined>;
+  getCurrentBranch?: ReturnType<typeof vi.fn>;
+  getRepoRootDir?: ReturnType<typeof vi.fn>;
+  createWorktree?: ReturnType<typeof vi.fn>;
+  removeWorktree?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
+  orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
   rendererStop?: ReturnType<typeof vi.fn>;
@@ -71,20 +76,22 @@ async function runCliWithMocks(
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
   const orchestratorStop = vi.fn();
   const orchestratorOn = vi.fn();
-  const orchestratorGetState = vi.fn(() => ({
-    status: "running" as const,
-    currentIteration: 0,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    commitCount: 0,
-    iterations: [],
-    successCount: 0,
-    failCount: 0,
-    consecutiveFailures: 0,
-    startTime: new Date("2026-01-01T00:00:00Z"),
-    waitingUntil: null,
-    lastMessage: null,
-  }));
+  const orchestratorGetState =
+    overrides.orchestratorGetState ??
+    vi.fn(() => ({
+      status: "running" as const,
+      currentIteration: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    }));
 
   const rendererStart = vi.fn();
   const rendererStop = overrides.rendererStop ?? vi.fn();
@@ -106,7 +113,10 @@ async function runCliWithMocks(
     ensureCleanWorkingTree: vi.fn(),
     createBranch: vi.fn(),
     getHeadCommit: vi.fn(() => "abc123"),
-    getCurrentBranch: vi.fn(() => "main"),
+    getCurrentBranch: overrides.getCurrentBranch ?? vi.fn(() => "main"),
+    getRepoRootDir: overrides.getRepoRootDir ?? vi.fn(() => "/repo"),
+    createWorktree: overrides.createWorktree ?? vi.fn(),
+    removeWorktree: overrides.removeWorktree ?? vi.fn(),
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),
@@ -178,6 +188,7 @@ async function runCliWithMocks(
     loadConfig,
     createAgent,
     orchestratorCtor,
+    orchestratorGetState,
     readStdinText,
     startSleepPrevention,
   };
@@ -1109,5 +1120,191 @@ describe("cli", () => {
       consoleError.mockRestore();
       exitSpy.mockRestore();
     }
+  });
+
+  it("passes the worktree path as effectiveCwd to the orchestrator in --worktree mode", async () => {
+    const createWorktree = vi.fn();
+    const getRepoRootDir = vi.fn(() => "/repo");
+
+    const { orchestratorCtor, appendDebugLog } = await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createWorktree, getRepoRootDir },
+    );
+
+    expect(getRepoRootDir).toHaveBeenCalled();
+    expect(createWorktree).toHaveBeenCalledWith(
+      "/repo",
+      expect.stringContaining("repo-gnhf-worktrees/"),
+      expect.stringMatching(/^gnhf\//),
+    );
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    const effectiveCwd = orchestratorCtor.mock.calls[0]?.[4];
+    expect(effectiveCwd).toContain("repo-gnhf-worktrees/");
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:start",
+      expect.objectContaining({ worktree: true }),
+    );
+  });
+
+  it("exits with error when --worktree is used from a gnhf branch", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/debug-log.js", () => ({
+      appendDebugLog: vi.fn(),
+      initDebugLog: vi.fn(),
+      serializeError: vi.fn(),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+      getRepoRootDir: vi.fn(() => "/repo"),
+      createWorktree: vi.fn(),
+      removeWorktree: vi.fn(),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(() => ({
+        ...stubRunInfo,
+        promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
+      })),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn();
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "new objective", "--worktree"];
+
+    try {
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
+
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Cannot use --worktree from a gnhf branch",
+        ),
+      );
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+    }
+  });
+
+  it("cleans up the worktree when no commits were made", async () => {
+    const removeWorktree = vi.fn();
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      {
+        removeWorktree,
+        orchestratorGetState: vi.fn(() => ({
+          status: "completed" as const,
+          currentIteration: 1,
+          totalInputTokens: 100,
+          totalOutputTokens: 200,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 1,
+          consecutiveFailures: 1,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        })),
+      },
+    );
+
+    expect(removeWorktree).toHaveBeenCalled();
+  });
+
+  it("preserves the worktree when commits were made", async () => {
+    const removeWorktree = vi.fn();
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      {
+        removeWorktree,
+        orchestratorGetState: vi.fn(() => ({
+          status: "completed" as const,
+          currentIteration: 3,
+          totalInputTokens: 500,
+          totalOutputTokens: 1000,
+          commitCount: 2,
+          iterations: [],
+          successCount: 2,
+          failCount: 1,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        })),
+      },
+    );
+
+    expect(removeWorktree).not.toHaveBeenCalled();
   });
 });
