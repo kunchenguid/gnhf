@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.15...gnhf-v0.1.16) (2026-04-09)
+
+
+### Features
+
+* **codex:** allow per-agent cli arg overrides ([#58](https://github.com/kunchenguid/gnhf/issues/58)) ([4c1731e](https://github.com/kunchenguid/gnhf/commit/4c1731e0f1fc321d3ac63818bffe6dd245ed3dbe))
+
 ## [0.1.15](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.14...gnhf-v0.1.15) (2026-04-08)
 
 
