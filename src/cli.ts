@@ -21,6 +21,9 @@ import {
   createBranch,
   getHeadCommit,
   getCurrentBranch,
+  getRepoRootDir,
+  createWorktree,
+  removeWorktree,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -81,6 +84,30 @@ function initializeNewBranch(prompt: string, cwd: string): RunInfo {
   createBranch(branchName, cwd);
   const runId = branchName.split("/")[1]!;
   return setupRun(runId, prompt, baseCommit, cwd);
+}
+
+interface WorktreeRunResult {
+  runInfo: RunInfo;
+  worktreePath: string;
+  effectiveCwd: string;
+}
+
+function initializeWorktreeRun(
+  prompt: string,
+  cwd: string,
+): WorktreeRunResult {
+  const repoRoot = getRepoRootDir(cwd);
+  const baseCommit = getHeadCommit(cwd);
+  const branchName = slugifyPrompt(prompt);
+  const runId = branchName.split("/")[1]!;
+  const worktreePath = join(
+    dirname(repoRoot),
+    `${basename(repoRoot)}-gnhf-worktrees`,
+    runId,
+  );
+  createWorktree(repoRoot, worktreePath, branchName);
+  const runInfo = setupRun(runId, prompt, baseCommit, worktreePath);
+  return { runInfo, worktreePath, effectiveCwd: worktreePath };
 }
 
 function ask(question: string): Promise<string> {
@@ -187,6 +214,11 @@ program
     'Prevent system sleep during the run ("on" or "off")',
     parseOnOffBoolean,
   )
+  .option(
+    "--worktree",
+    "Run in a separate git worktree (enables multiple agents on the same repo)",
+    false,
+  )
   .option("--mock", "", false)
   .action(
     async (
@@ -196,6 +228,7 @@ program
         maxIterations?: number;
         maxTokens?: number;
         preventSleep?: boolean;
+        worktree: boolean;
         mock: boolean;
       },
     ) => {
@@ -272,6 +305,9 @@ program
       }
 
       const cwd = process.cwd();
+      let effectiveCwd = cwd;
+      let worktreePath: string | null = null;
+      let worktreeCleanup: (() => void) | null = null;
 
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
@@ -279,7 +315,31 @@ program
       let runInfo;
       let startIteration = 0;
 
-      if (onGnhfBranch) {
+      if (options.worktree) {
+        if (!prompt) {
+          program.help();
+          return;
+        }
+
+        if (onGnhfBranch) {
+          console.error(
+            "Cannot use --worktree from a gnhf branch. Switch to the base branch first.",
+          );
+          process.exit(1);
+        }
+
+        const wt = initializeWorktreeRun(prompt, cwd);
+        runInfo = wt.runInfo;
+        effectiveCwd = wt.effectiveCwd;
+        worktreePath = wt.worktreePath;
+        worktreeCleanup = () => {
+          try {
+            removeWorktree(cwd, wt.worktreePath);
+          } catch {
+            // Best-effort cleanup
+          }
+        };
+      } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
         const existing = resumeRun(existingRunId, cwd);
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
@@ -359,6 +419,8 @@ program
         maxTokens: options.maxTokens,
         preventSleep: config.preventSleep,
         agentArgsOverride: config.agentArgsOverride?.[config.agent],
+        worktree: options.worktree,
+        worktreePath,
         platform: process.platform,
         nodeVersion: process.version,
         gnhfVersion: packageVersion,
@@ -375,7 +437,7 @@ program
         agent,
         runInfo,
         prompt,
-        cwd,
+        effectiveCwd,
         startIteration,
         {
           maxIterations: options.maxIterations,
@@ -457,7 +519,22 @@ program
           totalInputTokens: finalState.totalInputTokens,
           totalOutputTokens: finalState.totalOutputTokens,
           commitCount: finalState.commitCount,
+          worktreePath,
         });
+
+        if (worktreePath) {
+          if (finalState.commitCount > 0) {
+            console.error(
+              `\n  gnhf: worktree preserved at ${worktreePath}` +
+                `\n  gnhf: merge the branch and remove with: git worktree remove "${worktreePath}"\n`,
+            );
+          } else {
+            worktreeCleanup?.();
+            appendDebugLog("worktree:cleaned-up", {
+              worktreePath,
+            });
+          }
+        }
       }
 
       if (shutdownSignal) {

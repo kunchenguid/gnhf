@@ -118,3 +118,68 @@ export function resetHard(cwd: string): void {
   git("reset --hard HEAD", cwd);
   git("clean -fd", cwd);
 }
+
+export function getRepoRootDir(cwd: string): string {
+  return git("rev-parse --show-toplevel", cwd);
+}
+
+export function createWorktree(
+  baseCwd: string,
+  worktreePath: string,
+  branchName: string,
+): void {
+  git(`worktree add -b ${branchName} "${worktreePath}"`, baseCwd);
+}
+
+export function removeWorktree(baseCwd: string, worktreePath: string): void {
+  git(`worktree remove --force "${worktreePath}"`, baseCwd);
+}
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  bare: boolean;
+}
+
+export function listWorktrees(cwd: string): WorktreeInfo[] {
+  const output = git("worktree list --porcelain", cwd);
+  if (!output) return [];
+
+  const worktrees: WorktreeInfo[] = [];
+  let current: Partial<WorktreeInfo> = {};
+
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      current.path = line.slice("worktree ".length);
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice("HEAD ".length);
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice("branch ".length);
+    } else if (line === "bare") {
+      current.bare = true;
+    } else if (line === "") {
+      if (current.path) {
+        worktrees.push({
+          path: current.path,
+          branch: current.branch ?? "",
+          head: current.head ?? "",
+          bare: current.bare ?? false,
+        });
+      }
+      current = {};
+    }
+  }
+
+  // Handle last entry (no trailing blank line)
+  if (current.path) {
+    worktrees.push({
+      path: current.path,
+      branch: current.branch ?? "",
+      head: current.head ?? "",
+      bare: current.bare ?? false,
+    });
+  }
+
+  return worktrees;
+}
