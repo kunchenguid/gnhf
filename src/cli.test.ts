@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
@@ -1141,12 +1141,12 @@ describe("cli", () => {
     expect(getRepoRootDir).toHaveBeenCalled();
     expect(createWorktree).toHaveBeenCalledWith(
       "/repo",
-      expect.stringContaining("repo-gnhf-worktrees/"),
+      expect.stringContaining(`repo-gnhf-worktrees${sep}`),
       expect.stringMatching(/^gnhf\//),
     );
     expect(orchestratorCtor).toHaveBeenCalledTimes(1);
     const effectiveCwd = orchestratorCtor.mock.calls[0]?.[4];
-    expect(effectiveCwd).toContain("repo-gnhf-worktrees/");
+    expect(effectiveCwd).toContain(`repo-gnhf-worktrees${sep}`);
     expect(appendDebugLog).toHaveBeenCalledWith(
       "run:start",
       expect.objectContaining({ worktree: true }),

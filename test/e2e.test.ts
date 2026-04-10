@@ -242,7 +242,7 @@ describe("gnhf e2e", () => {
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
   }, 30_000);
 
-  it("runs one iteration in --worktree mode and preserves the worktree with commits", async () => {
+  it.skipIf(process.platform === "win32")("runs one iteration in --worktree mode and preserves the worktree with commits", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
@@ -295,7 +295,7 @@ describe("gnhf e2e", () => {
     expect(result.stderr).toContain("worktree preserved");
   }, 30_000);
 
-  it("cleans up the worktree when no changes are made in --worktree mode", async () => {
+  it.skipIf(process.platform === "win32")("cleans up the worktree when no changes are made in --worktree mode", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
