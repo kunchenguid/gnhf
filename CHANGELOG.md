@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.17...gnhf-v0.1.18) (2026-04-10)
+
+
+### Features
+
+* git worktree support so that it can support multiple features to one git repository ([#63](https://github.com/kunchenguid/gnhf/issues/63)) ([bf9e3d8](https://github.com/kunchenguid/gnhf/commit/bf9e3d86899e6f3c6421605566849d110b55c1db))
+
 ## [0.1.17](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.16...gnhf-v0.1.17) (2026-04-10)
 
 
