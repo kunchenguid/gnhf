@@ -96,6 +96,9 @@ function initializeWorktreeRun(
   prompt: string,
   cwd: string,
 ): WorktreeRunResult {
+  // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
+  // an independent working directory from HEAD; uncommitted changes in the
+  // main checkout don't carry over, so a dirty tree is harmless here.
   const repoRoot = getRepoRootDir(cwd);
   const baseCommit = getHeadCommit(cwd);
   const branchName = slugifyPrompt(prompt);
@@ -339,6 +342,16 @@ program
             // Best-effort cleanup
           }
         };
+
+        // Ensure worktree cleanup runs even if die() or process.exit() is
+        // called before reaching the normal cleanup block (e.g. orchestrator
+        // crash → .catch → die → process.exit(1)).
+        const exitCleanup = worktreeCleanup;
+        process.on("exit", () => {
+          if (worktreeCleanup === exitCleanup) {
+            exitCleanup();
+          }
+        });
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
         const existing = resumeRun(existingRunId, cwd);
@@ -524,12 +537,14 @@ program
 
         if (worktreePath) {
           if (finalState.commitCount > 0) {
+            worktreeCleanup = null;
             console.error(
               `\n  gnhf: worktree preserved at ${worktreePath}` +
                 `\n  gnhf: merge the branch and remove with: git worktree remove "${worktreePath}"\n`,
             );
           } else {
             worktreeCleanup?.();
+            worktreeCleanup = null;
             appendDebugLog("worktree:cleaned-up", {
               worktreePath,
             });

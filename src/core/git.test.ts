@@ -16,7 +16,6 @@ import {
   getRepoRootDir,
   createWorktree,
   removeWorktree,
-  listWorktrees,
 } from "./git.js";
 
 const mockExecSync = vi.mocked(execSync);
@@ -276,7 +275,7 @@ describe("git utilities", () => {
     it("calls git worktree add with branch and path", () => {
       createWorktree("/repo", "/tmp/wt", "gnhf/my-branch");
       expect(mockExecSync).toHaveBeenCalledWith(
-        'git worktree add -b gnhf/my-branch "/tmp/wt"',
+        "git worktree add -b 'gnhf/my-branch' '/tmp/wt'",
         {
           cwd: "/repo",
           encoding: "utf-8",
@@ -290,7 +289,7 @@ describe("git utilities", () => {
     it("calls git worktree remove --force", () => {
       removeWorktree("/repo", "/tmp/wt");
       expect(mockExecSync).toHaveBeenCalledWith(
-        'git worktree remove --force "/tmp/wt"',
+        "git worktree remove --force '/tmp/wt'",
         {
           cwd: "/repo",
           encoding: "utf-8",
@@ -300,70 +299,4 @@ describe("git utilities", () => {
     });
   });
 
-  describe("listWorktrees", () => {
-    it("parses porcelain worktree list output", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") return ".git\n";
-        if (cmd === "git worktree list --porcelain") {
-          return [
-            "worktree /repo",
-            "HEAD abc123",
-            "branch refs/heads/main",
-            "",
-            "worktree /tmp/wt1",
-            "HEAD def456",
-            "branch refs/heads/gnhf/feature-1",
-            "",
-          ].join("\n");
-        }
-        return "";
-      });
-
-      const result = listWorktrees("/repo");
-      expect(result).toEqual([
-        {
-          path: "/repo",
-          branch: "refs/heads/main",
-          head: "abc123",
-          bare: false,
-        },
-        {
-          path: "/tmp/wt1",
-          branch: "refs/heads/gnhf/feature-1",
-          head: "def456",
-          bare: false,
-        },
-      ]);
-    });
-
-    it("returns empty array for empty output", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") return ".git\n";
-        if (cmd === "git worktree list --porcelain") return "";
-        return "";
-      });
-
-      expect(listWorktrees("/repo")).toEqual([]);
-    });
-
-    it("handles bare worktree entry", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") return ".git\n";
-        if (cmd === "git worktree list --porcelain") {
-          return ["worktree /repo", "HEAD abc123", "bare", ""].join("\n");
-        }
-        return "";
-      });
-
-      const result = listWorktrees("/repo");
-      expect(result).toEqual([
-        {
-          path: "/repo",
-          branch: "",
-          head: "abc123",
-          bare: true,
-        },
-      ]);
-    });
-  });
 });

@@ -305,8 +305,12 @@ describe("gnhf e2e", () => {
     // Register for cleanup in case test fails and worktree isn't removed
     tempDirs.push(worktreeParent);
 
-    // Use "slow cleanup" prompt - the mock server won't respond, causing a
-    // SIGINT-based shutdown with 0 commits, which should trigger cleanup.
+    // The "slow cleanup" prompt triggers special behavior in the mock opencode
+    // server: when it detects "slow cleanup" in the prompt text, the message
+    // handler deliberately never sends a response (it only listens for the
+    // request to close). This simulates a long-running agent that hasn't
+    // produced any commits. We then send SIGINT to trigger graceful shutdown,
+    // which should cause gnhf to clean up the worktree (0 commits = auto-remove).
     const child = spawn(
       process.execPath,
       [distCliPath, "slow cleanup", "--agent", "opencode", "--worktree"],
