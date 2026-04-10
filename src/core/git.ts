@@ -133,10 +133,12 @@ export function createWorktree(
   worktreePath: string,
   branchName: string,
 ): void {
-  git(`worktree add -b ${shellEscape(branchName)} ${shellEscape(worktreePath)}`, baseCwd);
+  git(
+    `worktree add -b ${shellEscape(branchName)} ${shellEscape(worktreePath)}`,
+    baseCwd,
+  );
 }
 
 export function removeWorktree(baseCwd: string, worktreePath: string): void {
   git(`worktree remove --force ${shellEscape(worktreePath)}`, baseCwd);
 }
-

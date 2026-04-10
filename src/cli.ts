@@ -92,10 +92,7 @@ interface WorktreeRunResult {
   effectiveCwd: string;
 }
 
-function initializeWorktreeRun(
-  prompt: string,
-  cwd: string,
-): WorktreeRunResult {
+function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
   // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
   // main checkout don't carry over, so a dirty tree is harmless here.

@@ -1228,9 +1228,7 @@ describe("cli", () => {
       );
 
       expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Cannot use --worktree from a gnhf branch",
-        ),
+        expect.stringContaining("Cannot use --worktree from a gnhf branch"),
       );
     } finally {
       process.argv = originalArgv;

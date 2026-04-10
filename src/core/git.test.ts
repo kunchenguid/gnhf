@@ -298,5 +298,4 @@ describe("git utilities", () => {
       );
     });
   });
-
 });
