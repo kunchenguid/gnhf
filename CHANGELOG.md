@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.16...gnhf-v0.1.17) (2026-04-10)
+
+
+### Bug Fixes
+
+* **iteration-prompt:** clarify notes.md instructions ([2182240](https://github.com/kunchenguid/gnhf/commit/218224073890831d667850272b4234f6fefc68b8))
+
 ## [0.1.16](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.15...gnhf-v0.1.16) (2026-04-09)
 
 
