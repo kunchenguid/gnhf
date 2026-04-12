@@ -565,7 +565,7 @@ describe("Orchestrator crash resilience", () => {
     expect(abort).not.toHaveBeenCalled();
   });
 
-  it("resets the worktree and rethrows when success recording fails", async () => {
+  it("rethrows success recording failures without resetting the worktree", async () => {
     mockAppendNotes.mockImplementation(() => {
       throw new Error("ENOSPC: no space left on device");
     });
@@ -590,7 +590,7 @@ describe("Orchestrator crash resilience", () => {
       "ENOSPC: no space left on device",
     );
 
-    expect(mockResetHard).toHaveBeenCalledWith("/repo");
+    expect(mockResetHard).not.toHaveBeenCalled();
     expect(orchestrator.getState().status).not.toBe("aborted");
     expect(abort).not.toHaveBeenCalled();
   });
