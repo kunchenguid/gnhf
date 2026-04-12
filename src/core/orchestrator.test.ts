@@ -594,4 +594,29 @@ describe("Orchestrator crash resilience", () => {
     expect(orchestrator.getState().status).not.toBe("aborted");
     expect(abort).not.toHaveBeenCalled();
   });
+
+  it("rethrows observer errors without resetting the worktree", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    orchestrator.on("iteration:end", () => {
+      throw new Error("listener failed");
+    });
+
+    await expect(orchestrator.start()).rejects.toThrow("listener failed");
+
+    expect(mockAppendNotes).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockResetHard).not.toHaveBeenCalled();
+  });
 });

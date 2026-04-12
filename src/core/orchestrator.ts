@@ -291,7 +291,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         iteration: this.state.currentIteration,
         error: serializeError(err),
       });
-      resetHard(this.cwd);
       throw err;
     } finally {
       this.activeIterationPromise = null;
@@ -433,31 +432,36 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   }
 
   private recordSuccess(output: AgentOutput): IterationRecord {
-    appendNotes(
-      this.runInfo.notesPath,
-      this.state.currentIteration,
-      output.summary,
-      toStringArray(output.key_changes_made),
-      toStringArray(output.key_learnings),
-    );
-    commitAll(
-      `gnhf #${this.state.currentIteration}: ${output.summary}`,
-      this.cwd,
-    );
-    this.state.commitCount = getBranchCommitCount(
-      this.runInfo.baseCommit,
-      this.cwd,
-    );
-    this.state.successCount++;
-    this.state.consecutiveFailures = 0;
-    return {
-      number: this.state.currentIteration,
-      success: true,
-      summary: output.summary,
-      keyChanges: toStringArray(output.key_changes_made),
-      keyLearnings: toStringArray(output.key_learnings),
-      timestamp: new Date(),
-    };
+    try {
+      appendNotes(
+        this.runInfo.notesPath,
+        this.state.currentIteration,
+        output.summary,
+        toStringArray(output.key_changes_made),
+        toStringArray(output.key_learnings),
+      );
+      commitAll(
+        `gnhf #${this.state.currentIteration}: ${output.summary}`,
+        this.cwd,
+      );
+      this.state.commitCount = getBranchCommitCount(
+        this.runInfo.baseCommit,
+        this.cwd,
+      );
+      this.state.successCount++;
+      this.state.consecutiveFailures = 0;
+      return {
+        number: this.state.currentIteration,
+        success: true,
+        summary: output.summary,
+        keyChanges: toStringArray(output.key_changes_made),
+        keyLearnings: toStringArray(output.key_learnings),
+        timestamp: new Date(),
+      };
+    } catch (err) {
+      resetHard(this.cwd);
+      throw err;
+    }
   }
 
   private recordFailure(
