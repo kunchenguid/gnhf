@@ -525,7 +525,7 @@ describe("Orchestrator crash resilience", () => {
     mockAppendNotes.mockImplementation(() => {});
   });
 
-  it("aborts gracefully when git reset fails during failure recording", async () => {
+  it("rethrows when git reset fails during failure recording", async () => {
     mockResetHard.mockImplementation(() => {
       throw new Error("not a git repository");
     });
@@ -559,14 +559,13 @@ describe("Orchestrator crash resilience", () => {
     const abort = vi.fn();
     orchestrator.on("abort", abort);
 
-    await orchestrator.start();
+    await expect(orchestrator.start()).rejects.toThrow("not a git repository");
 
-    expect(orchestrator.getState().status).toBe("aborted");
-    expect(abort).toHaveBeenCalled();
-    expect(abort.mock.calls[0][0]).toContain("not a git repository");
+    expect(orchestrator.getState().status).not.toBe("aborted");
+    expect(abort).not.toHaveBeenCalled();
   });
 
-  it("aborts gracefully when file write fails during success recording", async () => {
+  it("resets the worktree and rethrows when success recording fails", async () => {
     mockAppendNotes.mockImplementation(() => {
       throw new Error("ENOSPC: no space left on device");
     });
@@ -587,10 +586,12 @@ describe("Orchestrator crash resilience", () => {
     const abort = vi.fn();
     orchestrator.on("abort", abort);
 
-    await orchestrator.start();
+    await expect(orchestrator.start()).rejects.toThrow(
+      "ENOSPC: no space left on device",
+    );
 
-    expect(orchestrator.getState().status).toBe("aborted");
-    expect(abort).toHaveBeenCalled();
-    expect(abort.mock.calls[0][0]).toContain("ENOSPC");
+    expect(mockResetHard).toHaveBeenCalledWith("/repo");
+    expect(orchestrator.getState().status).not.toBe("aborted");
+    expect(abort).not.toHaveBeenCalled();
   });
 });
