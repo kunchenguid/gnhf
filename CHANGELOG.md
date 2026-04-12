@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.18...gnhf-v0.1.19) (2026-04-12)
+
+
+### Bug Fixes
+
+* **orchestrator:** handle aborts and preserve successful recordings ([#66](https://github.com/kunchenguid/gnhf/issues/66)) ([7ad041d](https://github.com/kunchenguid/gnhf/commit/7ad041ddabdd70cf18e1a20e2ed917e7372bc2da))
+
 ## [0.1.18](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.17...gnhf-v0.1.18) (2026-04-10)
 
 
