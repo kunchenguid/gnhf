@@ -286,6 +286,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           }
         }
       }
+    } catch (err) {
+      appendDebugLog("orchestrator:loop-error", {
+        iteration: this.state.currentIteration,
+        error: serializeError(err),
+      });
+      throw err;
     } finally {
       this.activeIterationPromise = null;
       if (this.stopPromise) {
