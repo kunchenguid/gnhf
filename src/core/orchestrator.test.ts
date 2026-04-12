@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("./git.js", () => ({
   commitAll: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
   buildIterationPrompt: vi.fn(() => "iteration prompt"),
 }));
 
-import { commitAll } from "./git.js";
+import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { Orchestrator } from "./orchestrator.js";
 import type { Agent, AgentResult } from "./agents/types.js";
@@ -39,6 +39,7 @@ import type { RunInfo } from "./run.js";
 
 const mockCommitAll = vi.mocked(commitAll);
 const mockAppendNotes = vi.mocked(appendNotes);
+const mockResetHard = vi.mocked(resetHard);
 
 const config: Config = {
   agent: "claude",
@@ -510,5 +511,86 @@ describe("Orchestrator stop limits", () => {
     expect(orchestrator.getState().iterations).toEqual([]);
     expect(orchestrator.getState().status).toBe("stopped");
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Orchestrator crash resilience", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    mockResetHard.mockImplementation(() => {});
+    mockAppendNotes.mockImplementation(() => {});
+  });
+
+  it("aborts gracefully when git reset fails during failure recording", async () => {
+    mockResetHard.mockImplementation(() => {
+      throw new Error("not a git repository");
+    });
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        output: {
+          success: false,
+          summary: "iteration failed",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+        usage: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      })),
+    };
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(orchestrator.getState().status).toBe("aborted");
+    expect(abort).toHaveBeenCalled();
+    expect(abort.mock.calls[0][0]).toContain("not a git repository");
+  });
+
+  it("aborts gracefully when file write fails during success recording", async () => {
+    mockAppendNotes.mockImplementation(() => {
+      throw new Error("ENOSPC: no space left on device");
+    });
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(orchestrator.getState().status).toBe("aborted");
+    expect(abort).toHaveBeenCalled();
+    expect(abort.mock.calls[0][0]).toContain("ENOSPC");
   });
 });

@@ -177,113 +177,122 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
     try {
       while (!this.stopRequested) {
-        const preIterationAbortReason = this.getPreIterationAbortReason();
-        if (preIterationAbortReason) {
-          this.abort(preIterationAbortReason);
-          break;
-        }
+        try {
+          const preIterationAbortReason = this.getPreIterationAbortReason();
+          if (preIterationAbortReason) {
+            this.abort(preIterationAbortReason);
+            break;
+          }
 
-        this.state.currentIteration++;
-        this.state.status = "running";
-        this.emit("iteration:start", this.state.currentIteration);
-        this.emit("state", this.getState());
-
-        const iterationPrompt = buildIterationPrompt({
-          n: this.state.currentIteration,
-          runId: this.runInfo.runId,
-          prompt: this.prompt,
-        });
-
-        appendDebugLog("iteration:start", {
-          iteration: this.state.currentIteration,
-          promptLength: iterationPrompt.length,
-          consecutiveFailures: this.state.consecutiveFailures,
-          totalInputTokens: this.state.totalInputTokens,
-          totalOutputTokens: this.state.totalOutputTokens,
-          git: this.snapshotGitState(),
-        });
-
-        const iterationStartedAt = Date.now();
-        this.activeIterationPromise = this.runIteration(iterationPrompt);
-        const result = await this.activeIterationPromise;
-        this.activeIterationPromise = null;
-        const iterationElapsedMs = Date.now() - iterationStartedAt;
-
-        if (result.type === "stopped") {
-          appendDebugLog("iteration:stopped", {
-            iteration: this.state.currentIteration,
-            elapsedMs: iterationElapsedMs,
-          });
-          break;
-        }
-        if (result.type === "aborted") {
-          appendDebugLog("iteration:aborted", {
-            iteration: this.state.currentIteration,
-            elapsedMs: iterationElapsedMs,
-            reason: result.reason,
-          });
-          this.abort(result.reason);
-          break;
-        }
-
-        const { record } = result;
-        this.state.iterations.push(record);
-        this.emit("iteration:end", record);
-        this.emit("state", this.getState());
-
-        appendDebugLog("iteration:end", {
-          iteration: record.number,
-          elapsedMs: iterationElapsedMs,
-          success: record.success,
-          summary: record.summary,
-          keyChanges: record.keyChanges.length,
-          keyLearnings: record.keyLearnings.length,
-          consecutiveFailures: this.state.consecutiveFailures,
-          totalInputTokens: this.state.totalInputTokens,
-          totalOutputTokens: this.state.totalOutputTokens,
-          commitCount: this.state.commitCount,
-        });
-
-        const postIterationAbortReason = this.getPostIterationAbortReason();
-        if (postIterationAbortReason) {
-          this.abort(postIterationAbortReason);
-          break;
-        }
-
-        if (
-          this.state.consecutiveFailures >= this.config.maxConsecutiveFailures
-        ) {
-          this.abort(
-            `${this.config.maxConsecutiveFailures} consecutive failures`,
-          );
-          break;
-        }
-
-        if (this.state.consecutiveFailures > 0 && !this.stopRequested) {
-          const backoffMs =
-            60_000 * Math.pow(2, this.state.consecutiveFailures - 1);
-          this.state.status = "waiting";
-          this.state.waitingUntil = new Date(Date.now() + backoffMs);
+          this.state.currentIteration++;
+          this.state.status = "running";
+          this.emit("iteration:start", this.state.currentIteration);
           this.emit("state", this.getState());
 
-          appendDebugLog("backoff:start", {
+          const iterationPrompt = buildIterationPrompt({
+            n: this.state.currentIteration,
+            runId: this.runInfo.runId,
+            prompt: this.prompt,
+          });
+
+          appendDebugLog("iteration:start", {
             iteration: this.state.currentIteration,
+            promptLength: iterationPrompt.length,
             consecutiveFailures: this.state.consecutiveFailures,
-            backoffMs,
+            totalInputTokens: this.state.totalInputTokens,
+            totalOutputTokens: this.state.totalOutputTokens,
+            git: this.snapshotGitState(),
           });
 
-          await this.interruptibleSleep(backoffMs);
+          const iterationStartedAt = Date.now();
+          this.activeIterationPromise = this.runIteration(iterationPrompt);
+          const result = await this.activeIterationPromise;
+          this.activeIterationPromise = null;
+          const iterationElapsedMs = Date.now() - iterationStartedAt;
 
-          appendDebugLog("backoff:end", {
-            iteration: this.state.currentIteration,
-            stopRequested: this.stopRequested,
-          });
-
-          this.state.waitingUntil = null;
-          if (!this.stopRequested) {
-            this.state.status = "running";
-            this.emit("state", this.getState());
+          if (result.type === "stopped") {
+            appendDebugLog("iteration:stopped", {
+              iteration: this.state.currentIteration,
+              elapsedMs: iterationElapsedMs,
+            });
+            break;
           }
+          if (result.type === "aborted") {
+            appendDebugLog("iteration:aborted", {
+              iteration: this.state.currentIteration,
+              elapsedMs: iterationElapsedMs,
+              reason: result.reason,
+            });
+            this.abort(result.reason);
+            break;
+          }
+
+          const { record } = result;
+          this.state.iterations.push(record);
+          this.emit("iteration:end", record);
+          this.emit("state", this.getState());
+
+          appendDebugLog("iteration:end", {
+            iteration: record.number,
+            elapsedMs: iterationElapsedMs,
+            success: record.success,
+            summary: record.summary,
+            keyChanges: record.keyChanges.length,
+            keyLearnings: record.keyLearnings.length,
+            consecutiveFailures: this.state.consecutiveFailures,
+            totalInputTokens: this.state.totalInputTokens,
+            totalOutputTokens: this.state.totalOutputTokens,
+            commitCount: this.state.commitCount,
+          });
+
+          const postIterationAbortReason = this.getPostIterationAbortReason();
+          if (postIterationAbortReason) {
+            this.abort(postIterationAbortReason);
+            break;
+          }
+
+          if (
+            this.state.consecutiveFailures >= this.config.maxConsecutiveFailures
+          ) {
+            this.abort(
+              `${this.config.maxConsecutiveFailures} consecutive failures`,
+            );
+            break;
+          }
+
+          if (this.state.consecutiveFailures > 0 && !this.stopRequested) {
+            const backoffMs =
+              60_000 * Math.pow(2, this.state.consecutiveFailures - 1);
+            this.state.status = "waiting";
+            this.state.waitingUntil = new Date(Date.now() + backoffMs);
+            this.emit("state", this.getState());
+
+            appendDebugLog("backoff:start", {
+              iteration: this.state.currentIteration,
+              consecutiveFailures: this.state.consecutiveFailures,
+              backoffMs,
+            });
+
+            await this.interruptibleSleep(backoffMs);
+
+            appendDebugLog("backoff:end", {
+              iteration: this.state.currentIteration,
+              stopRequested: this.stopRequested,
+            });
+
+            this.state.waitingUntil = null;
+            if (!this.stopRequested) {
+              this.state.status = "running";
+              this.emit("state", this.getState());
+            }
+          }
+        } catch (err) {
+          appendDebugLog("orchestrator:loop-error", {
+            iteration: this.state.currentIteration,
+            error: serializeError(err),
+          });
+          this.abort(err instanceof Error ? err.message : String(err));
+          break;
         }
       }
     } finally {
