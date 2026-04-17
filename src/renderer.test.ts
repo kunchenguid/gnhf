@@ -708,7 +708,7 @@ describe("Renderer terminal title", () => {
     return output
       .split(titlePrefix)
       .slice(1)
-      .map((segment) => segment.split(bell, 1)[0] ?? "");
+      .map((segment: string) => segment.split(bell, 1)[0] ?? "");
   }
 
   function extractTitleStackOps(
@@ -720,8 +720,8 @@ describe("Renderer terminal title", () => {
     return output
       .split(titleStackPrefix)
       .slice(1)
-      .map((segment) => segment.split(titleStackSuffix, 1)[0] ?? "")
-      .filter((segment) => segment === "22" || segment === "23");
+      .map((segment: string) => segment.split(titleStackSuffix, 1)[0] ?? "")
+      .filter((segment: string) => segment === "22" || segment === "23");
   }
 
   const baseState: OrchestratorState = {
