@@ -137,11 +137,23 @@ function toTokenUsage(usage: {
   };
 }
 
-function getAnonymousAssistantFingerprint(message: Record<string, unknown>): string {
-  return JSON.stringify({
-    usage: message.usage,
-    content: message.content,
-  });
+function isSameUsage(a: TokenUsage, b: TokenUsage): boolean {
+  return (
+    a.inputTokens === b.inputTokens &&
+    a.outputTokens === b.outputTokens &&
+    a.cacheReadTokens === b.cacheReadTokens &&
+    a.cacheCreationTokens === b.cacheCreationTokens
+  );
+}
+
+function extendsUsage(next: TokenUsage, previous: TokenUsage): boolean {
+  return (
+    next.inputTokens >= previous.inputTokens &&
+    next.outputTokens >= previous.outputTokens &&
+    next.cacheReadTokens >= previous.cacheReadTokens &&
+    next.cacheCreationTokens >= previous.cacheCreationTokens &&
+    !isSameUsage(next, previous)
+  );
 }
 
 export class ClaudeAgent implements Agent {
@@ -192,30 +204,59 @@ export class ClaudeAgent implements Agent {
       };
       const usageByMessageId = new Map<string, TokenUsage>();
       let anonymousAssistantCount = 0;
-      let lastAnonymousAssistantFingerprint: string | null = null;
       let lastAnonymousAssistantId: string | null = null;
+      let lastAnonymousAssistantUsage: TokenUsage | null = null;
+      let pendingAnonymousAssistantUsage: TokenUsage | null = null;
 
       parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
         if (event.type === "assistant") {
           const msg = (event as ClaudeAssistantEvent).message;
-          const anonymousFingerprint = msg.id
-            ? null
-            : getAnonymousAssistantFingerprint(msg as Record<string, unknown>);
-          const messageId = msg.id
-            ? msg.id
-            : anonymousFingerprint === lastAnonymousAssistantFingerprint &&
-                lastAnonymousAssistantId
-              ? lastAnonymousAssistantId
-              : `assistant-${anonymousAssistantCount++}`;
           const nextUsage = toTokenUsage(msg.usage);
-          const previousUsage = usageByMessageId.get(messageId);
+          let messageId = msg.id;
+          let previousUsage: TokenUsage | undefined;
 
-          if (anonymousFingerprint) {
-            lastAnonymousAssistantFingerprint = anonymousFingerprint;
-            lastAnonymousAssistantId = messageId;
-          } else {
-            lastAnonymousAssistantFingerprint = null;
+          if (messageId) {
+            previousUsage = usageByMessageId.get(messageId);
             lastAnonymousAssistantId = null;
+            lastAnonymousAssistantUsage = null;
+            pendingAnonymousAssistantUsage = null;
+          } else if (
+            pendingAnonymousAssistantUsage &&
+            extendsUsage(nextUsage, pendingAnonymousAssistantUsage)
+          ) {
+            messageId = `assistant-${anonymousAssistantCount++}`;
+            previousUsage = pendingAnonymousAssistantUsage;
+            cumulative.inputTokens += pendingAnonymousAssistantUsage.inputTokens;
+            cumulative.outputTokens += pendingAnonymousAssistantUsage.outputTokens;
+            cumulative.cacheReadTokens += pendingAnonymousAssistantUsage.cacheReadTokens;
+            cumulative.cacheCreationTokens +=
+              pendingAnonymousAssistantUsage.cacheCreationTokens;
+            usageByMessageId.set(messageId, pendingAnonymousAssistantUsage);
+            pendingAnonymousAssistantUsage = null;
+            lastAnonymousAssistantId = messageId;
+            lastAnonymousAssistantUsage = nextUsage;
+          } else if (
+            lastAnonymousAssistantId &&
+            lastAnonymousAssistantUsage &&
+            extendsUsage(nextUsage, lastAnonymousAssistantUsage)
+          ) {
+            messageId = lastAnonymousAssistantId;
+            previousUsage = usageByMessageId.get(messageId);
+            pendingAnonymousAssistantUsage = null;
+            lastAnonymousAssistantUsage = nextUsage;
+          } else if (
+            lastAnonymousAssistantId &&
+            lastAnonymousAssistantUsage &&
+            isSameUsage(nextUsage, lastAnonymousAssistantUsage)
+          ) {
+            messageId = lastAnonymousAssistantId;
+            previousUsage = usageByMessageId.get(messageId);
+            pendingAnonymousAssistantUsage ??= nextUsage;
+          } else {
+            messageId = `assistant-${anonymousAssistantCount++}`;
+            pendingAnonymousAssistantUsage = null;
+            lastAnonymousAssistantId = messageId;
+            lastAnonymousAssistantUsage = nextUsage;
           }
 
           if (previousUsage) {
