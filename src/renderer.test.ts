@@ -675,3 +675,112 @@ describe("Renderer ctrl+c", () => {
     }
   });
 });
+
+describe("Renderer terminal title", () => {
+  function extractTerminalTitles(
+    stdoutWrite: ReturnType<typeof vi.spyOn>,
+  ): string[] {
+    const output = stdoutWrite.mock.calls
+      .map((args: unknown[]) => String(args[0]))
+      .join("");
+    return Array.from(
+      output.matchAll(/\x1b\]2;([^\x07]*)\x07/g) as Iterable<RegExpMatchArray>,
+      (match) => match[1] ?? "",
+    );
+  }
+
+  const baseState: OrchestratorState = {
+    status: "running",
+    currentIteration: 1,
+    totalInputTokens: 12_400,
+    totalOutputTokens: 8_200,
+    commitCount: 12,
+    iterations: [createIteration()],
+    successCount: 1,
+    failCount: 0,
+    consecutiveFailures: 0,
+    startTime: new Date("2026-01-01T00:00:00Z"),
+    waitingUntil: null,
+    lastMessage: "reading files",
+  };
+
+  it("writes a running title with the active moon and counters", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+
+      const titles = extractTerminalTitles(stdoutWrite);
+      expect(titles.at(-1)).toMatch(
+        /^gnhf [🌑🌒🌓🌔🌕🌖🌗🌘] · 12K in · 8K out · 12 commits$/u,
+      );
+
+      renderer.stop();
+    } finally {
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("updates the title when the run stops", async () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      stdoutWrite.mockClear();
+
+      state.status = "stopped";
+      orchestrator.emit("state", {
+        ...state,
+        iterations: [...state.iterations],
+      });
+      orchestrator.emit("stopped");
+
+      await expect(renderer.waitUntilExit()).resolves.toBe("stopped");
+
+      const titles = extractTerminalTitles(stdoutWrite);
+      expect(titles.at(-1)).toBe("gnhf stopped · 12K in · 8K out · 12 commits");
+    } finally {
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+    }
+  });
+});

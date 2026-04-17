@@ -44,6 +44,24 @@ function spacedLabel(text: string): string {
   return text.split("").join(" ");
 }
 
+function buildTerminalTitle(state: OrchestratorState, now: number): string {
+  const commitLabel = state.commitCount === 1 ? "commit" : "commits";
+  const lead =
+    state.status === "running" || state.status === "waiting"
+      ? getMoonPhase("active", now, MOON_PHASE_PERIOD)
+      : state.status;
+  return (
+    `gnhf ${lead}` +
+    ` · ${formatTokens(state.totalInputTokens)} in` +
+    ` · ${formatTokens(state.totalOutputTokens)} out` +
+    ` · ${state.commitCount} ${commitLabel}`
+  );
+}
+
+function emitTerminalTitle(title: string): string {
+  return `\x1b]2;${title}\x07`;
+}
+
 export function renderTitleCells(agentName?: string): Cell[][] {
   const eyebrow: Cell[] = [
     ...textToCells(spacedLabel("gnhf"), "dim"),
@@ -508,6 +526,7 @@ export class Renderer {
   private cachedWidth = 0;
   private cachedHeight = 0;
   private prevCells: Cell[][] = [];
+  private prevTitle: string | null = null;
   private isFirstFrame = true;
   private seedTop: number;
   private seedBottom: number;
@@ -529,6 +548,7 @@ export class Renderer {
   start(): void {
     this.orchestrator.on("state", (newState) => {
       this.state = { ...newState, iterations: [...newState.iterations] };
+      this.updateTerminalTitle();
     });
 
     this.orchestrator.on("stopped", () => {
@@ -609,6 +629,8 @@ export class Renderer {
     const h = process.stdout.rows || 24;
     const resized = this.ensureStarFields(w, h);
 
+    this.updateTerminalTitle(now);
+
     const nextCells = buildFrameCells(
       this.prompt,
       this.agentName,
@@ -632,5 +654,14 @@ export class Renderer {
     }
 
     this.prevCells = nextCells;
+  }
+
+  private updateTerminalTitle(now = Date.now()): void {
+    const nextTitle = buildTerminalTitle(this.state, now);
+    if (nextTitle === this.prevTitle) {
+      return;
+    }
+    process.stdout.write(emitTerminalTitle(nextTitle));
+    this.prevTitle = nextTitle;
   }
 }
