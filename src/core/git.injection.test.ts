@@ -71,13 +71,14 @@ describe("git shell injection regression", () => {
     expect(subject).toBe(message);
   });
 
-  it("createBranch rejects branch names that contain shell metacharacters via git's own validation", () => {
+  it("createBranch treats shell metacharacters in a valid branch name as inert text", () => {
     const repo = makeRepo();
     repos.push(repo);
+    const injected = `evil\`touch\${IFS}${marker}\``;
 
-    expect(() =>
-      createBranch(`evil\`touch ${marker}\``, repo),
-    ).toThrow();
+    createBranch(injected, repo);
+
     expect(existsSync(marker)).toBe(false);
+    expect(rawGit(["branch", "--show-current"], repo)).toBe(injected);
   });
 });
