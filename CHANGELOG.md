@@ -2,153 +2,134 @@
 
 ## [0.1.19](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.18...gnhf-v0.1.19) (2026-04-12)
 
-
 ### Bug Fixes
 
-* **orchestrator:** handle aborts and preserve successful recordings ([#66](https://github.com/kunchenguid/gnhf/issues/66)) ([7ad041d](https://github.com/kunchenguid/gnhf/commit/7ad041ddabdd70cf18e1a20e2ed917e7372bc2da))
+- **orchestrator:** handle aborts and preserve successful recordings ([#66](https://github.com/kunchenguid/gnhf/issues/66)) ([7ad041d](https://github.com/kunchenguid/gnhf/commit/7ad041ddabdd70cf18e1a20e2ed917e7372bc2da))
 
 ## [0.1.18](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.17...gnhf-v0.1.18) (2026-04-10)
 
-
 ### Features
 
-* git worktree support so that it can support multiple features to one git repository ([#63](https://github.com/kunchenguid/gnhf/issues/63)) ([bf9e3d8](https://github.com/kunchenguid/gnhf/commit/bf9e3d86899e6f3c6421605566849d110b55c1db))
+- git worktree support so that it can support multiple features to one git repository ([#63](https://github.com/kunchenguid/gnhf/issues/63)) ([bf9e3d8](https://github.com/kunchenguid/gnhf/commit/bf9e3d86899e6f3c6421605566849d110b55c1db))
 
 ## [0.1.17](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.16...gnhf-v0.1.17) (2026-04-10)
 
-
 ### Bug Fixes
 
-* **iteration-prompt:** clarify notes.md instructions ([2182240](https://github.com/kunchenguid/gnhf/commit/218224073890831d667850272b4234f6fefc68b8))
+- **iteration-prompt:** clarify notes.md instructions ([2182240](https://github.com/kunchenguid/gnhf/commit/218224073890831d667850272b4234f6fefc68b8))
 
 ## [0.1.16](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.15...gnhf-v0.1.16) (2026-04-09)
 
-
 ### Features
 
-* **codex:** allow per-agent cli arg overrides ([#58](https://github.com/kunchenguid/gnhf/issues/58)) ([4c1731e](https://github.com/kunchenguid/gnhf/commit/4c1731e0f1fc321d3ac63818bffe6dd245ed3dbe))
+- **codex:** allow per-agent cli arg overrides ([#58](https://github.com/kunchenguid/gnhf/issues/58)) ([4c1731e](https://github.com/kunchenguid/gnhf/commit/4c1731e0f1fc321d3ac63818bffe6dd245ed3dbe))
 
 ## [0.1.15](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.14...gnhf-v0.1.15) (2026-04-08)
 
-
 ### Bug Fixes
 
-* Normalize changes and learnings to avoid JSON schema non-adherence to break the notes.md file ([#59](https://github.com/kunchenguid/gnhf/issues/59)) ([3b1427b](https://github.com/kunchenguid/gnhf/commit/3b1427b8eeaac7463da95c358e4bf8a510542772))
+- Normalize changes and learnings to avoid JSON schema non-adherence to break the notes.md file ([#59](https://github.com/kunchenguid/gnhf/issues/59)) ([3b1427b](https://github.com/kunchenguid/gnhf/commit/3b1427b8eeaac7463da95c358e4bf8a510542772))
 
 ## [0.1.14](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.13...gnhf-v0.1.14) (2026-04-07)
 
-
 ### Features
 
-* **agents:** use prompt_async endpoint instead of blocking /message ([#56](https://github.com/kunchenguid/gnhf/issues/56)) ([ef5d6d3](https://github.com/kunchenguid/gnhf/commit/ef5d6d3c8c6634abccaebd28db59086cb294f8ee))
+- **agents:** use prompt_async endpoint instead of blocking /message ([#56](https://github.com/kunchenguid/gnhf/issues/56)) ([ef5d6d3](https://github.com/kunchenguid/gnhf/commit/ef5d6d3c8c6634abccaebd28db59086cb294f8ee))
 
 ## [0.1.13](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.12...gnhf-v0.1.13) (2026-04-06)
 
-
 ### Features
 
-* **core:** add detailed error logging ([#54](https://github.com/kunchenguid/gnhf/issues/54)) ([84eaa15](https://github.com/kunchenguid/gnhf/commit/84eaa15e740d35e81508a4dce91405656eb34ff3))
+- **core:** add detailed error logging ([#54](https://github.com/kunchenguid/gnhf/issues/54)) ([84eaa15](https://github.com/kunchenguid/gnhf/commit/84eaa15e740d35e81508a4dce91405656eb34ff3))
 
 ## [0.1.12](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.11...gnhf-v0.1.12) (2026-04-05)
 
-
 ### Bug Fixes
 
-* **cli:** clarify loop prompts and abort UI ([#26](https://github.com/kunchenguid/gnhf/issues/26)) ([90022c1](https://github.com/kunchenguid/gnhf/commit/90022c1df1d0456d67255c6d36dec968ffa9e943))
+- **cli:** clarify loop prompts and abort UI ([#26](https://github.com/kunchenguid/gnhf/issues/26)) ([90022c1](https://github.com/kunchenguid/gnhf/commit/90022c1df1d0456d67255c6d36dec968ffa9e943))
 
 ## [0.1.11](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.10...gnhf-v0.1.11) (2026-04-04)
 
-
 ### Features
 
-* **config:** add agent path overrides ([#24](https://github.com/kunchenguid/gnhf/issues/24)) ([c8a71c6](https://github.com/kunchenguid/gnhf/commit/c8a71c61019fd4795dabe3e5bdda4e7a44771855))
+- **config:** add agent path overrides ([#24](https://github.com/kunchenguid/gnhf/issues/24)) ([c8a71c6](https://github.com/kunchenguid/gnhf/commit/c8a71c61019fd4795dabe3e5bdda4e7a44771855))
 
 ## [0.1.10](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.9...gnhf-v0.1.10) (2026-04-03)
 
-
 ### Features
 
-* **renderer:** adapt content to viewport ([#20](https://github.com/kunchenguid/gnhf/issues/20)) ([592d80b](https://github.com/kunchenguid/gnhf/commit/592d80b6d9befb9a38f44cc19346e736c01a5220))
-* **renderer:** randomize star field seeds ([#22](https://github.com/kunchenguid/gnhf/issues/22)) ([e658f32](https://github.com/kunchenguid/gnhf/commit/e658f32004bc54b66ef3c23fec85857f1132fece))
+- **renderer:** adapt content to viewport ([#20](https://github.com/kunchenguid/gnhf/issues/20)) ([592d80b](https://github.com/kunchenguid/gnhf/commit/592d80b6d9befb9a38f44cc19346e736c01a5220))
+- **renderer:** randomize star field seeds ([#22](https://github.com/kunchenguid/gnhf/issues/22)) ([e658f32](https://github.com/kunchenguid/gnhf/commit/e658f32004bc54b66ef3c23fec85857f1132fece))
 
 ## [Unreleased]
 
 ### Features
 
-* **config:** allow per-agent binary path overrides
-* **renderer:** randomize star field seeds between runs
+- **config:** allow per-agent binary path overrides
+- **renderer:** randomize star field seeds between runs
 
 ### Bug Fixes
 
-* **agents:** support Windows cmd/bat agent wrappers and terminate overridden agent processes cleanly
-* **cli:** keep the final interactive TUI visible after aborted runs until the user exits
-* **renderer:** keep wide Unicode graphemes wrapped and aligned in the live terminal UI
+- **agents:** support Windows cmd/bat agent wrappers and terminate overridden agent processes cleanly
+- **cli:** keep the final interactive TUI visible after aborted runs until the user exits
+- **core:** harden git command execution so commit messages, branch names, and worktree paths are passed without shell interpretation
+- **renderer:** keep wide Unicode graphemes wrapped and aligned in the live terminal UI
 
 ## [0.1.9](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.8...gnhf-v0.1.9) (2026-04-03)
 
-
 ### Features
 
-* **sleep:** prevent system sleep during runs ([#17](https://github.com/kunchenguid/gnhf/issues/17)) ([091d9d3](https://github.com/kunchenguid/gnhf/commit/091d9d31b80a4c1b3c01fd7e65009ad86d864ec1))
+- **sleep:** prevent system sleep during runs ([#17](https://github.com/kunchenguid/gnhf/issues/17)) ([091d9d3](https://github.com/kunchenguid/gnhf/commit/091d9d31b80a4c1b3c01fd7e65009ad86d864ec1))
 
 ## [0.1.8](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.7...gnhf-v0.1.8) (2026-04-02)
 
-
 ### Bug Fixes
 
-* **schema:** enforce strict output schema ([#14](https://github.com/kunchenguid/gnhf/issues/14)) ([085aef7](https://github.com/kunchenguid/gnhf/commit/085aef74ba647a582aa280697213790abfa49cfa))
+- **schema:** enforce strict output schema ([#14](https://github.com/kunchenguid/gnhf/issues/14)) ([085aef7](https://github.com/kunchenguid/gnhf/commit/085aef74ba647a582aa280697213790abfa49cfa))
 
 ## [0.1.7](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.6...gnhf-v0.1.7) (2026-04-01)
 
-
 ### Features
 
-* add RovoDev agent support ([#11](https://github.com/kunchenguid/gnhf/issues/11)) ([484d989](https://github.com/kunchenguid/gnhf/commit/484d989a632aebef27b4592f96ffd7fd4f25fde0))
-* **opencode:** add OpenCode agent integration ([#13](https://github.com/kunchenguid/gnhf/issues/13)) ([aa9a2a5](https://github.com/kunchenguid/gnhf/commit/aa9a2a5cecbfe95abe6830dff40750aa03ee0423))
+- add RovoDev agent support ([#11](https://github.com/kunchenguid/gnhf/issues/11)) ([484d989](https://github.com/kunchenguid/gnhf/commit/484d989a632aebef27b4592f96ffd7fd4f25fde0))
+- **opencode:** add OpenCode agent integration ([#13](https://github.com/kunchenguid/gnhf/issues/13)) ([aa9a2a5](https://github.com/kunchenguid/gnhf/commit/aa9a2a5cecbfe95abe6830dff40750aa03ee0423))
 
 ## [0.1.6](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.5...gnhf-v0.1.6) (2026-04-01)
 
-
 ### Features
 
-* **cli:** add iteration and token caps ([#9](https://github.com/kunchenguid/gnhf/issues/9)) ([b92e9ac](https://github.com/kunchenguid/gnhf/commit/b92e9aca196647b19c854b722551e401c4ce72a7))
+- **cli:** add iteration and token caps ([#9](https://github.com/kunchenguid/gnhf/issues/9)) ([b92e9ac](https://github.com/kunchenguid/gnhf/commit/b92e9aca196647b19c854b722551e401c4ce72a7))
 
 ## [0.1.5](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.4...gnhf-v0.1.5) (2026-04-01)
 
-
 ### Bug Fixes
 
-* **cli:** show friendly non-git error ([#7](https://github.com/kunchenguid/gnhf/issues/7)) ([65acf6b](https://github.com/kunchenguid/gnhf/commit/65acf6be343b805b99a6011d1562ac54b05b6760))
+- **cli:** show friendly non-git error ([#7](https://github.com/kunchenguid/gnhf/issues/7)) ([65acf6b](https://github.com/kunchenguid/gnhf/commit/65acf6be343b805b99a6011d1562ac54b05b6760))
 
 ## [0.1.4](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.3...gnhf-v0.1.4) (2026-04-01)
 
-
 ### Features
 
-* **core:** track branch commits from run base ([#5](https://github.com/kunchenguid/gnhf/issues/5)) ([dce09e6](https://github.com/kunchenguid/gnhf/commit/dce09e6a0a47644a174428c7a29b6e19f189486b))
+- **core:** track branch commits from run base ([#5](https://github.com/kunchenguid/gnhf/issues/5)) ([dce09e6](https://github.com/kunchenguid/gnhf/commit/dce09e6a0a47644a174428c7a29b6e19f189486b))
 
 ## [0.1.3](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.2...gnhf-v0.1.3) (2026-03-31)
 
-
 ### Bug Fixes
 
-* **cli:** correct version flag ([a1203ca](https://github.com/kunchenguid/gnhf/commit/a1203caf8a6fbb794b8a954b4acdf79ebba2ebd8))
+- **cli:** correct version flag ([a1203ca](https://github.com/kunchenguid/gnhf/commit/a1203caf8a6fbb794b8a954b4acdf79ebba2ebd8))
 
 ## [0.1.2](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.1...gnhf-v0.1.2) (2026-03-31)
 
-
 ### Bug Fixes
 
-* repo field in package json ([d635f42](https://github.com/kunchenguid/gnhf/commit/d635f42286f2a2904752d3d06319e2950d992934))
+- repo field in package json ([d635f42](https://github.com/kunchenguid/gnhf/commit/d635f42286f2a2904752d3d06319e2950d992934))
 
 ## [0.1.1](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.0...gnhf-v0.1.1) (2026-03-31)
 
-
 ### Features
 
-* initial commit ([c8ae6d2](https://github.com/kunchenguid/gnhf/commit/c8ae6d21f4cf0b493386c00bdaa023b947d02451))
-
+- initial commit ([c8ae6d2](https://github.com/kunchenguid/gnhf/commit/c8ae6d21f4cf0b493386c00bdaa023b947d02451))
 
 ### Bug Fixes
 
-* update README and lower maxConsecutiveFailures to 3 ([ad8925b](https://github.com/kunchenguid/gnhf/commit/ad8925b93e80e62af615eff7fc56e8399cdee4b8))
+- update README and lower maxConsecutiveFailures to 3 ([ad8925b](https://github.com/kunchenguid/gnhf/commit/ad8925b93e80e62af615eff7fc56e8399cdee4b8))
