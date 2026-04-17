@@ -17,6 +17,7 @@ import {
 interface ClaudeAssistantEvent {
   type: "assistant";
   message: {
+    id?: string;
     usage: {
       input_tokens: number;
       output_tokens: number;
@@ -121,6 +122,21 @@ function buildClaudeArgs(prompt: string, extraArgs?: string[]): string[] {
   ];
 }
 
+function toTokenUsage(usage: {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}): TokenUsage {
+  return {
+    inputTokens:
+      (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0),
+    outputTokens: usage.output_tokens ?? 0,
+    cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+    cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+  };
+}
+
 export class ClaudeAgent implements Agent {
   name = "claude";
 
@@ -167,17 +183,33 @@ export class ClaudeAgent implements Agent {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       };
+      const usageByMessageId = new Map<string, TokenUsage>();
+      let anonymousAssistantCount = 0;
 
       parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
         if (event.type === "assistant") {
           const msg = (event as ClaudeAssistantEvent).message;
-          cumulative.inputTokens +=
-            (msg.usage.input_tokens ?? 0) +
-            (msg.usage.cache_read_input_tokens ?? 0);
-          cumulative.outputTokens += msg.usage.output_tokens ?? 0;
-          cumulative.cacheReadTokens += msg.usage.cache_read_input_tokens ?? 0;
-          cumulative.cacheCreationTokens +=
-            msg.usage.cache_creation_input_tokens ?? 0;
+          const messageId = msg.id ?? `assistant-${anonymousAssistantCount++}`;
+          const nextUsage = toTokenUsage(msg.usage);
+          const previousUsage = usageByMessageId.get(messageId);
+
+          if (previousUsage) {
+            cumulative.inputTokens +=
+              nextUsage.inputTokens - previousUsage.inputTokens;
+            cumulative.outputTokens +=
+              nextUsage.outputTokens - previousUsage.outputTokens;
+            cumulative.cacheReadTokens +=
+              nextUsage.cacheReadTokens - previousUsage.cacheReadTokens;
+            cumulative.cacheCreationTokens +=
+              nextUsage.cacheCreationTokens - previousUsage.cacheCreationTokens;
+          } else {
+            cumulative.inputTokens += nextUsage.inputTokens;
+            cumulative.outputTokens += nextUsage.outputTokens;
+            cumulative.cacheReadTokens += nextUsage.cacheReadTokens;
+            cumulative.cacheCreationTokens += nextUsage.cacheCreationTokens;
+          }
+
+          usageByMessageId.set(messageId, nextUsage);
           onUsage?.({ ...cumulative });
 
           if (onMessage) {
@@ -220,15 +252,7 @@ export class ClaudeAgent implements Agent {
         }
 
         const output: AgentOutput = resultEvent.structured_output;
-        const usage: TokenUsage = {
-          inputTokens:
-            (resultEvent.usage.input_tokens ?? 0) +
-            (resultEvent.usage.cache_read_input_tokens ?? 0),
-          outputTokens: resultEvent.usage.output_tokens ?? 0,
-          cacheReadTokens: resultEvent.usage.cache_read_input_tokens ?? 0,
-          cacheCreationTokens:
-            resultEvent.usage.cache_creation_input_tokens ?? 0,
-        };
+        const usage = toTokenUsage(resultEvent.usage);
 
         onUsage?.(usage);
         resolve({ output, usage });
