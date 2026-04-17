@@ -401,6 +401,95 @@ describe("ClaudeAgent", () => {
     });
   });
 
+  it("does not double count repeated assistant events without a message id", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+
+    const promise = agent.run("prompt", "/cwd", { onUsage });
+
+    emitLine(proc, {
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 10,
+          cache_creation_input_tokens: 3,
+        },
+      },
+    });
+
+    emitLine(proc, {
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 10,
+          cache_creation_input_tokens: 3,
+        },
+      },
+    });
+
+    emitLine(proc, {
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 1,
+          output_tokens: 3,
+          cache_read_input_tokens: 20,
+          cache_creation_input_tokens: 1,
+        },
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      usage: {
+        input_tokens: 7,
+        cache_read_input_tokens: 30,
+        cache_creation_input_tokens: 4,
+        output_tokens: 20,
+      },
+      structured_output: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+
+    proc.emit("close", 0);
+    await promise;
+
+    expect(onUsage).toHaveBeenNthCalledWith(1, {
+      inputTokens: 16,
+      outputTokens: 8,
+      cacheReadTokens: 10,
+      cacheCreationTokens: 3,
+    });
+    expect(onUsage).toHaveBeenNthCalledWith(2, {
+      inputTokens: 16,
+      outputTokens: 8,
+      cacheReadTokens: 10,
+      cacheCreationTokens: 3,
+    });
+    expect(onUsage).toHaveBeenNthCalledWith(3, {
+      inputTokens: 37,
+      outputTokens: 11,
+      cacheReadTokens: 30,
+      cacheCreationTokens: 4,
+    });
+    expect(onUsage).toHaveBeenNthCalledWith(4, {
+      inputTokens: 37,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheCreationTokens: 4,
+    });
+  });
+
   it("rejects when process exits with non-zero code", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

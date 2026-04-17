@@ -137,6 +137,13 @@ function toTokenUsage(usage: {
   };
 }
 
+function getAnonymousAssistantFingerprint(message: Record<string, unknown>): string {
+  return JSON.stringify({
+    usage: message.usage,
+    content: message.content,
+  });
+}
+
 export class ClaudeAgent implements Agent {
   name = "claude";
 
@@ -185,13 +192,31 @@ export class ClaudeAgent implements Agent {
       };
       const usageByMessageId = new Map<string, TokenUsage>();
       let anonymousAssistantCount = 0;
+      let lastAnonymousAssistantFingerprint: string | null = null;
+      let lastAnonymousAssistantId: string | null = null;
 
       parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
         if (event.type === "assistant") {
           const msg = (event as ClaudeAssistantEvent).message;
-          const messageId = msg.id ?? `assistant-${anonymousAssistantCount++}`;
+          const anonymousFingerprint = msg.id
+            ? null
+            : getAnonymousAssistantFingerprint(msg as Record<string, unknown>);
+          const messageId = msg.id
+            ? msg.id
+            : anonymousFingerprint === lastAnonymousAssistantFingerprint &&
+                lastAnonymousAssistantId
+              ? lastAnonymousAssistantId
+              : `assistant-${anonymousAssistantCount++}`;
           const nextUsage = toTokenUsage(msg.usage);
           const previousUsage = usageByMessageId.get(messageId);
+
+          if (anonymousFingerprint) {
+            lastAnonymousAssistantFingerprint = anonymousFingerprint;
+            lastAnonymousAssistantId = messageId;
+          } else {
+            lastAnonymousAssistantFingerprint = null;
+            lastAnonymousAssistantId = null;
+          }
 
           if (previousUsage) {
             cumulative.inputTokens +=
