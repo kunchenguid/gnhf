@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.20...gnhf-v0.1.21) (2026-04-17)
+
+
+### Features
+
+* add live terminal title updates ([#70](https://github.com/kunchenguid/gnhf/issues/70)) ([f8b57d6](https://github.com/kunchenguid/gnhf/commit/f8b57d6a7640cff457f3d399b4aa1b44bb37abbe))
+
 ## [0.1.20](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.19...gnhf-v0.1.20) (2026-04-17)
 
 ### Bug Fixes
