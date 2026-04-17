@@ -108,10 +108,7 @@ export function getBranchCommitCount(baseCommit: string, cwd: string): number {
   // commits so the number reflects "work unique to this branch" and does not
   // depend on ignored run metadata producing a commit.
   return Number.parseInt(
-    git(
-      ["rev-list", "--count", "--first-parent", `${baseCommit}..HEAD`],
-      cwd,
-    ),
+    git(["rev-list", "--count", "--first-parent", `${baseCommit}..HEAD`], cwd),
     10,
   );
 }

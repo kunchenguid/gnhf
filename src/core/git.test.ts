@@ -166,10 +166,7 @@ describe("git utilities", () => {
     it("counts commits on the current gnhf branch from the base commit", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
-        if (
-          argv[0] === "rev-list" &&
-          argv.includes("abc123..HEAD")
-        ) {
+        if (argv[0] === "rev-list" && argv.includes("abc123..HEAD")) {
           return "1";
         }
         return "";
@@ -262,7 +259,12 @@ describe("git utilities", () => {
   describe("removeWorktree", () => {
     it("passes the worktree path as its own argv entry", () => {
       removeWorktree("/repo", "/tmp/wt");
-      expect(argsOfCall(0)).toEqual(["worktree", "remove", "--force", "/tmp/wt"]);
+      expect(argsOfCall(0)).toEqual([
+        "worktree",
+        "remove",
+        "--force",
+        "/tmp/wt",
+      ]);
     });
   });
 });
