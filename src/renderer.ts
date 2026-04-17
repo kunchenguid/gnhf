@@ -44,17 +44,25 @@ function spacedLabel(text: string): string {
   return text.split("").join(" ");
 }
 
+function formatTokenCount(tokens: number, direction: "in" | "out"): string {
+  return `${formatTokens(tokens)} ${direction}`;
+}
+
+function formatCommitCount(commitCount: number): string {
+  const commitLabel = commitCount === 1 ? "commit" : "commits";
+  return `${commitCount} ${commitLabel}`;
+}
+
 function buildTerminalTitle(state: OrchestratorState, now: number): string {
-  const commitLabel = state.commitCount === 1 ? "commit" : "commits";
   const lead =
     state.status === "running" || state.status === "waiting"
       ? getMoonPhase("active", now, MOON_PHASE_PERIOD)
       : state.status;
   return (
     `gnhf ${lead}` +
-    ` · ${formatTokens(state.totalInputTokens)} in` +
-    ` · ${formatTokens(state.totalOutputTokens)} out` +
-    ` · ${state.commitCount} ${commitLabel}`
+    ` · ${formatTokenCount(state.totalInputTokens, "in")}` +
+    ` · ${formatTokenCount(state.totalOutputTokens, "out")}` +
+    ` · ${formatCommitCount(state.commitCount)}`
   );
 }
 
@@ -107,21 +115,20 @@ export function renderStatsCells(
   outputTokens: number,
   commitCount: number,
 ): Cell[] {
-  const commitLabel = commitCount === 1 ? "commit" : "commits";
   return [
     ...textToCells(elapsed, "bold"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${formatTokens(inputTokens)} in`, "normal"),
+    ...textToCells(formatTokenCount(inputTokens, "in"), "normal"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${formatTokens(outputTokens)} out`, "normal"),
+    ...textToCells(formatTokenCount(outputTokens, "out"), "normal"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${commitCount} ${commitLabel}`, "normal"),
+    ...textToCells(formatCommitCount(commitCount), "normal"),
   ];
 }
 
@@ -675,6 +682,9 @@ export class Renderer {
   }
 
   private updateTerminalTitle(now = Date.now()): void {
+    if (!process.stdout.isTTY) {
+      return;
+    }
     const nextTitle = buildTerminalTitle(this.state, now);
     if (!this.titleSaved) {
       process.stdout.write(saveTerminalTitle());
