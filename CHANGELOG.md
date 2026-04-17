@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.21...gnhf-v0.1.22) (2026-04-17)
+
+
+### Bug Fixes
+
+* **agents:** dedupe Claude usage across repeated assistant snapshots ([#72](https://github.com/kunchenguid/gnhf/issues/72)) ([22a4728](https://github.com/kunchenguid/gnhf/commit/22a472831471b66051c27018ac8a033e3c06299d))
+
 ## [0.1.21](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.20...gnhf-v0.1.21) (2026-04-17)
 
 ### Features
