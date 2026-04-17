@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
   ensureCleanWorkingTree,
   createBranch,
@@ -18,45 +18,41 @@ import {
   removeWorktree,
 } from "./git.js";
 
-const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
+
+function argsOfCall(index: number): string[] {
+  const call = mockExecFileSync.mock.calls[index];
+  if (!call) throw new Error(`no call at index ${index}`);
+  return call[1] as string[];
+}
 
 describe("git utilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockExecSync.mockReturnValue("");
+    mockExecFileSync.mockReturnValue("");
   });
 
   describe("ensureCleanWorkingTree", () => {
     it("does not throw when working tree is clean", () => {
-      mockExecSync.mockReturnValue("");
+      mockExecFileSync.mockReturnValue("");
       expect(() => ensureCleanWorkingTree("/repo")).not.toThrow();
     });
 
     it("throws when working tree has changes", () => {
-      mockExecSync.mockReturnValue(" M src/index.ts");
+      mockExecFileSync.mockReturnValue(" M src/index.ts");
       expect(() => ensureCleanWorkingTree("/repo")).toThrow(
         "Working tree is not clean",
       );
     });
 
-    it("calls git status --porcelain with correct cwd", () => {
-      mockExecSync.mockReturnValue("");
+    it("invokes git status --porcelain with argv and the expected cwd", () => {
+      mockExecFileSync.mockReturnValue("");
       ensureCleanWorkingTree("/my/repo");
-      expect(mockExecSync).toHaveBeenCalledWith("git status --porcelain", {
-        cwd: "/my/repo",
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
-    });
-  });
-
-  describe("createBranch", () => {
-    it("calls git checkout -b with the branch name", () => {
-      createBranch("feature/test", "/repo");
-      expect(mockExecSync).toHaveBeenCalledWith(
-        "git checkout -b feature/test",
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "git",
+        ["status", "--porcelain"],
         {
-          cwd: "/repo",
+          cwd: "/my/repo",
           encoding: "utf-8",
           stdio: "pipe",
         },
@@ -64,63 +60,65 @@ describe("git utilities", () => {
     });
   });
 
+  describe("createBranch", () => {
+    it("passes the branch name as its own argv entry so shell metacharacters are inert", () => {
+      createBranch("feature/test", "/repo");
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "git",
+        ["checkout", "-b", "feature/test"],
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+        },
+      );
+    });
+
+    it("never composes the branch name into a shell string", () => {
+      createBranch("weird`name$(ok)", "/repo");
+      expect(argsOfCall(0)).toEqual(["checkout", "-b", "weird`name$(ok)"]);
+    });
+  });
+
   describe("getCurrentBranch", () => {
     it("returns the current branch name when HEAD points to a branch", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-parse" && argv[1] === "--git-dir") {
           return ".git\n";
         }
-        if (cmd === "git symbolic-ref --short HEAD") {
+        if (argv[0] === "symbolic-ref") {
           return "feature/test\n";
         }
         return "";
       });
 
       expect(getCurrentBranch("/repo")).toBe("feature/test");
-      expect(mockExecSync).toHaveBeenNthCalledWith(
-        1,
-        "git rev-parse --git-dir",
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-          env: expect.objectContaining({ LC_ALL: "C" }),
-        },
-      );
-      expect(mockExecSync).toHaveBeenNthCalledWith(
-        2,
-        "git symbolic-ref --short HEAD",
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      expect(argsOfCall(0)).toEqual(["rev-parse", "--git-dir"]);
+      expect(argsOfCall(1)).toEqual(["symbolic-ref", "--short", "HEAD"]);
     });
 
     it("falls back to rev-parse when symbolic-ref fails, such as in detached HEAD", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-parse" && argv[1] === "--git-dir") {
           return ".git\n";
         }
-        if (cmd === "git symbolic-ref --short HEAD") {
+        if (argv[0] === "symbolic-ref") {
           throw new Error("detached HEAD");
         }
-        if (cmd === "git rev-parse --abbrev-ref HEAD") {
+        if (
+          argv[0] === "rev-parse" &&
+          argv[1] === "--abbrev-ref" &&
+          argv[2] === "HEAD"
+        ) {
           return "HEAD\n";
         }
         return "";
       });
 
       expect(getCurrentBranch("/repo")).toBe("HEAD");
-      expect(mockExecSync).toHaveBeenCalledWith(
-        "git rev-parse --abbrev-ref HEAD",
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      expect(argsOfCall(2)).toEqual(["rev-parse", "--abbrev-ref", "HEAD"]);
     });
 
     it("rewrites non-repository git errors with a friendly message", () => {
@@ -128,7 +126,7 @@ describe("git utilities", () => {
         stderr:
           "fatal: not a git repository (or any of the parent directories): .git",
       });
-      mockExecSync.mockImplementation(() => {
+      mockExecFileSync.mockImplementation(() => {
         throw error;
       });
 
@@ -139,38 +137,22 @@ describe("git utilities", () => {
   });
 
   describe("commitAll", () => {
-    it("stages all files and commits with the message", () => {
+    it("stages all files and passes the message as its own argv entry", () => {
       commitAll("initial commit", "/repo");
-      expect(mockExecSync).toHaveBeenCalledWith("git add -A", {
-        cwd: "/repo",
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'git commit -m "initial commit"',
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      expect(argsOfCall(0)).toEqual(["add", "-A"]);
+      expect(argsOfCall(1)).toEqual(["commit", "-m", "initial commit"]);
     });
 
-    it("escapes double quotes in commit message", () => {
-      commitAll('fix "broken" test', "/repo");
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'git commit -m "fix \\"broken\\" test"',
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+    it("preserves shell metacharacters in the message without any escaping", () => {
+      const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
+      commitAll(injection, "/repo");
+      expect(argsOfCall(1)).toEqual(["commit", "-m", injection]);
     });
 
     it("does not throw when there is nothing to commit", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (typeof cmd === "string" && cmd.startsWith("git commit")) {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "commit") {
           throw new Error("nothing to commit");
         }
         return "";
@@ -182,8 +164,12 @@ describe("git utilities", () => {
 
   describe("getBranchCommitCount", () => {
     it("counts commits on the current gnhf branch from the base commit", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-list --count --first-parent abc123..HEAD") {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (
+          argv[0] === "rev-list" &&
+          argv.includes("abc123..HEAD")
+        ) {
           return "1";
         }
         return "";
@@ -193,8 +179,9 @@ describe("git utilities", () => {
     });
 
     it("counts all branch commits after the base commit", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-list --count --first-parent base123..HEAD") {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv.includes("base123..HEAD")) {
           return "4";
         }
         return "";
@@ -204,13 +191,7 @@ describe("git utilities", () => {
     });
 
     it("returns 0 when the branch has no commits after the base commit", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-list --count --first-parent abc123..HEAD") {
-          return "0";
-        }
-        return "";
-      });
-
+      mockExecFileSync.mockReturnValue("0");
       expect(getBranchCommitCount("abc123", "/repo")).toBe(0);
     });
 
@@ -221,15 +202,16 @@ describe("git utilities", () => {
 
   describe("findLegacyRunBaseCommit", () => {
     it("derives the branch base from the initialize marker parent", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git log --first-parent --reverse --format=%H%x09%s HEAD") {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "log") {
           return [
             "abc123\tinitial repo commit",
             "def456\tgnhf: initialize run run-abc",
             "ghi789\tgnhf #1: add tests",
           ].join("\n");
         }
-        if (cmd === "git rev-parse def456^") {
+        if (argv[0] === "rev-parse" && argv[1] === "def456^") {
           return "abc123";
         }
         return "";
@@ -239,7 +221,7 @@ describe("git utilities", () => {
     });
 
     it("returns null when no legacy marker exists", () => {
-      mockExecSync.mockReturnValue("abc123\tinitial repo commit");
+      mockExecFileSync.mockReturnValue("abc123\tinitial repo commit");
       expect(findLegacyRunBaseCommit("run-abc", "/repo")).toBeNull();
     });
   });
@@ -247,24 +229,17 @@ describe("git utilities", () => {
   describe("resetHard", () => {
     it("runs git reset --hard HEAD and git clean -fd", () => {
       resetHard("/repo");
-      expect(mockExecSync).toHaveBeenCalledWith("git reset --hard HEAD", {
-        cwd: "/repo",
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
-      expect(mockExecSync).toHaveBeenCalledWith("git clean -fd", {
-        cwd: "/repo",
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
+      expect(argsOfCall(0)).toEqual(["reset", "--hard", "HEAD"]);
+      expect(argsOfCall(1)).toEqual(["clean", "-fd"]);
     });
   });
 
   describe("getRepoRootDir", () => {
     it("returns the repo root directory", () => {
-      mockExecSync.mockImplementation((cmd) => {
-        if (cmd === "git rev-parse --git-dir") return ".git\n";
-        if (cmd === "git rev-parse --show-toplevel") return "/my/repo\n";
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[1] === "--git-dir") return ".git\n";
+        if (argv[1] === "--show-toplevel") return "/my/repo\n";
         return "";
       });
       expect(getRepoRootDir("/my/repo/sub")).toBe("/my/repo");
@@ -272,30 +247,22 @@ describe("git utilities", () => {
   });
 
   describe("createWorktree", () => {
-    it("calls git worktree add with branch and path", () => {
+    it("passes the branch name and path as distinct argv entries", () => {
       createWorktree("/repo", "/tmp/wt", "gnhf/my-branch");
-      expect(mockExecSync).toHaveBeenCalledWith(
-        "git worktree add -b 'gnhf/my-branch' '/tmp/wt'",
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      expect(argsOfCall(0)).toEqual([
+        "worktree",
+        "add",
+        "-b",
+        "gnhf/my-branch",
+        "/tmp/wt",
+      ]);
     });
   });
 
   describe("removeWorktree", () => {
-    it("calls git worktree remove --force", () => {
+    it("passes the worktree path as its own argv entry", () => {
       removeWorktree("/repo", "/tmp/wt");
-      expect(mockExecSync).toHaveBeenCalledWith(
-        "git worktree remove --force '/tmp/wt'",
-        {
-          cwd: "/repo",
-          encoding: "utf-8",
-          stdio: "pipe",
-        },
-      );
+      expect(argsOfCall(0)).toEqual(["worktree", "remove", "--force", "/tmp/wt"]);
     });
   });
 });

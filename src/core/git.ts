@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const NOT_GIT_REPOSITORY_MESSAGE =
   'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
@@ -7,29 +7,32 @@ function translateGitError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function git(args: string, cwd: string): string {
+// All git invocations go through this helper, which uses execFileSync with an
+// argv array (no shell). That means caller-supplied strings such as commit
+// messages, branch names, and paths are never interpreted by a shell, so
+// characters like `, $, ", ', and ; are harmless data rather than executable
+// syntax. Do not add a code path that builds a shell command string from
+// user- or agent-provided input.
+function git(
+  args: string[],
+  cwd: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
+): string {
   try {
-    return execSync(`git ${args}`, {
+    return execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       stdio: "pipe",
+      ...(options.env ? { env: options.env } : {}),
     }).trim();
   } catch (error) {
     throw translateGitError(error);
   }
 }
 
-/** Wrap a value in single quotes, escaping embedded single quotes for POSIX shells. */
-function shellEscape(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 function isGitRepository(cwd: string): boolean {
   try {
-    execSync("git rev-parse --git-dir", {
-      cwd,
-      encoding: "utf-8",
-      stdio: "pipe",
+    git(["rev-parse", "--git-dir"], cwd, {
       env: { ...process.env, LC_ALL: "C" },
     });
     return true;
@@ -47,14 +50,14 @@ function ensureGitRepository(cwd: string): void {
 export function getCurrentBranch(cwd: string): string {
   ensureGitRepository(cwd);
   try {
-    return git("symbolic-ref --short HEAD", cwd);
+    return git(["symbolic-ref", "--short", "HEAD"], cwd);
   } catch {
-    return git("rev-parse --abbrev-ref HEAD", cwd);
+    return git(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
   }
 }
 
 export function ensureCleanWorkingTree(cwd: string): void {
-  const status = git("status --porcelain", cwd);
+  const status = git(["status", "--porcelain"], cwd);
   if (status) {
     throw new Error(
       "Working tree is not clean. Commit or stash changes first.",
@@ -63,11 +66,11 @@ export function ensureCleanWorkingTree(cwd: string): void {
 }
 
 export function createBranch(branchName: string, cwd: string): void {
-  git(`checkout -b ${branchName}`, cwd);
+  git(["checkout", "-b", branchName], cwd);
 }
 
 export function getHeadCommit(cwd: string): string {
-  return git("rev-parse HEAD", cwd);
+  return git(["rev-parse", "HEAD"], cwd);
 }
 
 export function findLegacyRunBaseCommit(
@@ -76,7 +79,7 @@ export function findLegacyRunBaseCommit(
 ): string | null {
   try {
     const history = git(
-      "log --first-parent --reverse --format=%H%x09%s HEAD",
+      ["log", "--first-parent", "--reverse", "--format=%H%x09%s", "HEAD"],
       cwd,
     );
     const marker = history
@@ -92,7 +95,7 @@ export function findLegacyRunBaseCommit(
       );
 
     if (!marker?.sha) return null;
-    return git(`rev-parse ${marker.sha}^`, cwd);
+    return git(["rev-parse", `${marker.sha}^`], cwd);
   } catch {
     return null;
   }
@@ -105,27 +108,30 @@ export function getBranchCommitCount(baseCommit: string, cwd: string): number {
   // commits so the number reflects "work unique to this branch" and does not
   // depend on ignored run metadata producing a commit.
   return Number.parseInt(
-    git(`rev-list --count --first-parent ${baseCommit}..HEAD`, cwd),
+    git(
+      ["rev-list", "--count", "--first-parent", `${baseCommit}..HEAD`],
+      cwd,
+    ),
     10,
   );
 }
 
 export function commitAll(message: string, cwd: string): void {
-  git("add -A", cwd);
+  git(["add", "-A"], cwd);
   try {
-    git(`commit -m "${message.replace(/"/g, '\\"')}"`, cwd);
+    git(["commit", "-m", message], cwd);
   } catch {
     // Nothing to commit (no changes) -- that's fine
   }
 }
 
 export function resetHard(cwd: string): void {
-  git("reset --hard HEAD", cwd);
-  git("clean -fd", cwd);
+  git(["reset", "--hard", "HEAD"], cwd);
+  git(["clean", "-fd"], cwd);
 }
 
 export function getRepoRootDir(cwd: string): string {
-  return git("rev-parse --show-toplevel", cwd);
+  return git(["rev-parse", "--show-toplevel"], cwd);
 }
 
 export function createWorktree(
@@ -133,12 +139,9 @@ export function createWorktree(
   worktreePath: string,
   branchName: string,
 ): void {
-  git(
-    `worktree add -b ${shellEscape(branchName)} ${shellEscape(worktreePath)}`,
-    baseCwd,
-  );
+  git(["worktree", "add", "-b", branchName, worktreePath], baseCwd);
 }
 
 export function removeWorktree(baseCwd: string, worktreePath: string): void {
-  git(`worktree remove --force ${shellEscape(worktreePath)}`, baseCwd);
+  git(["worktree", "remove", "--force", worktreePath], baseCwd);
 }
