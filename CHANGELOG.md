@@ -74,6 +74,7 @@
 
 - **config:** allow per-agent binary path overrides
 - **renderer:** randomize star field seeds between runs
+- **renderer:** update the terminal title with live run status and restore it on exit
 
 ### Bug Fixes
 
