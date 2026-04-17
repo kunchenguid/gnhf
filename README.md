@@ -167,14 +167,14 @@ Pass `--worktree` to run each agent in an isolated [git worktree](https://git-sc
 
 ### Flags
 
-| Flag                     | Description                                                        | Default                |
-| ------------------------ | ------------------------------------------------------------------ | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)         | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                   | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                          | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`             |
-| `--version`              | Show version                                                       |                        |
+| Flag                     | Description                                                           | Default                |
+| ------------------------ | --------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)            | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                      | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                             | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)    | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`                |
+| `--version`              | Show version                                                          |                        |
 
 ## Configuration
 

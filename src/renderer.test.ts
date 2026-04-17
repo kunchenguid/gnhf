@@ -677,7 +677,16 @@ describe("Renderer ctrl+c", () => {
 });
 
 describe("Renderer terminal title", () => {
-  function setTty(target: NodeJS.WriteStream | NodeJS.ReadStream, value: boolean) {
+  const escape = String.fromCharCode(27);
+  const bell = String.fromCharCode(7);
+  const titlePrefix = `${escape}]2;`;
+  const titleStackPrefix = `${escape}[`;
+  const titleStackSuffix = ";0t";
+
+  function setTty(
+    target: NodeJS.WriteStream | NodeJS.ReadStream,
+    value: boolean,
+  ) {
     const original = Object.getOwnPropertyDescriptor(target, "isTTY");
     Object.defineProperty(target, "isTTY", {
       configurable: true,
@@ -696,10 +705,10 @@ describe("Renderer terminal title", () => {
     const output = stdoutWrite.mock.calls
       .map((args: unknown[]) => String(args[0]))
       .join("");
-    return Array.from(
-      output.matchAll(/\x1b\]2;([^\x07]*)\x07/g) as Iterable<RegExpMatchArray>,
-      (match) => match[1] ?? "",
-    );
+    return output
+      .split(titlePrefix)
+      .slice(1)
+      .map((segment) => segment.split(bell, 1)[0] ?? "");
   }
 
   function extractTitleStackOps(
@@ -708,10 +717,11 @@ describe("Renderer terminal title", () => {
     const output = stdoutWrite.mock.calls
       .map((args: unknown[]) => String(args[0]))
       .join("");
-    return Array.from(
-      output.matchAll(/\x1b\[(22|23);0t/g) as Iterable<RegExpMatchArray>,
-      (match) => match[1] ?? "",
-    );
+    return output
+      .split(titleStackPrefix)
+      .slice(1)
+      .map((segment) => segment.split(titleStackSuffix, 1)[0] ?? "")
+      .filter((segment) => segment === "22" || segment === "23");
   }
 
   const baseState: OrchestratorState = {
