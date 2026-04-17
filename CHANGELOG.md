@@ -85,6 +85,7 @@
 ### Bug Fixes
 
 - **agents:** support Windows cmd/bat agent wrappers and terminate overridden agent processes cleanly
+- **agents:** deduplicate repeated Claude assistant usage snapshots so live token totals and max-token enforcement stay accurate
 - **cli:** keep the final interactive TUI visible after aborted runs until the user exits
 - **core:** harden git command execution so commit messages, branch names, and worktree paths are passed without shell interpretation
 - **renderer:** keep wide Unicode graphemes wrapped and aligned in the live terminal UI
