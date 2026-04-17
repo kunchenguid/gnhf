@@ -46,6 +46,7 @@ You wake up to a branch full of clean work and a log of everything that happened
 
 - **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries and exponential backoff
+- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
 - **Agent-agnostic** — works with Claude Code, Codex, Rovo Dev, or OpenCode out of the box
 
 ## Quick Start
@@ -166,14 +167,14 @@ Pass `--worktree` to run each agent in an isolated [git worktree](https://git-sc
 
 ### Flags
 
-| Flag                     | Description                                                        | Default                |
-| ------------------------ | ------------------------------------------------------------------ | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)         | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                   | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                          | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`) | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`             |
-| `--version`              | Show version                                                       |                        |
+| Flag                     | Description                                                           | Default                |
+| ------------------------ | --------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)            | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                      | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                             | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)    | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`                |
+| `--version`              | Show version                                                          |                        |
 
 ## Configuration
 

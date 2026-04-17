@@ -675,3 +675,214 @@ describe("Renderer ctrl+c", () => {
     }
   });
 });
+
+describe("Renderer terminal title", () => {
+  const escape = String.fromCharCode(27);
+  const bell = String.fromCharCode(7);
+  const titlePrefix = `${escape}]2;`;
+  const titleStackPrefix = `${escape}[`;
+  const titleStackSuffix = ";0t";
+
+  function setTty(
+    target: NodeJS.WriteStream | NodeJS.ReadStream,
+    value: boolean,
+  ) {
+    const original = Object.getOwnPropertyDescriptor(target, "isTTY");
+    Object.defineProperty(target, "isTTY", {
+      configurable: true,
+      value,
+    });
+    return () => {
+      if (original) {
+        Object.defineProperty(target, "isTTY", original);
+      }
+    };
+  }
+
+  function extractTerminalTitles(
+    stdoutWrite: ReturnType<typeof vi.spyOn>,
+  ): string[] {
+    const output = stdoutWrite.mock.calls
+      .map((args: unknown[]) => String(args[0]))
+      .join("");
+    return output
+      .split(titlePrefix)
+      .slice(1)
+      .map((segment: string) => segment.split(bell, 1)[0] ?? "");
+  }
+
+  function extractTitleStackOps(
+    stdoutWrite: ReturnType<typeof vi.spyOn>,
+  ): string[] {
+    const output = stdoutWrite.mock.calls
+      .map((args: unknown[]) => String(args[0]))
+      .join("");
+    return output
+      .split(titleStackPrefix)
+      .slice(1)
+      .map((segment: string) => segment.split(titleStackSuffix, 1)[0] ?? "")
+      .filter((segment: string) => segment === "22" || segment === "23");
+  }
+
+  const baseState: OrchestratorState = {
+    status: "running",
+    currentIteration: 1,
+    totalInputTokens: 12_400,
+    totalOutputTokens: 8_200,
+    commitCount: 12,
+    iterations: [createIteration()],
+    successCount: 1,
+    failCount: 0,
+    consecutiveFailures: 0,
+    startTime: new Date("2026-01-01T00:00:00Z"),
+    waitingUntil: null,
+    lastMessage: "reading files",
+  };
+
+  it("writes a running title with the active moon and counters", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const restoreStdinTty = setTty(process.stdin, false);
+    const restoreStdoutTty = setTty(process.stdout, true);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+
+      const titles = extractTerminalTitles(stdoutWrite);
+      expect(titles.at(-1)).toMatch(
+        /^gnhf [🌑🌒🌓🌔🌕🌖🌗🌘] · 12K in · 8K out · 12 commits$/u,
+      );
+
+      renderer.stop();
+    } finally {
+      restoreStdoutTty();
+      restoreStdinTty();
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("does not emit title control codes when stdout is not a tty", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const restoreStdinTty = setTty(process.stdin, false);
+    const restoreStdoutTty = setTty(process.stdout, false);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      renderer.stop();
+
+      expect(extractTerminalTitles(stdoutWrite)).toEqual([]);
+      expect(extractTitleStackOps(stdoutWrite)).toEqual([]);
+    } finally {
+      restoreStdoutTty();
+      restoreStdinTty();
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("updates the title when the run stops", async () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const restoreStdinTty = setTty(process.stdin, false);
+    const restoreStdoutTty = setTty(process.stdout, true);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      stdoutWrite.mockClear();
+
+      state.status = "stopped";
+      orchestrator.emit("state", {
+        ...state,
+        iterations: [...state.iterations],
+      });
+      orchestrator.emit("stopped");
+
+      await expect(renderer.waitUntilExit()).resolves.toBe("stopped");
+
+      const titles = extractTerminalTitles(stdoutWrite);
+      expect(titles.at(-1)).toBe("gnhf stopped · 12K in · 8K out · 12 commits");
+    } finally {
+      restoreStdoutTty();
+      restoreStdinTty();
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("stops updating the title after the renderer exits", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const restoreStdinTty = setTty(process.stdin, false);
+    const restoreStdoutTty = setTty(process.stdout, true);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      renderer.stop("interrupted");
+      stdoutWrite.mockClear();
+
+      state.status = "stopped";
+      orchestrator.emit("state", {
+        ...state,
+        iterations: [...state.iterations],
+      });
+
+      expect(stdoutWrite).not.toHaveBeenCalled();
+    } finally {
+      restoreStdoutTty();
+      restoreStdinTty();
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("restores the previous terminal title when the renderer exits", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const restoreStdinTty = setTty(process.stdin, false);
+    const restoreStdoutTty = setTty(process.stdout, true);
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      renderer.stop();
+
+      expect(extractTitleStackOps(stdoutWrite)).toEqual(["22", "23"]);
+    } finally {
+      restoreStdoutTty();
+      restoreStdinTty();
+      stdoutWrite.mockRestore();
+    }
+  });
+});

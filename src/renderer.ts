@@ -44,6 +44,40 @@ function spacedLabel(text: string): string {
   return text.split("").join(" ");
 }
 
+function formatTokenCount(tokens: number, direction: "in" | "out"): string {
+  return `${formatTokens(tokens)} ${direction}`;
+}
+
+function formatCommitCount(commitCount: number): string {
+  const commitLabel = commitCount === 1 ? "commit" : "commits";
+  return `${commitCount} ${commitLabel}`;
+}
+
+function buildTerminalTitle(state: OrchestratorState, now: number): string {
+  const lead =
+    state.status === "running" || state.status === "waiting"
+      ? getMoonPhase("active", now, MOON_PHASE_PERIOD)
+      : state.status;
+  return (
+    `gnhf ${lead}` +
+    ` · ${formatTokenCount(state.totalInputTokens, "in")}` +
+    ` · ${formatTokenCount(state.totalOutputTokens, "out")}` +
+    ` · ${formatCommitCount(state.commitCount)}`
+  );
+}
+
+function emitTerminalTitle(title: string): string {
+  return `\x1b]2;${title}\x07`;
+}
+
+function saveTerminalTitle(): string {
+  return "\x1b[22;0t";
+}
+
+function restoreTerminalTitle(): string {
+  return "\x1b[23;0t";
+}
+
 export function renderTitleCells(agentName?: string): Cell[][] {
   const eyebrow: Cell[] = [
     ...textToCells(spacedLabel("gnhf"), "dim"),
@@ -81,21 +115,20 @@ export function renderStatsCells(
   outputTokens: number,
   commitCount: number,
 ): Cell[] {
-  const commitLabel = commitCount === 1 ? "commit" : "commits";
   return [
     ...textToCells(elapsed, "bold"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${formatTokens(inputTokens)} in`, "normal"),
+    ...textToCells(formatTokenCount(inputTokens, "in"), "normal"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${formatTokens(outputTokens)} out`, "normal"),
+    ...textToCells(formatTokenCount(outputTokens, "out"), "normal"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(`${commitCount} ${commitLabel}`, "normal"),
+    ...textToCells(formatCommitCount(commitCount), "normal"),
   ];
 }
 
@@ -508,10 +541,19 @@ export class Renderer {
   private cachedWidth = 0;
   private cachedHeight = 0;
   private prevCells: Cell[][] = [];
+  private prevTitle: string | null = null;
+  private titleSaved = false;
   private isFirstFrame = true;
   private seedTop: number;
   private seedBottom: number;
   private seedSide: number;
+  private readonly handleState = (newState: OrchestratorState) => {
+    this.state = { ...newState, iterations: [...newState.iterations] };
+    this.updateTerminalTitle();
+  };
+  private readonly handleStopped = () => {
+    this.stop("stopped");
+  };
 
   constructor(orchestrator: Orchestrator, prompt: string, agentName: string) {
     this.orchestrator = orchestrator;
@@ -527,13 +569,9 @@ export class Renderer {
   }
 
   start(): void {
-    this.orchestrator.on("state", (newState) => {
-      this.state = { ...newState, iterations: [...newState.iterations] };
-    });
+    this.orchestrator.on("state", this.handleState);
 
-    this.orchestrator.on("stopped", () => {
-      this.stop("stopped");
-    });
+    this.orchestrator.on("stopped", this.handleStopped);
 
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
@@ -555,10 +593,17 @@ export class Renderer {
       clearInterval(this.interval);
       this.interval = null;
     }
+    this.orchestrator.off("state", this.handleState);
+    this.orchestrator.off("stopped", this.handleStopped);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
       process.stdin.removeAllListeners("data");
+    }
+    if (this.titleSaved) {
+      process.stdout.write(restoreTerminalTitle());
+      this.titleSaved = false;
+      this.prevTitle = null;
     }
     this.exitResolve(reason);
   }
@@ -609,6 +654,8 @@ export class Renderer {
     const h = process.stdout.rows || 24;
     const resized = this.ensureStarFields(w, h);
 
+    this.updateTerminalTitle(now);
+
     const nextCells = buildFrameCells(
       this.prompt,
       this.agentName,
@@ -632,5 +679,21 @@ export class Renderer {
     }
 
     this.prevCells = nextCells;
+  }
+
+  private updateTerminalTitle(now = Date.now()): void {
+    if (!process.stdout.isTTY) {
+      return;
+    }
+    const nextTitle = buildTerminalTitle(this.state, now);
+    if (!this.titleSaved) {
+      process.stdout.write(saveTerminalTitle());
+      this.titleSaved = true;
+    }
+    if (nextTitle === this.prevTitle) {
+      return;
+    }
+    process.stdout.write(emitTerminalTitle(nextTitle));
+    this.prevTitle = nextTitle;
   }
 }
