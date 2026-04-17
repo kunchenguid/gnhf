@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.20](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.19...gnhf-v0.1.20) (2026-04-17)
+
+
+### Bug Fixes
+
+* **core:** harden git command inputs against shell injection ([#68](https://github.com/kunchenguid/gnhf/issues/68)) ([b19d778](https://github.com/kunchenguid/gnhf/commit/b19d778a1322d636e1179aa29b5fe606e7c8b0cc))
+
 ## [0.1.19](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.18...gnhf-v0.1.19) (2026-04-12)
 
 ### Bug Fixes
