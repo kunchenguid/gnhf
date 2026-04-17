@@ -62,6 +62,14 @@ function emitTerminalTitle(title: string): string {
   return `\x1b]2;${title}\x07`;
 }
 
+function saveTerminalTitle(): string {
+  return "\x1b[22;0t";
+}
+
+function restoreTerminalTitle(): string {
+  return "\x1b[23;0t";
+}
+
 export function renderTitleCells(agentName?: string): Cell[][] {
   const eyebrow: Cell[] = [
     ...textToCells(spacedLabel("gnhf"), "dim"),
@@ -527,10 +535,18 @@ export class Renderer {
   private cachedHeight = 0;
   private prevCells: Cell[][] = [];
   private prevTitle: string | null = null;
+  private titleSaved = false;
   private isFirstFrame = true;
   private seedTop: number;
   private seedBottom: number;
   private seedSide: number;
+  private readonly handleState = (newState: OrchestratorState) => {
+    this.state = { ...newState, iterations: [...newState.iterations] };
+    this.updateTerminalTitle();
+  };
+  private readonly handleStopped = () => {
+    this.stop("stopped");
+  };
 
   constructor(orchestrator: Orchestrator, prompt: string, agentName: string) {
     this.orchestrator = orchestrator;
@@ -546,14 +562,9 @@ export class Renderer {
   }
 
   start(): void {
-    this.orchestrator.on("state", (newState) => {
-      this.state = { ...newState, iterations: [...newState.iterations] };
-      this.updateTerminalTitle();
-    });
+    this.orchestrator.on("state", this.handleState);
 
-    this.orchestrator.on("stopped", () => {
-      this.stop("stopped");
-    });
+    this.orchestrator.on("stopped", this.handleStopped);
 
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
@@ -575,10 +586,17 @@ export class Renderer {
       clearInterval(this.interval);
       this.interval = null;
     }
+    this.orchestrator.off("state", this.handleState);
+    this.orchestrator.off("stopped", this.handleStopped);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
       process.stdin.removeAllListeners("data");
+    }
+    if (this.titleSaved) {
+      process.stdout.write(restoreTerminalTitle());
+      this.titleSaved = false;
+      this.prevTitle = null;
     }
     this.exitResolve(reason);
   }
@@ -658,6 +676,10 @@ export class Renderer {
 
   private updateTerminalTitle(now = Date.now()): void {
     const nextTitle = buildTerminalTitle(this.state, now);
+    if (!this.titleSaved) {
+      process.stdout.write(saveTerminalTitle());
+      this.titleSaved = true;
+    }
     if (nextTitle === this.prevTitle) {
       return;
     }

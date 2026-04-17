@@ -689,6 +689,18 @@ describe("Renderer terminal title", () => {
     );
   }
 
+  function extractTitleStackOps(
+    stdoutWrite: ReturnType<typeof vi.spyOn>,
+  ): string[] {
+    const output = stdoutWrite.mock.calls
+      .map((args: unknown[]) => String(args[0]))
+      .join("");
+    return Array.from(
+      output.matchAll(/\x1b\[(22|23);0t/g) as Iterable<RegExpMatchArray>,
+      (match) => match[1] ?? "",
+    );
+  }
+
   const baseState: OrchestratorState = {
     status: "running",
     currentIteration: 1,
@@ -776,6 +788,79 @@ describe("Renderer terminal title", () => {
 
       const titles = extractTerminalTitles(stdoutWrite);
       expect(titles.at(-1)).toBe("gnhf stopped · 12K in · 8K out · 12 commits");
+    } finally {
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("stops updating the title after the renderer exits", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      renderer.stop("interrupted");
+      stdoutWrite.mockClear();
+
+      state.status = "stopped";
+      orchestrator.emit("state", {
+        ...state,
+        iterations: [...state.iterations],
+      });
+
+      expect(stdoutWrite).not.toHaveBeenCalled();
+    } finally {
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("restores the previous terminal title when the renderer exits", () => {
+    const state = { ...baseState, iterations: [...baseState.iterations] };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      renderer.start();
+      renderer.stop();
+
+      expect(extractTitleStackOps(stdoutWrite)).toEqual(["22", "23"]);
     } finally {
       if (originalIsTTY) {
         Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
