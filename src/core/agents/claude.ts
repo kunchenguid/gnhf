@@ -226,9 +226,12 @@ export class ClaudeAgent implements Agent {
           ) {
             messageId = `assistant-${anonymousAssistantCount++}`;
             previousUsage = pendingAnonymousAssistantUsage;
-            cumulative.inputTokens += pendingAnonymousAssistantUsage.inputTokens;
-            cumulative.outputTokens += pendingAnonymousAssistantUsage.outputTokens;
-            cumulative.cacheReadTokens += pendingAnonymousAssistantUsage.cacheReadTokens;
+            cumulative.inputTokens +=
+              pendingAnonymousAssistantUsage.inputTokens;
+            cumulative.outputTokens +=
+              pendingAnonymousAssistantUsage.outputTokens;
+            cumulative.cacheReadTokens +=
+              pendingAnonymousAssistantUsage.cacheReadTokens;
             cumulative.cacheCreationTokens +=
               pendingAnonymousAssistantUsage.cacheCreationTokens;
             usageByMessageId.set(messageId, pendingAnonymousAssistantUsage);
