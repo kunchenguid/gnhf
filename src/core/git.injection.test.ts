@@ -23,7 +23,8 @@ function makeRepo(): string {
 
 describe("git shell injection regression", () => {
   const repos: string[] = [];
-  const marker = join(tmpdir(), `gnhf-injection-marker-${process.pid}`);
+  const markerName = `gnhf-injection-marker-${process.pid}`;
+  const marker = join(tmpdir(), markerName);
 
   afterEach(() => {
     for (const dir of repos.splice(0)) {
@@ -74,11 +75,13 @@ describe("git shell injection regression", () => {
   it("createBranch treats shell metacharacters in a valid branch name as inert text", () => {
     const repo = makeRepo();
     repos.push(repo);
-    const injected = `evil\`touch\${IFS}${marker}\``;
+    const repoMarker = join(repo, markerName);
+    const injected = `evil\`touch\${IFS}${markerName}\``;
 
     createBranch(injected, repo);
 
     expect(existsSync(marker)).toBe(false);
+    expect(existsSync(repoMarker)).toBe(false);
     expect(rawGit(["branch", "--show-current"], repo)).toBe(injected);
   });
 });
