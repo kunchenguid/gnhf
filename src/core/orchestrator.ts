@@ -246,11 +246,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           commitCount: this.state.commitCount,
         });
 
-        if (
-          this.limits.stopWhen !== undefined &&
-          record.success &&
-          result.shouldFullyStop
-        ) {
+        if (this.limits.stopWhen !== undefined && result.shouldFullyStop) {
           this.abort("stop condition met");
           break;
         }

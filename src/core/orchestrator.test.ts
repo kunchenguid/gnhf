@@ -316,6 +316,46 @@ describe("Orchestrator stop limits", () => {
     expect(orchestrator.getState().status).toBe("aborted");
   });
 
+  it("aborts when the agent reports should_fully_stop with success=false and stopWhen is set", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        output: {
+          success: false,
+          summary: "nothing left to do",
+          key_changes_made: [],
+          key_learnings: [],
+          should_fully_stop: true,
+        },
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      })),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { stopWhen: "all tasks done", maxIterations: 5 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).not.toHaveBeenCalled();
+    expect(abort).toHaveBeenCalledWith("stop condition met");
+    expect(orchestrator.getState().status).toBe("aborted");
+  });
+
   it("ignores should_fully_stop when stopWhen is not set", async () => {
     let callCount = 0;
     const agent: Agent = {
