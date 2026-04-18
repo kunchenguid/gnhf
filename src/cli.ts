@@ -112,13 +112,34 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
   // If a prior invocation with the same prompt preserved its worktree,
   // reuse it instead of failing on "branch already exists". The preserved
   // worktree already carries its own .gnhf/runs/<runId>/ state, so resuming
-  // picks up the iteration counter from there. This is the intended resume
-  // path for a preserved worktree; commit-count-based cleanup at shutdown
-  // still governs whether it stays preserved or is removed.
+  // picks up the iteration counter from there. Verify the worktree is still
+  // on its own gnhf/<runId> branch before resuming so a user who manually
+  // switched branches or detached HEAD in the preserved worktree gets a
+  // clear error instead of silently writing new commits to the wrong ref.
   if (
     worktreeExists(repoRoot, worktreePath) &&
     existsSync(join(worktreePath, ".gnhf", "runs", runId))
   ) {
+    let worktreeBranch: string;
+    try {
+      worktreeBranch = getCurrentBranch(worktreePath);
+    } catch (error) {
+      throw new Error(
+        `Preserved worktree at ${worktreePath} is in an unexpected state ` +
+          `(${error instanceof Error ? error.message : String(error)}). ` +
+          `Fix the worktree manually or remove it with ` +
+          `"git worktree remove ${worktreePath}" before re-running.`,
+      );
+    }
+    if (worktreeBranch !== branchName) {
+      throw new Error(
+        `Preserved worktree at ${worktreePath} is on branch ` +
+          `"${worktreeBranch}" rather than "${branchName}". ` +
+          `Restore it to "${branchName}" with "git -C ${worktreePath} ` +
+          `checkout ${branchName}", or remove the worktree with ` +
+          `"git worktree remove ${worktreePath}" to start fresh.`,
+      );
+    }
     const runInfo = resumeRun(runId, worktreePath);
     return {
       runInfo,
