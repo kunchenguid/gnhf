@@ -40,4 +40,33 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("Read .gnhf/runs/");
     expect(result).toContain("smallest logical unit");
   });
+
+  it("produces a prompt identical to the default when stopWhen is not set", () => {
+    const baseline = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "do stuff",
+    });
+    const withUndefined = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "do stuff",
+      stopWhen: undefined,
+    });
+    expect(withUndefined).toBe(baseline);
+    expect(baseline).not.toContain("should_fully_stop");
+    expect(baseline).not.toContain("Stop Condition");
+  });
+
+  it("injects a stop condition section and should_fully_stop output field when stopWhen is set", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "do stuff",
+      stopWhen: "all tasks are done",
+    });
+    expect(result).toContain("Stop Condition");
+    expect(result).toContain("all tasks are done");
+    expect(result).toContain("should_fully_stop");
+  });
 });

@@ -49,12 +49,13 @@ export interface OrchestratorEvents {
 export interface RunLimits {
   maxIterations?: number;
   maxTokens?: number;
+  stopWhen?: string;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
 
 type RunIterationResult =
-  | { type: "completed"; record: IterationRecord }
+  | { type: "completed"; record: IterationRecord; shouldFullyStop: boolean }
   | { type: "stopped" }
   | { type: "aborted"; reason: string };
 
@@ -192,6 +193,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           n: this.state.currentIteration,
           runId: this.runInfo.runId,
           prompt: this.prompt,
+          stopWhen: this.limits.stopWhen,
         });
 
         appendDebugLog("iteration:start", {
@@ -243,6 +245,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           totalOutputTokens: this.state.totalOutputTokens,
           commitCount: this.state.commitCount,
         });
+
+        if (
+          this.limits.stopWhen !== undefined &&
+          record.success &&
+          result.shouldFullyStop
+        ) {
+          this.abort("stop condition met");
+          break;
+        }
 
         const postIterationAbortReason = this.getPostIterationAbortReason();
         if (postIterationAbortReason) {
@@ -374,8 +385,14 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         return { type: "stopped" };
       }
 
+      const shouldFullyStop = result.output.should_fully_stop === true;
+
       if (result.output.success) {
-        return { type: "completed", record: this.recordSuccess(result.output) };
+        return {
+          type: "completed",
+          record: this.recordSuccess(result.output),
+          shouldFullyStop,
+        };
       }
       return {
         type: "completed",
@@ -384,6 +401,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           result.output.summary,
           toStringArray(result.output.key_learnings),
         ),
+        shouldFullyStop,
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
@@ -424,6 +442,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       return {
         type: "completed",
         record: this.recordFailure(`[ERROR] ${summary}`, summary, []),
+        shouldFullyStop: false,
       };
     } finally {
       this.activeAbortController = null;

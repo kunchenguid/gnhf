@@ -210,6 +210,10 @@ program
     parseNonNegativeInteger,
   )
   .option(
+    "--stop-when <condition>",
+    "End the loop when the agent reports this natural-language condition is met",
+  )
+  .option(
     "--prevent-sleep <mode>",
     'Prevent system sleep during the run ("on" or "off")',
     parseOnOffBoolean,
@@ -227,6 +231,7 @@ program
         agent?: string;
         maxIterations?: number;
         maxTokens?: number;
+        stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
         mock: boolean;
@@ -427,6 +432,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
+        stopWhen: options.stopWhen,
         preventSleep: config.preventSleep,
         agentArgsOverride: config.agentArgsOverride?.[config.agent],
         worktree: options.worktree,
@@ -452,6 +458,7 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
+          stopWhen: options.stopWhen,
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;

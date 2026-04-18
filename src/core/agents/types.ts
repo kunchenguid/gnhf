@@ -3,6 +3,7 @@ export interface AgentOutput {
   summary: string;
   key_changes_made: unknown;
   key_learnings: unknown;
+  should_fully_stop?: boolean;
 }
 
 export const AGENT_OUTPUT_SCHEMA = {
@@ -13,6 +14,7 @@ export const AGENT_OUTPUT_SCHEMA = {
     summary: { type: "string" },
     key_changes_made: { type: "array", items: { type: "string" } },
     key_learnings: { type: "array", items: { type: "string" } },
+    should_fully_stop: { type: "boolean" },
   },
   required: ["success", "summary", "key_changes_made", "key_learnings"],
 } as const;
