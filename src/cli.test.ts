@@ -35,6 +35,7 @@ interface CliMockOverrides {
   getRepoRootDir?: ReturnType<typeof vi.fn>;
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
+  worktreeExists?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
@@ -117,6 +118,7 @@ async function runCliWithMocks(
     getRepoRootDir: overrides.getRepoRootDir ?? vi.fn(() => "/repo"),
     createWorktree: overrides.createWorktree ?? vi.fn(),
     removeWorktree: overrides.removeWorktree ?? vi.fn(),
+    worktreeExists: overrides.worktreeExists ?? vi.fn(() => false),
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),

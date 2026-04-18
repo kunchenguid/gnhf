@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -24,6 +25,7 @@ import {
   getRepoRootDir,
   createWorktree,
   removeWorktree,
+  worktreeExists,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -90,10 +92,11 @@ interface WorktreeRunResult {
   runInfo: RunInfo;
   worktreePath: string;
   effectiveCwd: string;
+  resumed: boolean;
 }
 
 function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
-  // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
+  // Intentionally skip ensureCleanWorkingTree(). git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
   // main checkout don't carry over, so a dirty tree is harmless here.
   const repoRoot = getRepoRootDir(cwd);
@@ -105,9 +108,29 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
     `${basename(repoRoot)}-gnhf-worktrees`,
     runId,
   );
+
+  // If a prior invocation with the same prompt preserved its worktree,
+  // reuse it instead of failing on "branch already exists". The preserved
+  // worktree already carries its own .gnhf/runs/<runId>/ state, so resuming
+  // picks up the iteration counter from there. This is the intended resume
+  // path for a preserved worktree; commit-count-based cleanup at shutdown
+  // still governs whether it stays preserved or is removed.
+  if (
+    worktreeExists(repoRoot, worktreePath) &&
+    existsSync(join(worktreePath, ".gnhf", "runs", runId))
+  ) {
+    const runInfo = resumeRun(runId, worktreePath);
+    return {
+      runInfo,
+      worktreePath,
+      effectiveCwd: worktreePath,
+      resumed: true,
+    };
+  }
+
   createWorktree(repoRoot, worktreePath, branchName);
   const runInfo = setupRun(runId, prompt, baseCommit, worktreePath);
-  return { runInfo, worktreePath, effectiveCwd: worktreePath };
+  return { runInfo, worktreePath, effectiveCwd: worktreePath, resumed: false };
 }
 
 function ask(question: string): Promise<string> {
@@ -337,23 +360,34 @@ program
         runInfo = wt.runInfo;
         effectiveCwd = wt.effectiveCwd;
         worktreePath = wt.worktreePath;
-        worktreeCleanup = () => {
-          try {
-            removeWorktree(cwd, wt.worktreePath);
-          } catch {
-            // Best-effort cleanup
-          }
-        };
 
-        // Ensure worktree cleanup runs even if die() or process.exit() is
-        // called before reaching the normal cleanup block (e.g. orchestrator
-        // crash → .catch → die → process.exit(1)).
-        const exitCleanup = worktreeCleanup;
-        process.on("exit", () => {
-          if (worktreeCleanup === exitCleanup) {
-            exitCleanup();
-          }
-        });
+        if (wt.resumed) {
+          // Preserved worktree is always kept on exit regardless of this
+          // invocation's commit count; previous commits are already there.
+          startIteration = getLastIterationNumber(runInfo);
+          console.error(
+            `\n  gnhf: resuming preserved worktree at ${worktreePath}` +
+              `\n  gnhf: continuing run ${runInfo.runId} from iteration ${startIteration}\n`,
+          );
+        } else {
+          worktreeCleanup = () => {
+            try {
+              removeWorktree(cwd, wt.worktreePath);
+            } catch {
+              // Best-effort cleanup
+            }
+          };
+
+          // Ensure worktree cleanup runs even if die() or process.exit() is
+          // called before reaching the normal cleanup block (e.g. orchestrator
+          // crash to .catch to die to process.exit(1)).
+          const exitCleanup = worktreeCleanup;
+          process.on("exit", () => {
+            if (worktreeCleanup === exitCleanup) {
+              exitCleanup();
+            }
+          });
+        }
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
         const existing = resumeRun(existingRunId, cwd);

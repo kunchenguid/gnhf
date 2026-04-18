@@ -142,3 +142,21 @@ export function createWorktree(
 export function removeWorktree(baseCwd: string, worktreePath: string): void {
   git(["worktree", "remove", "--force", worktreePath], baseCwd);
 }
+
+// Returns true when the given path is registered as a worktree of baseCwd's
+// repository. Used to decide whether to reuse a preserved worktree on a
+// subsequent invocation instead of failing on "branch already exists".
+export function worktreeExists(baseCwd: string, worktreePath: string): boolean {
+  let output: string;
+  try {
+    output = git(["worktree", "list", "--porcelain"], baseCwd);
+  } catch {
+    return false;
+  }
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ") && line.slice(9) === worktreePath) {
+      return true;
+    }
+  }
+  return false;
+}
