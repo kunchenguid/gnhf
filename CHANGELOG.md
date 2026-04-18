@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.22...gnhf-v0.1.23) (2026-04-18)
+
+
+### Features
+
+* **orchestrator:** add --stop-when condition to end loop ([#74](https://github.com/kunchenguid/gnhf/issues/74)) ([3ad2c86](https://github.com/kunchenguid/gnhf/commit/3ad2c861afcc47d46037e076e9646b29a167448d))
+
 ## [0.1.22](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.21...gnhf-v0.1.22) (2026-04-17)
 
 
