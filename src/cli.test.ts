@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -792,7 +798,10 @@ describe("cli", () => {
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: false,
@@ -914,7 +923,10 @@ describe("cli", () => {
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: false,
@@ -1032,18 +1044,21 @@ describe("cli", () => {
         stop = vi.fn();
         on = vi.fn();
         getState = vi.fn();
-      }
+      },
     }));
     vi.doMock("./renderer.js", () => ({
       Renderer: class MockRenderer {
         start = vi.fn();
         stop = vi.fn();
         waitUntilExit = vi.fn(() => Promise.resolve());
-      }
+      },
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: true,
@@ -1167,7 +1182,10 @@ describe("cli", () => {
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: true,
@@ -1288,7 +1306,10 @@ describe("cli", () => {
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: true,
