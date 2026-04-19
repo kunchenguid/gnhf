@@ -169,15 +169,15 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ### Flags
 
-| Flag                     | Description                                                           | Default                |
-| ------------------------ | --------------------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)            | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                      | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                             | unlimited              |
-| `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited         |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)    | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`                |
-| `--version`              | Show version                                                          |                        |
+| Flag                     | Description                                                                | Default                |
+| ------------------------ | -------------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)                 | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                           | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                  | unlimited              |
+| `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)         | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)      | `false`                |
+| `--version`              | Show version                                                               |                        |
 
 ## Configuration
 
