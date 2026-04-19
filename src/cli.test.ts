@@ -703,6 +703,10 @@ describe("cli", () => {
   });
 
   it("uses the controlling terminal for the overwrite prompt when stdin is piped", async () => {
+    const inputPath = process.platform === "win32" ? "CONIN$" : "/dev/tty";
+    const outputPath = process.platform === "win32" ? "CONOUT$" : "/dev/tty";
+    const inputFd = 123;
+    const outputFd = process.platform === "win32" ? 124 : inputFd;
     const originalArgv = [...process.argv];
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
@@ -726,7 +730,8 @@ describe("cli", () => {
     const ttyInput = { destroy: vi.fn(), isTTY: true };
     const ttyOutput = { destroy: vi.fn(), isTTY: true };
     const openSync = vi.fn((path: string) => {
-      if (path === "/dev/tty") return 123;
+      if (path === inputPath) return inputFd;
+      if (path === outputPath) return outputFd;
       throw new Error(`unexpected open path: ${path}`);
     });
     const createReadStream = vi.fn(() => ttyInput);
@@ -813,13 +818,15 @@ describe("cli", () => {
       );
 
       expect(openSync).toHaveBeenCalledTimes(2);
+      expect(openSync).toHaveBeenNthCalledWith(1, inputPath, "r");
+      expect(openSync).toHaveBeenNthCalledWith(2, outputPath, "w");
       expect(createReadStream).toHaveBeenCalledWith("", {
         autoClose: true,
-        fd: 123,
+        fd: inputFd,
       });
       expect(createWriteStream).toHaveBeenCalledWith("", {
         autoClose: true,
-        fd: 123,
+        fd: outputFd,
       });
       expect(createInterface).toHaveBeenCalledWith({
         input: ttyInput,
@@ -844,6 +851,7 @@ describe("cli", () => {
   });
 
   it("fails cleanly when no controlling terminal is available for the overwrite prompt", async () => {
+    const inputPath = process.platform === "win32" ? "CONIN$" : "/dev/tty";
     const originalArgv = [...process.argv];
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
@@ -947,7 +955,7 @@ describe("cli", () => {
       expect((result as Error).message).toMatch(
         /process\.exit unexpectedly called with 1/,
       );
-      expect(openSync).toHaveBeenCalledWith("/dev/tty", "r");
+      expect(openSync).toHaveBeenCalledWith(inputPath, "r");
       expect(startSleepPrevention).not.toHaveBeenCalled();
       expect(exitSpy).toHaveBeenCalledTimes(1);
       expect(exitSpy).toHaveBeenCalledWith(1);
