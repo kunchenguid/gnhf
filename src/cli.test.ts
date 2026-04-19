@@ -702,6 +702,240 @@ describe("cli", () => {
     }
   });
 
+  it("fails cleanly when the overwrite prompt needs an interactive terminal", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({ type: "skipped" as const, reason: "unsupported" }),
+    );
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-test-"));
+    const promptPath = join(tempDir, "PROMPT.md");
+    writeFileSync(promptPath, "existing prompt", "utf-8");
+    const createInterface = vi.fn(() => {
+      throw new Error("readline should not be created without a TTY");
+    });
+
+    vi.resetModules();
+    vi.doMock("node:readline", () => ({ createInterface }));
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
+      getLastIterationNumber: vi.fn(() => 3),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention,
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn();
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "new prompt"];
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      await expect(import("./cli.js")).rejects.toThrow(
+        /process\.exit unexpectedly called with 1/,
+      );
+
+      expect(createInterface).not.toHaveBeenCalled();
+      expect(startSleepPrevention).not.toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Cannot show the overwrite prompt because stdin is not interactive.",
+        ),
+      );
+    } finally {
+      process.argv = originalArgv;
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails cleanly when the overwrite prompt closes before an answer", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(
+        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+      );
+    }) as typeof process.exit);
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({ type: "skipped" as const, reason: "unsupported" }),
+    );
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-test-"));
+    const promptPath = join(tempDir, "PROMPT.md");
+    writeFileSync(promptPath, "existing prompt", "utf-8");
+    let closeListener: (() => void) | undefined;
+    const readlineInterface = {
+      question: vi.fn(() => {
+        closeListener?.();
+      }),
+      close: vi.fn(),
+      once: vi.fn((event: string, listener: () => void) => {
+        if (event === "close") {
+          closeListener = listener;
+        }
+        return readlineInterface;
+      }),
+      off: vi.fn(() => readlineInterface),
+    };
+
+    vi.resetModules();
+    vi.doMock("node:readline", () => ({
+      createInterface: vi.fn(() => readlineInterface),
+    }));
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
+      getLastIterationNumber: vi.fn(() => 3),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention,
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn();
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "new prompt"];
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      const result = await Promise.race([
+        import("./cli.js").then(
+          () => "resolved",
+          (error) => error,
+        ),
+        new Promise((resolve) => {
+          setTimeout(() => resolve("timed-out"), 25);
+        }),
+      ]);
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toMatch(
+        /process\.exit unexpectedly called with 1/,
+      );
+      expect(startSleepPrevention).not.toHaveBeenCalled();
+      expect(exitSpy).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "The overwrite prompt closed before a choice was entered.",
+        ),
+      );
+    } finally {
+      process.argv = originalArgv;
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("does not start sleep prevention when quitting from the overwrite prompt", async () => {
     const originalArgv = [...process.argv];
     const stdoutWrite = vi
@@ -731,6 +965,8 @@ describe("cli", () => {
           callback("q");
         },
         close: vi.fn(),
+        once: vi.fn(),
+        off: vi.fn(),
       })),
     }));
     vi.doMock("./core/config.js", () => ({
@@ -780,6 +1016,11 @@ describe("cli", () => {
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
 
     try {
       await expect(import("./cli.js")).rejects.toThrow(
@@ -791,6 +1032,9 @@ describe("cli", () => {
       expect(exitSpy).toHaveBeenNthCalledWith(2, 1);
     } finally {
       process.argv = originalArgv;
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
       stdoutWrite.mockRestore();
       consoleError.mockRestore();
       exitSpy.mockRestore();

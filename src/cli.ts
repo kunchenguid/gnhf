@@ -110,13 +110,20 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
   return { runInfo, worktreePath, effectiveCwd: worktreePath };
 }
 
-function ask(question: string): Promise<string> {
+function ask(question: string, closeMessage: string): Promise<string> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stderr,
   });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const handleClose = () => {
+      rl.off("close", handleClose);
+      reject(new Error(closeMessage));
+    };
+
+    rl.once("close", handleClose);
     rl.question(question, (answer) => {
+      rl.off("close", handleClose);
       rl.close();
       resolve(answer.trim().toLowerCase());
     });
@@ -364,12 +371,19 @@ program
           runInfo = existing;
           startIteration = getLastIterationNumber(existing);
         } else {
+          if (!process.stdin.isTTY) {
+            throw new Error(
+              "Cannot show the overwrite prompt because stdin is not interactive. Re-run gnhf from an interactive terminal and choose o, n, or q.",
+            );
+          }
+
           const answer = await ask(
             `You are on gnhf branch "${currentBranch}".\n` +
               `  (o) Overwrite current run with new prompt\n` +
               `  (n) Start a new branch on top of this one\n` +
               `  (q) Quit\n` +
               `Choose [o/n/q]: `,
+            "The overwrite prompt closed before a choice was entered. Re-run gnhf from an interactive terminal and choose o, n, or q.",
           );
 
           if (answer === "o") {
