@@ -1,5 +1,9 @@
 import {
+  closeSync,
+  createReadStream,
+  createWriteStream,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   rmdirSync,
@@ -47,6 +51,12 @@ const GNHF_REEXEC_STDIN_PROMPT = "GNHF_REEXEC_STDIN_PROMPT";
 const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
 const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
 const GNHF_REEXEC_STDIN_PROMPT_FILENAME = "prompt.txt";
+
+class PromptSignalError extends Error {
+  constructor(public readonly signal: NodeJS.Signals) {
+    super(signal);
+  }
+}
 
 function parseNonNegativeInteger(value: string): number {
   if (!/^\d+$/.test(value)) {
@@ -110,21 +120,84 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
   return { runInfo, worktreePath, effectiveCwd: worktreePath };
 }
 
-function ask(question: string, closeMessage: string): Promise<string> {
+function openPromptTerminal(): {
+  input: NodeJS.ReadableStream;
+  output: NodeJS.WritableStream;
+  cleanup: () => void;
+} {
+  if (process.stdin.isTTY) {
+    return {
+      input: process.stdin,
+      output: process.stderr,
+      cleanup: () => {},
+    };
+  }
+
+  const inputPath = process.platform === "win32" ? "CONIN$" : "/dev/tty";
+  const outputPath = process.platform === "win32" ? "CONOUT$" : "/dev/tty";
+  const inputFd = openSync(inputPath, "r");
+  try {
+    const outputFd = openSync(outputPath, "w");
+    try {
+      const input = createReadStream("", { autoClose: true, fd: inputFd });
+      const output = createWriteStream("", { autoClose: true, fd: outputFd });
+      return {
+        input,
+        output,
+        cleanup: () => {
+          input.destroy();
+          output.destroy();
+        },
+      };
+    } catch (error) {
+      closeSync(outputFd);
+      throw error;
+    }
+  } catch (error) {
+    closeSync(inputFd);
+    throw error;
+  }
+}
+
+function ask(
+  question: string,
+  closeMessage: string,
+  unavailableMessage: string,
+): Promise<string> {
+  let terminal;
+  try {
+    terminal = openPromptTerminal();
+  } catch {
+    throw new Error(unavailableMessage);
+  }
+
   const rl = createInterface({
-    input: process.stdin,
-    output: process.stderr,
+    input: terminal.input,
+    output: terminal.output,
   });
   return new Promise((resolve, reject) => {
     const handleClose = () => {
+      terminal.cleanup();
       rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
       reject(new Error(closeMessage));
     };
 
+    const handleSigInt = () => {
+      rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
+      rl.close();
+      terminal.cleanup();
+      reject(new PromptSignalError("SIGINT"));
+    };
+
     rl.once("close", handleClose);
+    rl.once("SIGINT", handleSigInt);
     rl.question(question, (answer) => {
       rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
       rl.close();
+      terminal.cleanup();
       resolve(answer.trim().toLowerCase());
     });
   });
@@ -371,12 +444,6 @@ program
           runInfo = existing;
           startIteration = getLastIterationNumber(existing);
         } else {
-          if (!process.stdin.isTTY) {
-            throw new Error(
-              "Cannot show the overwrite prompt because stdin is not interactive. Re-run gnhf from an interactive terminal and choose o, n, or q.",
-            );
-          }
-
           const answer = await ask(
             `You are on gnhf branch "${currentBranch}".\n` +
               `  (o) Overwrite current run with new prompt\n` +
@@ -384,6 +451,7 @@ program
               `  (q) Quit\n` +
               `Choose [o/n/q]: `,
             "The overwrite prompt closed before a choice was entered. Re-run gnhf from an interactive terminal and choose o, n, or q.",
+            "Cannot show the overwrite prompt because stdin is not interactive. Re-run gnhf from an interactive terminal and choose o, n, or q.",
           );
 
           if (answer === "o") {
@@ -594,5 +662,8 @@ function die(message: string): never {
 try {
   await program.parseAsync();
 } catch (err) {
+  if (err instanceof PromptSignalError) {
+    process.exit(getSignalExitCode(err.signal));
+  }
   die(err instanceof Error ? err.message : String(err));
 }
