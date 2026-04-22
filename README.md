@@ -251,6 +251,8 @@ Including a snippet of `gnhf.log` is the single most useful thing you can attach
 
 ## Development
 
+If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). Human-authored PRs targeting `main` must be opened via `git push no-mistakes` so the required `Require no-mistakes` check passes.
+
 ```sh
 npm run build          # Build with tsdown
 npm run dev            # Watch mode
