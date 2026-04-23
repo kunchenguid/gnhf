@@ -872,6 +872,60 @@ describe("ClaudeAgent", () => {
     });
   });
 
+  it("keeps latest usage when later success result omits structured output", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 13,
+        cache_read_input_tokens: 24,
+        cache_creation_input_tokens: 6,
+        output_tokens: 47,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 37,
+      outputTokens: 47,
+      cacheReadTokens: 24,
+      cacheCreationTokens: 6,
+    });
+  });
+
   it("rejects when a later result event reports an error without structured output", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
