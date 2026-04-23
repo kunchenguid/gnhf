@@ -1370,6 +1370,128 @@ describe("cli", () => {
     }
   });
 
+  it("continues from the last iteration when updating the prompt on an existing gnhf branch", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-test-"));
+    const promptPath = join(tempDir, "PROMPT.md");
+    const orchestratorCtor = vi.fn();
+    const setupRun = vi.fn(() => stubRunInfo);
+
+    writeFileSync(promptPath, "existing prompt", "utf-8");
+
+    vi.resetModules();
+    vi.doMock("node:readline", () => ({
+      createInterface: vi.fn(() => ({
+        question: (_question: string, callback: (answer: string) => void) => {
+          callback("o");
+        },
+        close: vi.fn(),
+        once: vi.fn(),
+        off: vi.fn(),
+      })),
+    }));
+    vi.doMock("./core/config.js", () => ({
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/debug-log.js", () => ({
+      appendDebugLog: vi.fn(),
+      initDebugLog: vi.fn(),
+      serializeError: vi.fn(),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+      getRepoRootDir: vi.fn(() => "/repo"),
+      createWorktree: vi.fn(),
+      removeWorktree: vi.fn(),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun,
+      resumeRun: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
+      getLastIterationNumber: vi.fn(() => 3),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/sleep.js", () => ({
+      startSleepPrevention: vi.fn(),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        constructor(...args: unknown[]) {
+          orchestratorCtor(...args);
+        }
+        start = vi.fn(() => Promise.resolve());
+        stop = vi.fn();
+        on = vi.fn();
+        getState = vi.fn(() => ({
+          status: "completed" as const,
+          currentIteration: 3,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 0,
+          consecutiveFailures: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+        }));
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = vi.fn();
+        waitUntilExit = vi.fn(() => Promise.resolve());
+      }
+    }));
+
+    process.argv = ["node", "gnhf", "new prompt"];
+    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      await import("./cli.js");
+
+      expect(setupRun).toHaveBeenCalledWith(
+        "existing-run",
+        "new prompt",
+        "abc123",
+        process.cwd(),
+        { includeStopField: false },
+      );
+      expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+      expect(orchestratorCtor.mock.calls[0]?.[5]).toBe(3);
+    } finally {
+      process.argv = originalArgv;
+      if (originalIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+      }
+      stdoutWrite.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("waits for orchestrator shutdown after the renderer exits", async () => {
     let resolveStart!: () => void;
     const orchestratorStart = vi.fn(
