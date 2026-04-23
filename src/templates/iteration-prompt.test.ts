@@ -68,5 +68,7 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("Stop Condition");
     expect(result).toContain("all tasks are done");
     expect(result).toContain("should_fully_stop");
+    expect(result).toContain("set it to false");
+    expect(result).not.toContain("omit it");
   });
 });

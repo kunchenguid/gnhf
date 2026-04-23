@@ -19,7 +19,7 @@ export function buildIterationPrompt(params: {
 
   const stopConditionSection =
     params.stopWhen !== undefined
-      ? `\n\n## Stop Condition\n\nThe user has configured a condition to end the loop: ${params.stopWhen}\nIf this condition is fully met after this iteration's work, set should_fully_stop=true in your output. Otherwise set it to false (or omit it).`
+      ? `\n\n## Stop Condition\n\nThe user has configured a condition to end the loop: ${params.stopWhen}\nIf this condition is fully met after this iteration's work, set should_fully_stop=true in your output. Otherwise set it to false.`
       : "";
 
   return `You are working autonomously towards an objective given below.
