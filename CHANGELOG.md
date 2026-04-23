@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.24](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.23...gnhf-v0.1.24) (2026-04-23)
+
+
+### Bug Fixes
+
+* **agents:** make stop output schema conditional on --stop-when ([#82](https://github.com/kunchenguid/gnhf/issues/82)) ([36f69e8](https://github.com/kunchenguid/gnhf/commit/36f69e8d480f259b0142eb5aa9e1b25ad69f09cc))
+* **cli:** handle resume prompt overwrite from the controlling terminal ([#77](https://github.com/kunchenguid/gnhf/issues/77)) ([cc18215](https://github.com/kunchenguid/gnhf/commit/cc1821531af107adfd31253feabdd24077867110))
+
 ## [0.1.23](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.22...gnhf-v0.1.23) (2026-04-18)
 
 
