@@ -768,4 +768,107 @@ describe("ClaudeAgent", () => {
       "claude returned no structured_output",
     );
   });
+
+  it("picks up structured_output from a later result event when the first had none", async () => {
+    // If the agent schedules a wakeup before calling StructuredOutput, the
+    // first result event has structured_output: null. A later turn produces
+    // the real answer, and that one should be used.
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 30,
+      },
+      structured_output: null,
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 25,
+        cache_creation_input_tokens: 5,
+        output_tokens: 50,
+      },
+      structured_output: {
+        success: true,
+        summary: "later turn submitted",
+        key_changes_made: [],
+        key_learnings: ["noticed after a wakeup"],
+      },
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "later turn submitted",
+      key_changes_made: [],
+      key_learnings: ["noticed after a wakeup"],
+    });
+  });
+
+  it("keeps an earlier structured_output when later result events arrive with null output", async () => {
+    // ScheduleWakeup / Stop-hook continuations can produce additional
+    // result events after the iteration has already submitted its
+    // structured output. Those follow-up result events have
+    // structured_output: null and must not clobber the real one.
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 21,
+        cache_creation_input_tokens: 5,
+        output_tokens: 42,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+  });
 });

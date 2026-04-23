@@ -311,7 +311,18 @@ export class ClaudeAgent implements Agent {
         }
 
         if (event.type === "result") {
-          resultEvent = event as ClaudeResultEvent;
+          const next = event as ClaudeResultEvent;
+          // Prefer the last result event that carried structured_output.
+          // Claude sessions can produce multiple result events across turns
+          // (e.g. ScheduleWakeup fires or a Stop hook resumes background
+          // work). Follow-up turns typically have structured_output: null,
+          // which must not clobber a previously-valid one. But the agent
+          // could also submit structured output in a later turn (e.g. first
+          // turn scheduled a wakeup, second turn produced the answer), so a
+          // valid later event should still win.
+          if (next.structured_output || !resultEvent) {
+            resultEvent = next;
+          }
         }
       });
 

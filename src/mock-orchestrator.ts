@@ -144,6 +144,7 @@ export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
     successCount: 11,
     failCount: 2,
     consecutiveFailures: 0,
+    consecutiveErrors: 0,
     startTime: new Date(Date.now() - INITIAL_ELAPSED_MS),
     waitingUntil: null,
     lastMessage: AGENT_MESSAGES[0],

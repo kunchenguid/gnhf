@@ -633,6 +633,173 @@ describe("Orchestrator stop limits", () => {
   });
 });
 
+describe("Orchestrator backoff behavior", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not back off after an explicit agent failure (success=false)", async () => {
+    vi.useFakeTimers();
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        output: {
+          success: false,
+          summary: "tried and failed",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      })),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    // Without advancing any timers, iteration 2 must start.
+    // If backoff were (incorrectly) triggered, a 60s timer would block us
+    // and waitFor would time out.
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+
+    await startPromise;
+
+    expect(orchestrator.getState().status).toBe("aborted");
+  });
+
+  it("backs off after an error failure (agent threw)", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error("transient error");
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    // After the error, a backoff timer should be scheduled.
+    await vi.waitFor(() => {
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+    });
+    // And iteration 2 must not have started yet.
+    expect(agent.run).toHaveBeenCalledTimes(1);
+
+    // Advance past the 60s first-failure backoff.
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+
+    await startPromise;
+  });
+
+  it("resets the error streak after a reported failure so a later error backs off from 60s again", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error("early error");
+        if (callCount === 2)
+          return {
+            output: {
+              success: false,
+              summary: "tried and failed",
+              key_changes_made: [],
+              key_learnings: [],
+            },
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+          };
+        if (callCount === 3) throw new Error("later error");
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      { ...config, maxConsecutiveFailures: 10 },
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 4 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    // Iteration 1: error -> backoff 60s
+    await vi.waitFor(() => expect(agent.run).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // Iteration 2 (reported failure) has no backoff so iteration 3 (error)
+    // follows immediately; waiting for the third call verifies the no-backoff
+    // path between 2 and 3.
+    await vi.waitFor(() => expect(agent.run).toHaveBeenCalledTimes(3));
+
+    // Wait for iteration 3's backoff to be scheduled before advancing time.
+    await vi.waitFor(() =>
+      expect(orchestrator.getState().status).toBe("waiting"),
+    );
+
+    // Iteration 3's error backoff should be 60s again (streak reset), not
+    // 120s. Advancing exactly 60s must be enough to unblock iteration 4.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(agent.run).toHaveBeenCalledTimes(4));
+
+    await startPromise;
+  });
+});
+
 describe("Orchestrator crash resilience", () => {
   beforeEach(() => {
     vi.clearAllMocks();
