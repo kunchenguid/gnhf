@@ -76,11 +76,13 @@ export function setupRun(
   writeFileSync(promptPath, prompt, "utf-8");
 
   const notesPath = join(runDir, "notes.md");
-  writeFileSync(
-    notesPath,
-    `# gnhf run: ${runId}\n\nObjective: ${prompt}\n\n## Iteration Log\n`,
-    "utf-8",
-  );
+  if (!existsSync(notesPath)) {
+    writeFileSync(
+      notesPath,
+      `# gnhf run: ${runId}\n\nObjective: see .gnhf/runs/${runId}/prompt.md\n\n## Iteration Log\n`,
+      "utf-8",
+    );
+  }
 
   const schemaPath = join(runDir, "output-schema.json");
   writeSchemaFile(schemaPath, schemaOptions.includeStopField);

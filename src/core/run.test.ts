@@ -81,7 +81,7 @@ describe("setupRun", () => {
     );
   });
 
-  it("writes notes.md with header and objective", () => {
+  it("writes notes.md with header that points at prompt.md instead of inlining the prompt", () => {
     setupRun("run-abc", "improve coverage", "abc123", P, {
       includeStopField: false,
     });
@@ -91,7 +91,8 @@ describe("setupRun", () => {
     expect(notesCall).toBeDefined();
     const content = notesCall![1] as string;
     expect(content).toContain("# gnhf run: run-abc");
-    expect(content).toContain("Objective: improve coverage");
+    expect(content).toContain(".gnhf/runs/run-abc/prompt.md");
+    expect(content).not.toContain("improve coverage");
     expect(content).toContain("## Iteration Log");
   });
 
@@ -155,6 +156,31 @@ describe("setupRun", () => {
     expect(mockWriteFileSync).not.toHaveBeenCalledWith(
       baseCommitPath,
       "new456\n",
+      "utf-8",
+    );
+  });
+
+  it("preserves the existing notes.md on overwrite so prior iteration log survives", () => {
+    const notesPath = join(P, ".gnhf", "runs", "run-abc", "notes.md");
+    mockExistsSync.mockImplementation((path) => path === notesPath);
+
+    setupRun("run-abc", "new prompt", "abc123", P, { includeStopField: false });
+
+    const notesCall = mockWriteFileSync.mock.calls.find(
+      (call) => typeof call[0] === "string" && call[0].endsWith("notes.md"),
+    );
+    expect(notesCall).toBeUndefined();
+  });
+
+  it("still overwrites prompt.md on overwrite so the new prompt takes effect", () => {
+    const notesPath = join(P, ".gnhf", "runs", "run-abc", "notes.md");
+    mockExistsSync.mockImplementation((path) => path === notesPath);
+
+    setupRun("run-abc", "new prompt", "abc123", P, { includeStopField: false });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "prompt.md"),
+      "new prompt",
       "utf-8",
     );
   });

@@ -464,7 +464,7 @@ program
         } else {
           const answer = await ask(
             `You are on gnhf branch "${currentBranch}".\n` +
-              `  (o) Overwrite current run with new prompt\n` +
+              `  (o) Update prompt and continue current run\n` +
               `  (n) Start a new branch on top of this one\n` +
               `  (q) Quit\n` +
               `Choose [o/n/q]: `,
@@ -481,6 +481,7 @@ program
               cwd,
               schemaOptions,
             );
+            startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
             runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
