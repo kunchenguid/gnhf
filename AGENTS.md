@@ -4,7 +4,7 @@ This file provides guidance to agents1 when working with code in this repository
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, or OpenCode) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard` with exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, or OpenCode) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, and only hard agent errors trigger exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
 
 ## Commands
 
@@ -30,7 +30,7 @@ Entry point is `src/cli.ts`. It parses flags with commander, resolves config, ha
 ### Run lifecycle (the critical flow)
 
 1. `cli.ts` decides one of three modes: new branch, resume an existing `gnhf/<slug>` branch, or `--worktree` (creates a sibling `<repo>-gnhf-worktrees/<slug>/` checkout). When resuming with a different prompt, it asks whether to overwrite the saved prompt, start a new branch, or quit; if stdin is piped, that confirmation comes from the controlling terminal before any sleep-prevention re-exec. `setupRun`/`resumeRun` in `src/core/run.ts` create `.gnhf/runs/<runId>/` with `prompt.md`, `notes.md`, `output-schema.json`, `base-commit`, and `gnhf.log`, and add `.gnhf/runs/` to `.git/info/exclude` so run metadata stays local.
-2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), call `agent.run(...)`, then on success `commitAll` + append to `notes.md`; on failure `resetHard` and back off. Three consecutive failures abort. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), and `--stop-when` (post-iteration, honored on both successful and failed iterations when the agent sets `should_fully_stop` in its output).
+2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), call `agent.run(...)`, then on success `commitAll` + append to `notes.md`; on failure `resetHard`. Agent-reported failures continue immediately, while thrown agent errors increment the backoff streak. Three consecutive failures abort. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), and `--stop-when` (post-iteration, honored on both successful and failed iterations when the agent sets `should_fully_stop` in its output).
 3. `Renderer` (`src/renderer.ts` + `src/renderer-diff.ts`) is a cell-based TUI using the alt screen buffer. `cli.ts` enters/exits alt screen around it. The renderer subscribes to orchestrator events, diffs frames to minimize writes, and updates the terminal title live. `MockOrchestrator` (`src/mock-orchestrator.ts`) drives the renderer offline via `--mock` for demos/testing.
 4. Shutdown path: SIGINT/SIGTERM → `orchestrator.stop()` (aborts the active iteration, rolls back uncommitted work) → renderer exits → 5s force-exit timeout. If it's a `--worktree` run with zero commits, the worktree is removed; otherwise it's preserved and the path is printed.
 
