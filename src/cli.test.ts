@@ -1460,11 +1460,14 @@ describe("cli", () => {
         start = vi.fn();
         stop = vi.fn();
         waitUntilExit = vi.fn(() => Promise.resolve());
-      }
+      },
     }));
 
     process.argv = ["node", "gnhf", "new prompt"];
-    const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const originalIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
       value: true,
