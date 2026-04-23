@@ -9,11 +9,9 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
-import {
-  parseJSONLStream,
-  setupAbortHandler,
-  setupChildProcessHandlers,
-} from "./stream-utils.js";
+import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
+
+const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
 
 interface ClaudeAssistantEvent {
   type: "assistant";
@@ -47,6 +45,7 @@ type ClaudeEvent = ClaudeAssistantEvent | ClaudeResultEvent | { type: string };
 interface ClaudeAgentDeps {
   bin?: string;
   extraArgs?: string[];
+  finalResultGraceMs?: number;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -97,7 +96,22 @@ function terminateClaudeProcess(
     return;
   }
 
+  if (child.pid) {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Fall back to the direct child if it was not started as a process group.
+    }
+  }
+
   child.kill("SIGTERM");
+}
+
+function isFinalStructuredResult(event: ClaudeResultEvent): boolean {
+  return (
+    !event.is_error && event.subtype === "success" && !!event.structured_output
+  );
 }
 
 function buildClaudeArgs(
@@ -167,6 +181,7 @@ export class ClaudeAgent implements Agent {
 
   private bin: string;
   private extraArgs?: string[];
+  private finalResultGraceMs: number;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
@@ -174,6 +189,8 @@ export class ClaudeAgent implements Agent {
     const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
     this.bin = deps.bin ?? "claude";
     this.extraArgs = deps.extraArgs;
+    this.finalResultGraceMs =
+      deps.finalResultGraceMs ?? DEFAULT_FINAL_RESULT_EXIT_GRACE_MS;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -194,6 +211,7 @@ export class ClaudeAgent implements Agent {
         buildClaudeArgs(prompt, this.schema, this.extraArgs),
         {
           cwd,
+          detached: this.platform !== "win32",
           shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
@@ -210,6 +228,9 @@ export class ClaudeAgent implements Agent {
 
       let resultEvent: ClaudeResultEvent | null = null;
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
+      let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+      let closedAfterFinalCleanup = false;
+      let stderr = "";
       const cumulative: TokenUsage = {
         inputTokens: 0,
         outputTokens: 0,
@@ -221,6 +242,14 @@ export class ClaudeAgent implements Agent {
       let lastAnonymousAssistantId: string | null = null;
       let lastAnonymousAssistantUsage: TokenUsage | null = null;
       let pendingAnonymousAssistantUsage: TokenUsage | null = null;
+
+      child.stderr!.on("data", (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      child.on("error", (err) => {
+        reject(new Error(`Failed to spawn claude: ${err.message}`));
+      });
 
       parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
         if (event.type === "assistant") {
@@ -330,10 +359,26 @@ export class ClaudeAgent implements Agent {
           ) {
             resultEvent = next;
           }
+
+          if (isFinalStructuredResult(next) && !finalResultCleanupTimer) {
+            finalResultCleanupTimer = setTimeout(() => {
+              closedAfterFinalCleanup = true;
+              terminateClaudeProcess(child, this.platform);
+            }, this.finalResultGraceMs);
+          }
         }
       });
 
-      setupChildProcessHandlers(child, "claude", logStream, reject, () => {
+      child.on("close", (code) => {
+        if (finalResultCleanupTimer) {
+          clearTimeout(finalResultCleanupTimer);
+        }
+        logStream?.end();
+        if (code !== 0 && !closedAfterFinalCleanup) {
+          reject(new Error(`claude exited with code ${code}: ${stderr}`));
+          return;
+        }
+
         if (!resultEvent) {
           reject(new Error("claude returned no result event"));
           return;

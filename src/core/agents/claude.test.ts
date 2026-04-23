@@ -62,6 +62,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: true,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -117,6 +118,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -148,6 +150,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -182,6 +185,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -237,6 +241,97 @@ describe("ClaudeAgent", () => {
       { stdio: "ignore" },
     );
     expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it("terminates the process group after a final structured output if Claude stays alive", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+      const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(24);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "done" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits 15 seconds by default before terminating after final structured output", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = agent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await promise;
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("resolves with parsed output and usage on success", async () => {
