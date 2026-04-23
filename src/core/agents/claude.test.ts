@@ -8,8 +8,13 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { ClaudeAgent } from "./claude.js";
+import { buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
+
+const STOP_SCHEMA = buildAgentOutputSchema({
+  includeStopField: true,
+});
 
 function createMockProcess() {
   const proc = Object.assign(new EventEmitter(), {
@@ -61,6 +66,31 @@ describe("ClaudeAgent", () => {
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },
+    );
+  });
+
+  it("uses the configured schema for --json-schema", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({
+      schema: STOP_SCHEMA,
+    });
+
+    configuredAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        JSON.stringify(STOP_SCHEMA),
+        "--dangerously-skip-permissions",
+      ],
+      expect.any(Object),
     );
   });
 
