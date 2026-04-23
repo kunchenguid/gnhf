@@ -871,4 +871,46 @@ describe("ClaudeAgent", () => {
       key_learnings: [],
     });
   });
+
+  it("rejects when a later result event reports an error without structured output", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "error_max_turns",
+      is_error: true,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 21,
+        cache_creation_input_tokens: 5,
+        output_tokens: 42,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("claude reported error");
+  });
 });

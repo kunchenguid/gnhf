@@ -320,7 +320,12 @@ export class ClaudeAgent implements Agent {
           // could also submit structured output in a later turn (e.g. first
           // turn scheduled a wakeup, second turn produced the answer), so a
           // valid later event should still win.
-          if (next.structured_output || !resultEvent) {
+          if (
+            next.is_error ||
+            next.subtype !== "success" ||
+            next.structured_output ||
+            !resultEvent
+          ) {
             resultEvent = next;
           }
         }
