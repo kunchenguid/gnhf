@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.25](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.24...gnhf-v0.1.25) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cli:** preserve run history when updating a resumed prompt ([#91](https://github.com/kunchenguid/gnhf/issues/91)) ([61306e9](https://github.com/kunchenguid/gnhf/commit/61306e9a2a29f8ebd6885f1fe02bdf1fd3b8917b))
+* **core:** preserve agent output and back off only on hard errors ([#89](https://github.com/kunchenguid/gnhf/issues/89)) ([b369ae8](https://github.com/kunchenguid/gnhf/commit/b369ae80fd752d11729046d971a5ab09be18c394))
+
 ## [0.1.24](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.23...gnhf-v0.1.24) (2026-04-23)
 
 
