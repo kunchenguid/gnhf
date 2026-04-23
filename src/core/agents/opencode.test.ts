@@ -545,11 +545,55 @@ describe("OpenCodeAgent", () => {
     });
   });
 
-  it("passes configured extra args through to opencode serve", async () => {
+  it("extracts --model from extraArgs and passes it as an object via the prompt body", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const configuredAgent = new OpenCodeAgent({
-      extraArgs: ["--model", "gpt-5"],
+      extraArgs: ["--model", "fireworks-ai/accounts/fireworks/models/qwen3p6-plus"],
+      fetch: fetchMock as typeof fetch,
+      getPort,
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 10,
+            output: 4,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await configuredAgent.run("test prompt", "/repo");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "opencode",
+      ["serve", "--hostname", "127.0.0.1", "--port", "8765", "--print-logs"],
+      expect.objectContaining({
+        cwd: "/repo",
+      }),
+    );
+
+    const messageBody = JSON.parse(
+      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    );
+    expect(messageBody.model).toEqual({
+      providerID: "fireworks-ai",
+      modelID: "accounts/fireworks/models/qwen3p6-plus",
+    });
+  });
+
+  it("passes non-model extra args through to opencode serve", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new OpenCodeAgent({
+      extraArgs: ["--pure", "--model", "anthropic/claude-sonnet-4-20250514", "--log-level", "DEBUG"],
       fetch: fetchMock as typeof fetch,
       getPort,
     });
@@ -569,8 +613,9 @@ describe("OpenCodeAgent", () => {
       "opencode",
       [
         "serve",
-        "--model",
-        "gpt-5",
+        "--pure",
+        "--log-level",
+        "DEBUG",
         "--hostname",
         "127.0.0.1",
         "--port",
@@ -581,6 +626,34 @@ describe("OpenCodeAgent", () => {
         cwd: "/repo",
       }),
     );
+  });
+
+  it("does not include model in the prompt body when no --model is given", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 10,
+            output: 4,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await agent.run("test prompt", "/repo");
+
+    const messageBody = JSON.parse(
+      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    );
+    expect(messageBody.model).toBeUndefined();
   });
 
   it("uses a shell on Windows so PATH-resolved .cmd shims can launch", async () => {

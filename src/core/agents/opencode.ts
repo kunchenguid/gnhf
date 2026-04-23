@@ -136,6 +136,52 @@ const BLANKET_PERMISSION_RULESET = [
   { permission: "*", pattern: "*", action: "allow" },
 ] as const;
 
+interface OpenCodeModelRef {
+  providerID: string;
+  modelID: string;
+}
+
+/**
+ * Extract `--model`/`-m` and its value from an args array.
+ * Returns the model ref (or undefined) and a filtered copy of the array
+ * with the model flag + value removed.  Handles both `--model value` and
+ * `--model=value` forms.
+ *
+ * The CLI format is `provider/model` (e.g.
+ * `fireworks-ai/accounts/fireworks/models/qwen3p6-plus`).  The opencode
+ * serve HTTP API expects `{ providerID, modelID }`, so we split on the
+ * first `/`.
+ */
+function extractModelArg(
+  args: string[],
+): { model: OpenCodeModelRef | undefined; rest: string[] } {
+  let raw: string | undefined;
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--model" || arg === "-m") {
+      raw = args[++i];
+    } else if (arg.startsWith("--model=")) {
+      raw = arg.slice("--model=".length);
+    } else {
+      rest.push(arg);
+    }
+  }
+
+  let model: OpenCodeModelRef | undefined;
+  if (raw) {
+    const slashIndex = raw.indexOf("/");
+    if (slashIndex > 0) {
+      model = {
+        providerID: raw.slice(0, slashIndex),
+        modelID: raw.slice(slashIndex + 1),
+      };
+    }
+  }
+
+  return { model, rest };
+}
+
 function buildStructuredOutputFormat(schema: AgentOutputSchema) {
   return {
     type: "json_schema",
@@ -271,6 +317,7 @@ export class OpenCodeAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private model?: OpenCodeModelRef;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
   private spawnFn: typeof spawn;
@@ -279,7 +326,11 @@ export class OpenCodeAgent implements Agent {
 
   constructor(deps: OpenCodeDeps = {}) {
     this.bin = deps.bin ?? "opencode";
-    this.extraArgs = deps.extraArgs;
+    // `opencode serve` does not accept --model; extract it from extraArgs
+    // and pass it via the HTTP API instead.
+    const { model, rest } = extractModelArg(deps.extraArgs ?? []);
+    this.model = model;
+    this.extraArgs = rest.length > 0 ? rest : undefined;
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
@@ -698,6 +749,7 @@ export class OpenCodeAgent implements Agent {
             role: "user",
             parts: [{ type: "text", text: prompt }],
             format: buildStructuredOutputFormat(this.schema),
+            ...(this.model ? { model: this.model } : {}),
           },
           signal,
         });
