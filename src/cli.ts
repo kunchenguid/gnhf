@@ -87,13 +87,17 @@ function humanizeErrorMessage(message: string): string {
   return message;
 }
 
-function initializeNewBranch(prompt: string, cwd: string): RunInfo {
+function initializeNewBranch(
+  prompt: string,
+  cwd: string,
+  schemaOptions: { includeStopField: boolean },
+): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
   const branchName = slugifyPrompt(prompt);
   createBranch(branchName, cwd);
   const runId = branchName.split("/")[1]!;
-  return setupRun(runId, prompt, baseCommit, cwd);
+  return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
 }
 
 interface WorktreeRunResult {
@@ -102,7 +106,11 @@ interface WorktreeRunResult {
   effectiveCwd: string;
 }
 
-function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
+function initializeWorktreeRun(
+  prompt: string,
+  cwd: string,
+  schemaOptions: { includeStopField: boolean },
+): WorktreeRunResult {
   // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
   // main checkout don't carry over, so a dirty tree is harmless here.
@@ -116,7 +124,13 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
     runId,
   );
   createWorktree(repoRoot, worktreePath, branchName);
-  const runInfo = setupRun(runId, prompt, baseCommit, worktreePath);
+  const runInfo = setupRun(
+    runId,
+    prompt,
+    baseCommit,
+    worktreePath,
+    schemaOptions,
+  );
   return { runInfo, worktreePath, effectiveCwd: worktreePath };
 }
 
@@ -397,6 +411,10 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
+      const schemaOptions = {
+        includeStopField: options.stopWhen !== undefined,
+      };
+
       let runInfo;
       let startIteration = 0;
 
@@ -413,7 +431,7 @@ program
           process.exit(1);
         }
 
-        const wt = initializeWorktreeRun(prompt, cwd);
+        const wt = initializeWorktreeRun(prompt, cwd, schemaOptions);
         runInfo = wt.runInfo;
         effectiveCwd = wt.effectiveCwd;
         worktreePath = wt.worktreePath;
@@ -436,7 +454,7 @@ program
         });
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
-        const existing = resumeRun(existingRunId, cwd);
+        const existing = resumeRun(existingRunId, cwd, schemaOptions);
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
 
         if (!prompt || prompt === existingPrompt) {
@@ -456,9 +474,15 @@ program
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
-            runInfo = setupRun(existingRunId, prompt, existing.baseCommit, cwd);
+            runInfo = setupRun(
+              existingRunId,
+              prompt,
+              existing.baseCommit,
+              cwd,
+              schemaOptions,
+            );
           } else if (answer === "n") {
-            runInfo = initializeNewBranch(prompt, cwd);
+            runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);
           }
@@ -469,7 +493,7 @@ program
           return;
         }
 
-        runInfo = initializeNewBranch(prompt, cwd);
+        runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
       }
 
       let sleepPreventionCleanup: (() => Promise<void>) | null = null;
@@ -529,6 +553,7 @@ program
         runInfo,
         config.agentPathOverride[config.agent],
         config.agentArgsOverride?.[config.agent],
+        schemaOptions,
       );
       const orchestrator = new Orchestrator(
         config,

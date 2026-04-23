@@ -23,7 +23,11 @@ vi.mock("../debug-log.js", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { OpenCodeAgent } from "./opencode.js";
-import { AGENT_OUTPUT_SCHEMA } from "./types.js";
+import { buildAgentOutputSchema } from "./types.js";
+
+const DEFAULT_AGENT_OUTPUT_SCHEMA = buildAgentOutputSchema({
+  includeStopField: false,
+});
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -455,7 +459,7 @@ describe("OpenCodeAgent", () => {
     expect(messageBody.parts[0]?.text).toContain("reply with only valid JSON");
     expect(messageBody.format).toEqual({
       type: "json_schema",
-      schema: AGENT_OUTPUT_SCHEMA,
+      schema: DEFAULT_AGENT_OUTPUT_SCHEMA,
       retryCount: 1,
     });
     expect(

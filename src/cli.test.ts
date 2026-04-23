@@ -245,6 +245,7 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
+      { includeStopField: false },
     );
   });
 
@@ -266,6 +267,7 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
+      { includeStopField: false },
     );
   });
 
@@ -287,6 +289,7 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
+      { includeStopField: false },
     );
   });
 
@@ -308,6 +311,7 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
+      { includeStopField: false },
     );
   });
 
@@ -322,11 +326,34 @@ describe("cli", () => {
       preventSleep: false,
     });
 
-    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined, [
-      "-m",
-      "gpt-5.4",
-      "--full-auto",
-    ]);
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      ["-m", "gpt-5.4", "--full-auto"],
+      { includeStopField: false },
+    );
+  });
+
+  it("threads includeStopField=true into agent creation when --stop-when is set", async () => {
+    const { createAgent } = await runCliWithMocks(
+      ["ship it", "--stop-when", "all tests pass"],
+      {
+        agent: "codex",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      { includeStopField: true },
+    );
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {

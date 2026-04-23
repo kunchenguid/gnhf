@@ -6,9 +6,10 @@ import {
 import { createWriteStream, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import {
-  AGENT_OUTPUT_SCHEMA,
+  buildAgentOutputSchema,
   type Agent,
   type AgentOutput,
+  type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
@@ -87,6 +88,7 @@ interface OpenCodeDeps {
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
   platform?: NodeJS.Platform;
+  schema?: AgentOutputSchema;
   spawn?: typeof spawn;
 }
 
@@ -134,11 +136,13 @@ const BLANKET_PERMISSION_RULESET = [
   { permission: "*", pattern: "*", action: "allow" },
 ] as const;
 
-const STRUCTURED_OUTPUT_FORMAT = {
-  type: "json_schema",
-  schema: AGENT_OUTPUT_SCHEMA,
-  retryCount: 1,
-} as const;
+function buildStructuredOutputFormat(schema: AgentOutputSchema) {
+  return {
+    type: "json_schema",
+    schema,
+    retryCount: 1,
+  } as const;
+}
 
 function buildOpencodeChildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -147,14 +151,14 @@ function buildOpencodeChildEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function buildPrompt(prompt: string): string {
+function buildPrompt(prompt: string, schema: AgentOutputSchema): string {
   return [
     prompt,
     "",
     "When you finish, reply with only valid JSON.",
     "Do not wrap the JSON in markdown fences.",
     "Do not include any prose before or after the JSON.",
-    `The JSON must match this schema exactly: ${JSON.stringify(AGENT_OUTPUT_SCHEMA)}`,
+    `The JSON must match this schema exactly: ${JSON.stringify(schema)}`,
   ].join("\n");
 }
 
@@ -268,6 +272,7 @@ export class OpenCodeAgent implements Agent {
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
   private platform: NodeJS.Platform;
+  private schema: AgentOutputSchema;
   private spawnFn: typeof spawn;
   private server: OpenCodeServer | null = null;
   private closingPromise: Promise<void> | null = null;
@@ -279,6 +284,8 @@ export class OpenCodeAgent implements Agent {
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
     this.platform = deps.platform ?? process.platform;
+    this.schema =
+      deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
     this.spawnFn = deps.spawn ?? spawn;
   }
 
@@ -317,7 +324,7 @@ export class OpenCodeAgent implements Agent {
       const result = await this.streamMessage(
         server,
         sessionId,
-        buildPrompt(prompt),
+        buildPrompt(prompt, this.schema),
         runController.signal,
         logStream,
         onUsage,
@@ -690,7 +697,7 @@ export class OpenCodeAgent implements Agent {
           body: {
             role: "user",
             parts: [{ type: "text", text: prompt }],
-            format: STRUCTURED_OUTPUT_FORMAT,
+            format: buildStructuredOutputFormat(this.schema),
           },
           signal,
         });
