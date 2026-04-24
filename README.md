@@ -229,7 +229,7 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
 - Omit it to keep the default `gnhf #<iteration>: <summary>` format.
-- Set `preset: angular` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows.
+- Set `preset: angular` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Allowed types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and missing scopes are omitted.
 
 ### Custom Agent Paths
 
