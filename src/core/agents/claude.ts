@@ -415,7 +415,9 @@ export class ClaudeAgent implements Agent {
         }
 
         const output: AgentOutput = terminalResultEvent.structured_output;
-        const usage = toTokenUsage(latestResultUsage ?? terminalResultEvent.usage);
+        const usage = toTokenUsage(
+          latestResultUsage ?? terminalResultEvent.usage,
+        );
 
         onUsage?.(usage);
         resolve({ output, usage });
