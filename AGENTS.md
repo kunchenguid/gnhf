@@ -36,7 +36,7 @@ Entry point is `src/cli.ts`. It parses flags with commander, resolves config, ha
 
 ### Agents (`src/core/agents/`)
 
-Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`, plus `should_fully_stop` only when `--stop-when` is active) that matches the schema built by `buildAgentOutputSchema(...)`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
+Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`, commit-message fields when configured, plus `should_fully_stop` only when `--stop-when` is active) that matches the schema built by `buildAgentOutputSchema(...)`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
 
 - `claude.ts` / `codex.ts` / `copilot.ts` / `pi.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, raises `PermanentAgentError` for low credit balance exits, and after a short grace period shuts down a lingering Claude process tree if it stays alive. Copilot uses JSONL output plus prompt-level schema instructions, then parses the final `assistant.message` content. Pi runs in JSON mode, appends the final output schema to the prompt, and parses the assistant JSON reply from Pi's streamed events.
 - `rovodev.ts` / `opencode.ts`: long-running local HTTP servers managed via `managed-process.ts` (start once, reuse across iterations, close on shutdown). OpenCode creates a per-run session and applies a blanket allow rule to avoid prompt blocking.
@@ -46,7 +46,7 @@ Reserved args managed by gnhf are rejected in `config.ts` via `isReservedAgentAr
 
 ### Config (`src/core/config.ts`)
 
-Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agentPathOverride` and `agentArgsOverride` are per-agent; paths resolve relative to `~/.gnhf/` and support `~` expansion.
+Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agentPathOverride` and `agentArgsOverride` are per-agent; paths resolve relative to `~/.gnhf/` and support `~` expansion. `commitMessage.preset: angular` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects.
 
 ### Git helpers (`src/core/git.ts`)
 

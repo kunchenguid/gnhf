@@ -133,6 +133,19 @@ function runCli(
   });
 }
 
+function createTestEnv(mockLogPath: string, tempDirs: string[]): NodeJS.ProcessEnv {
+  const home = mkdtempSync(join(tmpdir(), "gnhf-e2e-home-"));
+  tempDirs.push(home);
+
+  return {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+    GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+  };
+}
+
 describe("gnhf e2e", () => {
   const tempDirs: string[] = [];
 
@@ -162,11 +175,7 @@ describe("gnhf e2e", () => {
       cwd,
       ["ship it", "--agent", "opencode", "--max-iterations", "1"],
       {
-        env: {
-          ...process.env,
-          PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-          GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-        },
+        env: createTestEnv(mockLogPath, tempDirs),
       },
     );
 
@@ -204,11 +213,7 @@ describe("gnhf e2e", () => {
       ["--agent", "opencode", "--max-iterations", "1"],
       {
         stdin: "ship it from stdin\n",
-        env: {
-          ...process.env,
-          PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-          GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-        },
+        env: createTestEnv(mockLogPath, tempDirs),
       },
     );
 
@@ -225,11 +230,7 @@ describe("gnhf e2e", () => {
     tempDirs.push(logDir);
     const mockLogPath = join(logDir, "mock-opencode.jsonl");
 
-    const env = {
-      ...process.env,
-      PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-      GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-    };
+    const env = createTestEnv(mockLogPath, tempDirs);
 
     const firstRun = await runCli(
       cwd,
@@ -269,11 +270,7 @@ describe("gnhf e2e", () => {
           "--worktree",
         ],
         {
-          env: {
-            ...process.env,
-            PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-            GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-          },
+          env: createTestEnv(mockLogPath, tempDirs),
         },
       );
 
@@ -467,11 +464,7 @@ describe("gnhf e2e", () => {
         [distCliPath, "slow cleanup", "--agent", "opencode", "--worktree"],
         {
           cwd,
-          env: {
-            ...process.env,
-            PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-            GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-          },
+          env: createTestEnv(mockLogPath, tempDirs),
           stdio: ["pipe", "pipe", "pipe"],
         },
       );
@@ -531,11 +524,7 @@ describe("gnhf e2e", () => {
         [distCliPath, "slow cleanup", "--agent", "opencode"],
         {
           cwd,
-          env: {
-            ...process.env,
-            PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-            GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-          },
+          env: createTestEnv(mockLogPath, tempDirs),
           stdio: ["pipe", "pipe", "pipe"],
         },
       );
