@@ -22,7 +22,52 @@ const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
-  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n#   copilot: /path/to/custom-copilot\n#   pi: /path/to/custom-pi\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n#   copilot:\n#     - --model\n#     - gpt-5.4\n#   pi:\n#     - --provider\n#     - openai-codex\n#     - --model\n#     - gpt-5.5\n#     - --thinking\n#     - high\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
+  [
+    "# Agent to use by default",
+    `agent: ${agent}`,
+    "",
+    "# Custom paths to agent binaries (optional)",
+    "# Paths may be absolute, bare executable names on PATH,",
+    "# ~-prefixed, or relative to this config directory.",
+    "# Note: rovodev overrides must point to an acli-compatible binary.",
+    "# agentPathOverride:",
+    "#   claude: /path/to/custom-claude",
+    "#   codex: /path/to/custom-codex",
+    "#   copilot: /path/to/custom-copilot",
+    "#   pi: /path/to/custom-pi",
+    "",
+    "# Per-agent CLI arg overrides (optional)",
+    "# agentArgsOverride:",
+    "#   codex:",
+    "#     - -m",
+    "#     - gpt-5.4",
+    "#     - -c",
+    '#     - model_reasoning_effort="high"',
+    "#     - --full-auto",
+    "#   copilot:",
+    "#     - --model",
+    "#     - gpt-5.4",
+    "#   pi:",
+    "#     - --provider",
+    "#     - openai-codex",
+    "#     - --model",
+    "#     - gpt-5.5",
+    "#     - --thinking",
+    "#     - high",
+    "",
+    "# Commit message convention (optional)",
+    "# Defaults to: gnhf #<iteration>: <summary>",
+    "# Use Angular-style semantic-release headers:",
+    "# commitMessage:",
+    "#   preset: angular",
+    "",
+    "# Abort after this many consecutive failures",
+    "maxConsecutiveFailures: 3",
+    "",
+    "# Prevent the machine from sleeping during a run",
+    "preventSleep: true",
+    "",
+  ].join("\n");
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -51,6 +96,7 @@ describe("loadConfig", () => {
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
+    expect(config).not.toHaveProperty("commitMessage");
   });
 
   it("still returns defaults when default config creation fails", () => {
@@ -235,6 +281,63 @@ describe("loadConfig", () => {
 
     expect(mockReadFileSync).toHaveBeenCalledWith(CONFIG_PATH, "utf-8");
     expect(config.agent).toBe("codex");
+  });
+
+  it("reads the Angular commit message preset from config", () => {
+    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: angular\n");
+
+    const config = loadConfig();
+
+    expect(config.commitMessage).toEqual({
+      preset: "angular",
+    });
+  });
+
+  it("throws when commitMessage omits a preset", () => {
+    mockReadFileSync.mockReturnValue("commitMessage: {}\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for commitMessage\.preset: expected "angular"/,
+    );
+  });
+
+  it("throws when commitMessage is present without a value", () => {
+    mockReadFileSync.mockReturnValue("commitMessage:\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for commitMessage: expected an object/,
+    );
+  });
+
+  it("throws when commitMessage uses the gnhf preset explicitly", () => {
+    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: gnhf\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for commitMessage\.preset: expected "angular"/,
+    );
+  });
+
+  it("throws when commitMessage includes a template", () => {
+    mockReadFileSync.mockReturnValue(
+      [
+        "commitMessage:",
+        "  preset: angular",
+        '  template: "{{type}}: {{summary}}"',
+        "",
+      ].join("\n"),
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /Unsupported config key for commitMessage\.template/,
+    );
+  });
+
+  it("throws when commitMessage has an unknown preset", () => {
+    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: semantic\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for commitMessage\.preset: expected "angular"/,
+    );
   });
 
   it("merges file config with defaults", () => {

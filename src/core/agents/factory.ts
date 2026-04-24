@@ -1,4 +1,8 @@
-import { buildAgentOutputSchema, type Agent } from "./types.js";
+import {
+  buildAgentOutputSchema,
+  type Agent,
+  type AgentOutputCommitField,
+} from "./types.js";
 import type { AgentName } from "../config.js";
 import type { RunInfo } from "../run.js";
 import { ClaudeAgent } from "./claude.js";
@@ -10,6 +14,7 @@ import { RovoDevAgent } from "./rovodev.js";
 
 export interface CreateAgentOptions {
   includeStopField: boolean;
+  commitFields?: AgentOutputCommitField[];
 }
 
 export function createAgent(
@@ -21,6 +26,7 @@ export function createAgent(
 ): Agent {
   const schema = buildAgentOutputSchema({
     includeStopField: options.includeStopField,
+    commitFields: options.commitFields,
   });
   switch (name) {
     case "claude":

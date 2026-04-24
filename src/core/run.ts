@@ -9,7 +9,10 @@ import {
 } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildAgentOutputSchema } from "./agents/types.js";
+import {
+  buildAgentOutputSchema,
+  type AgentOutputCommitField,
+} from "./agents/types.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
 export interface RunInfo {
@@ -28,16 +31,27 @@ export interface RunInfo {
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
 
-function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
+function writeSchemaFile(
+  schemaPath: string,
+  schemaOptions: RunSchemaOptions,
+): void {
   writeFileSync(
     schemaPath,
-    JSON.stringify(buildAgentOutputSchema({ includeStopField }), null, 2),
+    JSON.stringify(
+      buildAgentOutputSchema({
+        includeStopField: schemaOptions.includeStopField,
+        commitFields: schemaOptions.commitFields,
+      }),
+      null,
+      2,
+    ),
     "utf-8",
   );
 }
 
 export interface RunSchemaOptions {
   includeStopField: boolean;
+  commitFields?: AgentOutputCommitField[];
   stopWhen?: string;
   clearStopWhen?: boolean;
 }
@@ -97,7 +111,7 @@ export function setupRun(
   }
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
+  writeSchemaFile(schemaPath, schemaOptions);
 
   const logPath = join(runDir, LOG_FILENAME);
 
@@ -157,10 +171,10 @@ export function resumeRun(
     stopWhen = schemaOptions.stopWhen;
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
-  writeSchemaFile(
-    schemaPath,
-    schemaOptions.includeStopField || stopWhen !== undefined,
-  );
+  writeSchemaFile(schemaPath, {
+    ...schemaOptions,
+    includeStopField: schemaOptions.includeStopField || stopWhen !== undefined,
+  });
 
   return {
     runId,

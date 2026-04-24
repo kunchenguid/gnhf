@@ -219,6 +219,12 @@ agent: claude
 #     - --thinking
 #     - high
 
+# Commit message convention (optional)
+# Defaults to: gnhf #<iteration>: <summary>
+# Use the angular preset for semantic-release compatible headers:
+# commitMessage:
+#   preset: angular
+
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
 
@@ -236,6 +242,11 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
 - Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` specifically, `--api-key` is also blocked; configure the Pi API key via Pi's own config or the environment variable it reads, not via `agentArgsOverride`.
+
+`commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
+
+- Omit it to keep the default `gnhf #<iteration>: <summary>` format.
+- Set `preset: angular` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows.
 
 ### Custom Agent Paths
 

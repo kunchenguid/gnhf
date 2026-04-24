@@ -41,6 +41,7 @@ import {
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
+import { getCommitMessageSchemaFields } from "./core/commit-message.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
@@ -98,19 +99,29 @@ function isAgentName(name: string): name is AgentName {
   return AGENT_NAME_SET.has(name);
 }
 
-function buildSchemaOptions(stopWhen: string | undefined): RunSchemaOptions {
-  return stopWhen === undefined
-    ? { includeStopField: false }
-    : { includeStopField: true, stopWhen };
+function buildSchemaOptions(
+  stopWhen: string | undefined,
+  commitFields: NonNullable<RunSchemaOptions["commitFields"]> = [],
+): RunSchemaOptions {
+  return {
+    includeStopField: stopWhen !== undefined,
+    ...(stopWhen === undefined ? {} : { stopWhen }),
+    ...(commitFields.length === 0 ? {} : { commitFields }),
+  };
 }
 
 function buildResumeSchemaOptions(
   stopWhen: string | undefined,
+  commitFields: NonNullable<RunSchemaOptions["commitFields"]> = [],
 ): RunSchemaOptions {
   if (stopWhen === "") {
-    return { includeStopField: false, clearStopWhen: true };
+    return {
+      includeStopField: false,
+      clearStopWhen: true,
+      ...(commitFields.length === 0 ? {} : { commitFields }),
+    };
   }
-  return buildSchemaOptions(stopWhen);
+  return buildSchemaOptions(stopWhen, commitFields);
 }
 
 function initializeNewBranch(
@@ -531,10 +542,11 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
+      const commitFields = getCommitMessageSchemaFields(config.commitMessage);
       const cliStopWhen =
         options.stopWhen === "" ? undefined : options.stopWhen;
       let effectiveStopWhen = cliStopWhen;
-      let schemaOptions = buildSchemaOptions(effectiveStopWhen);
+      let schemaOptions = buildSchemaOptions(effectiveStopWhen, commitFields);
 
       let runInfo;
       let startIteration = 0;
@@ -595,10 +607,13 @@ program
           existing = resumeRun(
             existingRunId,
             cwd,
-            buildResumeSchemaOptions(options.stopWhen),
+            buildResumeSchemaOptions(options.stopWhen, commitFields),
           );
           const resumeStopWhen = existing.stopWhen;
-          const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
+          const resumeSchemaOptions = buildSchemaOptions(
+            resumeStopWhen,
+            commitFields,
+          );
           prompt = existingPrompt;
           runInfo = existing;
           effectiveStopWhen = resumeStopWhen;
@@ -620,10 +635,13 @@ program
             existing = resumeRun(
               existingRunId,
               cwd,
-              buildResumeSchemaOptions(options.stopWhen),
+              buildResumeSchemaOptions(options.stopWhen, commitFields),
             );
             const resumeStopWhen = existing.stopWhen;
-            const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
+            const resumeSchemaOptions = buildSchemaOptions(
+              resumeStopWhen,
+              commitFields,
+            );
             runInfo = setupRun(
               existingRunId,
               prompt,
@@ -636,7 +654,7 @@ program
             startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
             effectiveStopWhen = cliStopWhen;
-            schemaOptions = buildSchemaOptions(effectiveStopWhen);
+            schemaOptions = buildSchemaOptions(effectiveStopWhen, commitFields);
             runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);

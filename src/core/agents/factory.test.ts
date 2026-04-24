@@ -152,6 +152,30 @@ describe("createAgent", () => {
     });
   });
 
+  it("hands ClaudeAgent a schema with configured commit message fields", () => {
+    createAgent("claude", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(ClaudeAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: {
+        ...noStopSchema,
+        properties: {
+          ...noStopSchema.properties,
+          type: { type: "string", enum: ["feat", "fix"] },
+          scope: { type: "string" },
+        },
+        required: [...noStopSchema.required, "type", "scope"],
+      },
+    });
+  });
+
   it("creates a CodexAgent when name is 'codex'", () => {
     const agent = createAgent("codex", stubRunInfo, undefined, undefined, {
       includeStopField: false,

@@ -4,13 +4,22 @@ export interface AgentOutput {
   key_changes_made: unknown;
   key_learnings: unknown;
   should_fully_stop?: boolean;
+  [key: string]: unknown;
 }
 
 export interface AgentOutputSchema {
   type: "object";
   additionalProperties: false;
-  properties: Record<string, { type: string; items?: { type: string } }>;
+  properties: Record<
+    string,
+    { type: string; items?: { type: string }; enum?: string[] }
+  >;
   required: string[];
+}
+
+export interface AgentOutputCommitField {
+  name: string;
+  allowed?: string[];
 }
 
 // Codex's --output-schema enforces OpenAI strict mode, which requires every
@@ -18,6 +27,7 @@ export interface AgentOutputSchema {
 // is false. So include should_fully_stop only when the run actually uses it.
 export function buildAgentOutputSchema(opts: {
   includeStopField: boolean;
+  commitFields?: AgentOutputCommitField[];
 }): AgentOutputSchema {
   const properties: AgentOutputSchema["properties"] = {
     success: { type: "boolean" },
@@ -26,6 +36,13 @@ export function buildAgentOutputSchema(opts: {
     key_learnings: { type: "array", items: { type: "string" } },
   };
   const required = ["success", "summary", "key_changes_made", "key_learnings"];
+  for (const field of opts.commitFields ?? []) {
+    properties[field.name] = {
+      type: "string",
+      ...(field.allowed === undefined ? {} : { enum: field.allowed }),
+    };
+    required.push(field.name);
+  }
   if (opts.includeStopField) {
     properties.should_fully_stop = { type: "boolean" };
     required.push("should_fully_stop");

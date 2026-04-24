@@ -1,8 +1,14 @@
+import {
+  getCommitMessagePromptFields,
+  type CommitMessageConfig,
+} from "../core/commit-message.js";
+
 export function buildIterationPrompt(params: {
   n: number;
   runId: string;
   prompt: string;
   stopWhen?: string;
+  commitMessage?: CommitMessageConfig;
 }): string {
   const outputFields = [
     "- success: whether you were able to make a meaningful contribution that got us closer towards the objective. setting this to false means any code change you made should be discarded",
@@ -10,6 +16,18 @@ export function buildIterationPrompt(params: {
     "- key_changes_made: an array of descriptions for key changes you made. don't group this by file - group by logical units of work. don't describe activities - describe material outcomes",
     "- key_learnings: an array of new learnings that were surprising, weren't captured by previous notes and would be informative for future iterations",
   ];
+
+  for (const field of getCommitMessagePromptFields(params.commitMessage)) {
+    const constraints = [
+      field.allowed === undefined
+        ? null
+        : `allowed values: ${field.allowed.join(", ")}`,
+      `default: ${JSON.stringify(field.default)}`,
+    ].filter((value): value is string => value !== null);
+    outputFields.push(
+      `- ${field.name}: ${field.description}. ${constraints.join("; ")}`,
+    );
+  }
 
   if (params.stopWhen !== undefined) {
     outputFields.push(
