@@ -133,7 +133,10 @@ function runCli(
   });
 }
 
-function createTestEnv(mockLogPath: string, tempDirs: string[]): NodeJS.ProcessEnv {
+function createTestEnv(
+  mockLogPath: string,
+  tempDirs: string[],
+): NodeJS.ProcessEnv {
   const home = mkdtempSync(join(tmpdir(), "gnhf-e2e-home-"));
   tempDirs.push(home);
 
