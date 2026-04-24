@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.26](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.25...gnhf-v0.1.26) (2026-04-24)
+
+
+### Bug Fixes
+
+* **agents:** preserve final Claude output before forced shutdown ([#93](https://github.com/kunchenguid/gnhf/issues/93)) ([61e37a8](https://github.com/kunchenguid/gnhf/commit/61e37a87ea3811e16f1e04ba7dd38db8ce94a011))
+
 ## [0.1.25](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.24...gnhf-v0.1.25) (2026-04-23)
 
 
