@@ -242,6 +242,7 @@ export class ClaudeAgent implements Agent {
       }
 
       let resultEvent: ClaudeResultEvent | null = null;
+      let finalStructuredResultEvent: ClaudeResultEvent | null = null;
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
       let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
       let closedAfterFinalCleanup = false;
@@ -358,24 +359,8 @@ export class ClaudeAgent implements Agent {
         if (event.type === "result") {
           const next = event as ClaudeResultEvent;
           latestResultUsage = next.usage;
-          // Prefer the last result event that carried structured_output.
-          // Claude sessions can produce multiple result events across turns
-          // (e.g. ScheduleWakeup fires or a Stop hook resumes background
-          // work). Follow-up turns typically have structured_output: null,
-          // which must not clobber a previously-valid one. But the agent
-          // could also submit structured output in a later turn (e.g. first
-          // turn scheduled a wakeup, second turn produced the answer), so a
-          // valid later event should still win.
-          if (
-            next.is_error ||
-            next.subtype !== "success" ||
-            next.structured_output ||
-            !resultEvent
-          ) {
-            resultEvent = next;
-          }
-
           if (isFinalStructuredResult(next)) {
+            finalStructuredResultEvent = next;
             if (finalResultCleanupTimer) {
               clearTimeout(finalResultCleanupTimer);
             }
@@ -383,6 +368,14 @@ export class ClaudeAgent implements Agent {
               closedAfterFinalCleanup = true;
               void shutdownClaudeProcess(child, this.platform);
             }, this.finalResultGraceMs);
+          } else if (
+            !finalStructuredResultEvent &&
+            (next.is_error ||
+              next.subtype !== "success" ||
+              next.structured_output ||
+              !resultEvent)
+          ) {
+            resultEvent = next;
           }
         }
       });
@@ -397,25 +390,32 @@ export class ClaudeAgent implements Agent {
           return;
         }
 
-        if (!resultEvent) {
+        const terminalResultEvent = finalStructuredResultEvent ?? resultEvent;
+
+        if (!terminalResultEvent) {
           reject(new Error("claude returned no result event"));
           return;
         }
 
-        if (resultEvent.is_error || resultEvent.subtype !== "success") {
+        if (
+          terminalResultEvent.is_error ||
+          terminalResultEvent.subtype !== "success"
+        ) {
           reject(
-            new Error(`claude reported error: ${JSON.stringify(resultEvent)}`),
+            new Error(
+              `claude reported error: ${JSON.stringify(terminalResultEvent)}`,
+            ),
           );
           return;
         }
 
-        if (!resultEvent.structured_output) {
+        if (!terminalResultEvent.structured_output) {
           reject(new Error("claude returned no structured_output"));
           return;
         }
 
-        const output: AgentOutput = resultEvent.structured_output;
-        const usage = toTokenUsage(latestResultUsage ?? resultEvent.usage);
+        const output: AgentOutput = terminalResultEvent.structured_output;
+        const usage = toTokenUsage(latestResultUsage ?? terminalResultEvent.usage);
 
         onUsage?.(usage);
         resolve({ output, usage });

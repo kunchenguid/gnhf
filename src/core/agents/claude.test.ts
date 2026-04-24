@@ -1150,7 +1150,7 @@ describe("ClaudeAgent", () => {
     });
   });
 
-  it("rejects when a later result event reports an error without structured output", async () => {
+  it("keeps the last structured success when a later error result arrives", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -1189,6 +1189,18 @@ describe("ClaudeAgent", () => {
 
     proc.emit("close", 0);
 
-    await expect(promise).rejects.toThrow("claude reported error");
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 32,
+      outputTokens: 42,
+      cacheReadTokens: 21,
+      cacheCreationTokens: 5,
+    });
   });
 });
