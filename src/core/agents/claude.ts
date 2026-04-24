@@ -9,6 +9,7 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
+import { shutdownChildProcess } from "./managed-process.js";
 import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
 
 const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
@@ -106,6 +107,20 @@ function terminateClaudeProcess(
   }
 
   child.kill("SIGTERM");
+}
+
+async function shutdownClaudeProcess(
+  child: ReturnType<typeof spawn>,
+  platform: NodeJS.Platform,
+): Promise<void> {
+  if (platform === "win32") {
+    terminateClaudeProcess(child, platform);
+    return;
+  }
+
+  await shutdownChildProcess(child, {
+    detached: true,
+  });
 }
 
 function isFinalStructuredResult(event: ClaudeResultEvent): boolean {
@@ -366,7 +381,7 @@ export class ClaudeAgent implements Agent {
             }
             finalResultCleanupTimer = setTimeout(() => {
               closedAfterFinalCleanup = true;
-              terminateClaudeProcess(child, this.platform);
+              void shutdownClaudeProcess(child, this.platform);
             }, this.finalResultGraceMs);
           }
         }

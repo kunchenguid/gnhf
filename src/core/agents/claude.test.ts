@@ -290,6 +290,62 @@ describe("ClaudeAgent", () => {
     }
   });
 
+  it("force kills Claude if it ignores the final-result shutdown signal", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation((pid, signal) => {
+        if (pid === -4321 && signal === "SIGKILL") {
+          queueMicrotask(() => {
+            proc.emit("close", null);
+          });
+        }
+        return true;
+      });
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 4321 });
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+
+    try {
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(25);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(processKill).not.toHaveBeenCalledWith(-4321, "SIGKILL");
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGKILL");
+
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "done" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("restarts the final-result cleanup timer when a later turn returns structured output", async () => {
     vi.useFakeTimers();
     const processKill = vi
