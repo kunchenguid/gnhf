@@ -290,6 +290,79 @@ describe("ClaudeAgent", () => {
     }
   });
 
+  it("restarts the final-result cleanup timer when a later turn returns structured output", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+      const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "first turn",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(20);
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 11,
+          cache_read_input_tokens: 12,
+          cache_creation_input_tokens: 13,
+          output_tokens: 14,
+        },
+        structured_output: {
+          success: true,
+          summary: "second turn",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(4);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(19);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "second turn" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("waits 15 seconds by default before terminating after final structured output", async () => {
     vi.useFakeTimers();
     const processKill = vi

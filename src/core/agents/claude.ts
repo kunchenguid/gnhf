@@ -360,7 +360,10 @@ export class ClaudeAgent implements Agent {
             resultEvent = next;
           }
 
-          if (isFinalStructuredResult(next) && !finalResultCleanupTimer) {
+          if (isFinalStructuredResult(next)) {
+            if (finalResultCleanupTimer) {
+              clearTimeout(finalResultCleanupTimer);
+            }
             finalResultCleanupTimer = setTimeout(() => {
               closedAfterFinalCleanup = true;
               terminateClaudeProcess(child, this.platform);
