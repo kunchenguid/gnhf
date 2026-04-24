@@ -2,6 +2,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
+import type { CommitMessageConfig } from "./commit-message.js";
+import { normalizeCommitMessageConfig } from "./commit-message-config.js";
+import { InvalidConfigError } from "./config-errors.js";
 
 export type AgentName = "claude" | "codex" | "rovodev" | "opencode";
 
@@ -11,6 +14,7 @@ export interface Config {
   agent: AgentName;
   agentPathOverride: Partial<Record<AgentName, string>>;
   agentArgsOverride: Partial<Record<AgentName, string[]>>;
+  commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
 }
@@ -22,8 +26,6 @@ const DEFAULT_CONFIG: Config = {
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
-
-class InvalidConfigError extends Error {}
 
 function normalizePreventSleep(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
@@ -267,6 +269,21 @@ function normalizeConfig(
     delete normalized.agentArgsOverride;
   }
 
+  const hasCommitMessage = Object.prototype.hasOwnProperty.call(
+    config,
+    "commitMessage",
+  );
+  if (hasCommitMessage) {
+    const commitMessage = normalizeCommitMessageConfig(config.commitMessage);
+    if (commitMessage === undefined) {
+      delete normalized.commitMessage;
+    } else {
+      normalized.commitMessage = commitMessage;
+    }
+  } else {
+    delete normalized.commitMessage;
+  }
+
   return normalized;
 }
 
@@ -341,6 +358,12 @@ function serializeConfig(config: Config): string {
     "#     - -c",
     '#     - model_reasoning_effort="high"',
     "#     - --full-auto",
+    "",
+    "# Commit message convention (optional)",
+    "# Defaults to: gnhf #<iteration>: <summary>",
+    "# Use Angular-style semantic-release headers:",
+    "# commitMessage:",
+    "#   preset: angular",
   ];
 
   if (agentPathOverrideSection) {

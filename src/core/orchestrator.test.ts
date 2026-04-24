@@ -33,6 +33,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { Orchestrator } from "./orchestrator.js";
+import { ANGULAR_COMMIT_MESSAGE } from "./commit-message.js";
 import type { Agent, AgentResult } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
@@ -125,7 +126,46 @@ describe("Orchestrator output normalization", () => {
       ["learning"],
     );
     expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledWith("gnhf #1: done", "/repo");
     expect(orchestrator.getState().status).toBe("aborted");
+  });
+
+  it("uses the configured commit message convention for successful iterations", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        output: {
+          success: true,
+          summary: "handle empty output",
+          key_changes_made: ["file.ts"],
+          key_learnings: [],
+          type: "fix",
+          scope: "core",
+        },
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      })),
+    };
+    const orchestrator = new Orchestrator(
+      { ...config, commitMessage: ANGULAR_COMMIT_MESSAGE },
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockCommitAll).toHaveBeenCalledWith(
+      "fix(core): handle empty output",
+      "/repo",
+    );
   });
 
   it("handles key_learnings returned as a JSON string instead of an array", async () => {

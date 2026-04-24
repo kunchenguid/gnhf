@@ -8,7 +8,10 @@ import {
 } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildAgentOutputSchema } from "./agents/types.js";
+import {
+  buildAgentOutputSchema,
+  type AgentOutputCommitField,
+} from "./agents/types.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
 export interface RunInfo {
@@ -24,16 +27,27 @@ export interface RunInfo {
 
 const LOG_FILENAME = "gnhf.log";
 
-function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
+function writeSchemaFile(
+  schemaPath: string,
+  schemaOptions: RunSchemaOptions,
+): void {
   writeFileSync(
     schemaPath,
-    JSON.stringify(buildAgentOutputSchema({ includeStopField }), null, 2),
+    JSON.stringify(
+      buildAgentOutputSchema({
+        includeStopField: schemaOptions.includeStopField,
+        commitFields: schemaOptions.commitFields,
+      }),
+      null,
+      2,
+    ),
     "utf-8",
   );
 }
 
 export interface RunSchemaOptions {
   includeStopField: boolean;
+  commitFields?: AgentOutputCommitField[];
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
@@ -85,7 +99,7 @@ export function setupRun(
   }
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
+  writeSchemaFile(schemaPath, schemaOptions);
 
   const logPath = join(runDir, LOG_FILENAME);
 
@@ -123,7 +137,7 @@ export function resumeRun(
   const promptPath = join(runDir, "prompt.md");
   const notesPath = join(runDir, "notes.md");
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
+  writeSchemaFile(schemaPath, schemaOptions);
   const logPath = join(runDir, LOG_FILENAME);
   const baseCommitPath = join(runDir, "base-commit");
   const baseCommit = existsSync(baseCommitPath)

@@ -134,6 +134,28 @@ describe("setupRun", () => {
     expect(schema.required).toContain("should_fully_stop");
   });
 
+  it("writes configured commit message fields into output-schema.json", () => {
+    setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: false,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toEqual({
+      type: "string",
+      enum: ["feat", "fix"],
+    });
+    expect(schema.properties.scope).toEqual({ type: "string" });
+    expect(schema.required).toContain("type");
+    expect(schema.required).toContain("scope");
+  });
+
   it("writes the branch base commit for new runs", () => {
     setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
 

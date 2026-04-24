@@ -12,6 +12,7 @@ import {
   getHeadCommit,
   resetHard,
 } from "./git.js";
+import { buildCommitMessage } from "./commit-message.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 
 export interface IterationRecord {
@@ -196,6 +197,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           runId: this.runInfo.runId,
           prompt: this.prompt,
           stopWhen: this.limits.stopWhen,
+          commitMessage: this.config.commitMessage,
         });
 
         appendDebugLog("iteration:start", {
@@ -458,7 +460,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       toStringArray(output.key_learnings),
     );
     commitAll(
-      `gnhf #${this.state.currentIteration}: ${output.summary}`,
+      buildCommitMessage(this.config.commitMessage, output, {
+        iteration: this.state.currentIteration,
+      }),
       this.cwd,
     );
     this.state.commitCount = getBranchCommitCount(

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildIterationPrompt } from "./iteration-prompt.js";
+import { ANGULAR_COMMIT_MESSAGE } from "../core/commit-message.js";
 
 describe("buildIterationPrompt", () => {
   it("includes the iteration number", () => {
@@ -70,5 +71,22 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("should_fully_stop");
     expect(result).toContain("set it to false");
     expect(result).not.toContain("omit it");
+  });
+
+  it("adds commit message field instructions when the convention requires them", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "do stuff",
+      commitMessage: ANGULAR_COMMIT_MESSAGE,
+    });
+
+    expect(result).toContain("type: Commit type");
+    expect(result).toContain(
+      "allowed values: build, ci, docs, feat, fix, perf, refactor, test, chore",
+    );
+    expect(result).toContain('default: "chore"');
+    expect(result).toContain("scope: Optional commit scope");
+    expect(result).toContain('default: ""');
   });
 });

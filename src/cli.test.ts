@@ -8,6 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { ANGULAR_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
 
@@ -71,6 +72,7 @@ async function runCliWithMocks(
   const startSleepPrevention =
     overrides.startSleepPrevention ??
     vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
+  const setupRun = vi.fn(() => stubRunInfo);
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -119,7 +121,7 @@ async function runCliWithMocks(
     removeWorktree: overrides.removeWorktree ?? vi.fn(),
   }));
   vi.doMock("./core/run.js", () => ({
-    setupRun: vi.fn(() => stubRunInfo),
+    setupRun,
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
@@ -187,6 +189,7 @@ async function runCliWithMocks(
     appendDebugLog,
     loadConfig,
     createAgent,
+    setupRun,
     orchestratorCtor,
     orchestratorGetState,
     readStdinText,
@@ -353,6 +356,52 @@ describe("cli", () => {
       undefined,
       undefined,
       { includeStopField: true },
+    );
+  });
+
+  it("threads commit message fields into run setup and agent creation", async () => {
+    const { createAgent, setupRun } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      commitMessage: ANGULAR_COMMIT_MESSAGE,
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    const expectedSchemaOptions = {
+      includeStopField: false,
+      commitFields: [
+        {
+          name: "type",
+          allowed: [
+            "build",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "test",
+            "chore",
+          ],
+        },
+        { name: "scope" },
+      ],
+    };
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      expectedSchemaOptions,
+    );
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      expectedSchemaOptions,
     );
   });
 

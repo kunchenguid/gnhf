@@ -38,6 +38,7 @@ import {
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
+import { getCommitMessageSchemaFields } from "./core/commit-message.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
@@ -411,8 +412,10 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
+      const commitFields = getCommitMessageSchemaFields(config.commitMessage);
       const schemaOptions = {
         includeStopField: options.stopWhen !== undefined,
+        ...(commitFields.length === 0 ? {} : { commitFields }),
       };
 
       let runInfo;
