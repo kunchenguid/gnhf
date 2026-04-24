@@ -45,8 +45,11 @@ describe("ClaudeAgent", () => {
   it("spawns claude with stream-json output format", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
+    const unixAgent = new ClaudeAgent({
+      platform: "darwin",
+    });
 
-    agent.run("test prompt", "/work/dir");
+    unixAgent.run("test prompt", "/work/dir");
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "claude",
@@ -252,7 +255,10 @@ describe("ClaudeAgent", () => {
       const proc = createMockProcess();
       Object.defineProperty(proc, "pid", { value: 4321 });
       mockSpawn.mockReturnValue(proc);
-      const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+      const configuredAgent = new ClaudeAgent({
+        finalResultGraceMs: 25,
+        platform: "darwin",
+      });
 
       const promise = configuredAgent.run("prompt", "/cwd");
 
@@ -305,7 +311,10 @@ describe("ClaudeAgent", () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 4321 });
     mockSpawn.mockReturnValue(proc);
-    const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+    const configuredAgent = new ClaudeAgent({
+      finalResultGraceMs: 25,
+      platform: "darwin",
+    });
 
     try {
       const promise = configuredAgent.run("prompt", "/cwd");
@@ -355,7 +364,10 @@ describe("ClaudeAgent", () => {
       const proc = createMockProcess();
       Object.defineProperty(proc, "pid", { value: 4321 });
       mockSpawn.mockReturnValue(proc);
-      const configuredAgent = new ClaudeAgent({ finalResultGraceMs: 25 });
+      const configuredAgent = new ClaudeAgent({
+        finalResultGraceMs: 25,
+        platform: "darwin",
+      });
 
       const promise = configuredAgent.run("prompt", "/cwd");
 
@@ -428,8 +440,11 @@ describe("ClaudeAgent", () => {
       const proc = createMockProcess();
       Object.defineProperty(proc, "pid", { value: 4321 });
       mockSpawn.mockReturnValue(proc);
+      const unixAgent = new ClaudeAgent({
+        platform: "darwin",
+      });
 
-      const promise = agent.run("prompt", "/cwd");
+      const promise = unixAgent.run("prompt", "/cwd");
 
       emitLine(proc, {
         type: "result",
