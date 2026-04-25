@@ -4,7 +4,7 @@ This file provides guidance to agents1 when working with code in this repository
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, or OpenCode) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, and only hard agent errors trigger exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, or GitHub Copilot CLI) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, and only hard agent errors trigger exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
 
 ## Commands
 
@@ -38,7 +38,7 @@ Entry point is `src/cli.ts`. It parses flags with commander, resolves config, ha
 
 Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`, plus `should_fully_stop` only when `--stop-when` is active) that matches the schema built by `buildAgentOutputSchema(...)`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
 
-- `claude.ts` / `codex.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, and after a short grace period shuts down a lingering Claude process tree if it stays alive.
+- `claude.ts` / `codex.ts` / `copilot.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, and after a short grace period shuts down a lingering Claude process tree if it stays alive. Copilot uses JSONL output plus prompt-level schema instructions, then parses the final `assistant.message` content.
 - `rovodev.ts` / `opencode.ts`: long-running local HTTP servers managed via `managed-process.ts` (start once, reuse across iterations, close on shutdown). OpenCode creates a per-run session and applies a blanket allow rule to avoid prompt blocking.
 - `stream-utils.ts`: shared JSONL parsing, `AbortSignal` wiring, and child-process lifecycle helpers. When touching agent streaming, start here.
 

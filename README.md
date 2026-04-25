@@ -47,7 +47,7 @@ You wake up to a branch full of clean work and a log of everything that happened
 - **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; hard agent errors back off exponentially while agent-reported failures continue immediately
 - **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
-- **Agent-agnostic** — works with Claude Code, Codex, Rovo Dev, or OpenCode out of the box
+- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, or GitHub Copilot CLI out of the box
 
 ## Quick Start
 
@@ -173,7 +173,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 | Flag                     | Description                                                                | Default                |
 | ------------------------ | -------------------------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)                 | config file (`claude`) |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, or `copilot`)      | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                           | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                  | unlimited              |
 | `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited              |
@@ -186,13 +186,14 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 Config lives at `~/.gnhf/config.yml`:
 
 ```yaml
-# Agent to use by default (claude, codex, rovodev, or opencode)
+# Agent to use by default (claude, codex, rovodev, opencode, or copilot)
 agent: claude
 
 # Custom paths to agent binaries (optional)
 # agentPathOverride:
 #   claude: /path/to/custom-claude
 #   codex: /path/to/custom-codex
+#   copilot: /path/to/custom-copilot
 
 # Per-agent CLI arg overrides (optional)
 # agentArgsOverride:
@@ -202,6 +203,9 @@ agent: claude
 #     - -c
 #     - model_reasoning_effort="high"
 #     - --full-auto
+#   copilot:
+#     - --model
+#     - gpt-5.4
 
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
@@ -218,7 +222,7 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 `agentArgsOverride.<name>` lets you pass through extra CLI flags for any supported agent.
 
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
-- For `codex` and `claude`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
+- For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
 - Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity.
 
 ### Custom Agent Paths
@@ -229,6 +233,7 @@ Use `agentPathOverride` to point any agent at a custom binary — useful for wra
 agentPathOverride:
   claude: ~/bin/claude-code-switch
   codex: /usr/local/bin/my-codex-wrapper
+  copilot: ~/bin/copilot-wrapper
 ```
 
 Paths may be absolute, bare executable names already on your `PATH`, `~`-prefixed, or relative to the config directory (`~/.gnhf/`). The override replaces only the binary name; all standard arguments are preserved, so the replacement must be CLI-compatible with the original agent. On Windows, `.cmd` and `.bat` wrappers are supported, including bare names resolved from `PATH`. For `rovodev`, the override must point to an `acli`-compatible binary since gnhf invokes it as `<bin> rovodev serve ...`.
@@ -242,14 +247,15 @@ Including a snippet of `gnhf.log` is the single most useful thing you can attach
 
 ## Agents
 
-`gnhf` supports four agents:
+`gnhf` supports five agents:
 
-| Agent       | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                                        |
-| ----------- | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period. |
-| Codex       | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                |
-| Rovo Dev    | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                       |
-| OpenCode    | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.             |
+| Agent              | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                                        |
+| ------------------ | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code        | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period. |
+| Codex              | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                |
+| GitHub Copilot CLI | `--agent copilot`  | Install GitHub Copilot CLI and sign in first.                              | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.             |
+| Rovo Dev           | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                       |
+| OpenCode           | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.             |
 
 ## Development
 

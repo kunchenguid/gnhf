@@ -2,6 +2,7 @@ import { buildAgentOutputSchema, type Agent } from "./types.js";
 import type { AgentName } from "../config.js";
 import type { RunInfo } from "../run.js";
 import { ClaudeAgent } from "./claude.js";
+import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -31,6 +32,12 @@ export function createAgent(
       return new CodexAgent(runInfo.schemaPath, {
         bin: pathOverride,
         extraArgs: agentArgsOverride,
+      });
+    case "copilot":
+      return new CopilotAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+        schema,
       });
     case "opencode":
       return new OpenCodeAgent({

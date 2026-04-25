@@ -14,7 +14,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
-import { loadConfig } from "./core/config.js";
+import { AGENT_NAMES, loadConfig, type AgentName } from "./core/config.js";
 import {
   appendDebugLog,
   initDebugLog,
@@ -51,6 +51,10 @@ const GNHF_REEXEC_STDIN_PROMPT = "GNHF_REEXEC_STDIN_PROMPT";
 const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
 const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
 const GNHF_REEXEC_STDIN_PROMPT_FILENAME = "prompt.txt";
+const AGENT_NAME_SET = new Set<string>(AGENT_NAMES);
+const AGENT_NAME_LIST = `"${AGENT_NAMES.slice(0, -1).join('", "')}", or "${
+  AGENT_NAMES[AGENT_NAMES.length - 1]
+}"`;
 
 class PromptSignalError extends Error {
   constructor(public readonly signal: NodeJS.Signals) {
@@ -85,6 +89,10 @@ function humanizeErrorMessage(message: string): string {
   }
 
   return message;
+}
+
+function isAgentName(name: string): name is AgentName {
+  return AGENT_NAME_SET.has(name);
 }
 
 function initializeNewBranch(
@@ -289,10 +297,7 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option(
-    "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, or opencode)",
-  )
+  .option("--agent <agent>", `Agent to use (${AGENT_NAMES.join(", ")})`)
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -357,15 +362,9 @@ program
       let promptFromStdin = false;
 
       const agentName = options.agent;
-      if (
-        agentName !== undefined &&
-        agentName !== "claude" &&
-        agentName !== "codex" &&
-        agentName !== "rovodev" &&
-        agentName !== "opencode"
-      ) {
+      if (agentName !== undefined && !isAgentName(agentName)) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${options.agent}. Use ${AGENT_NAME_LIST}.`,
         );
         process.exit(1);
       }
@@ -373,7 +372,7 @@ program
       const loadedConfig = loadConfig(
         agentName
           ? {
-              agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
+              agent: agentName,
             }
           : {},
       );
@@ -383,14 +382,9 @@ program
           ? {}
           : { preventSleep: options.preventSleep }),
       };
-      if (
-        config.agent !== "claude" &&
-        config.agent !== "codex" &&
-        config.agent !== "rovodev" &&
-        config.agent !== "opencode"
-      ) {
+      if (!isAgentName(config.agent)) {
         console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${config.agent}. Use ${AGENT_NAME_LIST}.`,
         );
         process.exit(1);
       }

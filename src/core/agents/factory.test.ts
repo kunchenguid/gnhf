@@ -22,6 +22,17 @@ vi.mock("./codex.js", () => {
   return { CodexAgent };
 });
 
+vi.mock("./copilot.js", () => {
+  const CopilotAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "copilot";
+    this.deps = deps;
+  });
+  return { CopilotAgent };
+});
+
 vi.mock("./rovodev.js", () => {
   const RovoDevAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -48,6 +59,7 @@ vi.mock("./opencode.js", () => {
 
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
+import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -135,6 +147,46 @@ describe("createAgent", () => {
       extraArgs: undefined,
     });
     expect(agent.name).toBe("codex");
+  });
+
+  it("creates a CopilotAgent when name is 'copilot'", () => {
+    const agent = createAgent("copilot", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(CopilotAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("copilot");
+  });
+
+  it("passes per-agent extra args through to the CopilotAgent", () => {
+    const agent = createAgent(
+      "copilot",
+      stubRunInfo,
+      undefined,
+      ["--model", "gpt-5.4"],
+      { includeStopField: false },
+    );
+
+    expect(CopilotAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: ["--model", "gpt-5.4"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("copilot");
+  });
+
+  it("hands CopilotAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("copilot", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(CopilotAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
   });
 
   it("passes per-agent extra args through to the CodexAgent", () => {

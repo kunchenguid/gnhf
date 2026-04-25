@@ -14,6 +14,7 @@ import type { RunInfo } from "./core/run.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+const TEST_AGENT_NAMES = ["claude", "codex", "rovodev", "opencode", "copilot"];
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -100,7 +101,10 @@ async function runCliWithMocks(
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
-  vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
+    loadConfig,
+  }));
   vi.doMock("./core/debug-log.js", () => ({
     appendDebugLog,
     initDebugLog,
@@ -308,6 +312,28 @@ describe("cli", () => {
     expect(loadConfig).toHaveBeenCalledWith({ agent: "opencode" });
     expect(createAgent).toHaveBeenCalledWith(
       "opencode",
+      stubRunInfo,
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+  });
+
+  it("accepts copilot as an explicit --agent override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "copilot"],
+      {
+        agent: "copilot",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "copilot" });
+    expect(createAgent).toHaveBeenCalledWith(
+      "copilot",
       stubRunInfo,
       undefined,
       undefined,
@@ -638,7 +664,10 @@ describe("cli", () => {
     );
 
     vi.resetModules();
-    vi.doMock("./core/config.js", () => ({ loadConfig }));
+    vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
+      loadConfig,
+    }));
     vi.doMock("./core/debug-log.js", () => ({
       appendDebugLog: vi.fn(),
       initDebugLog: vi.fn(),
@@ -784,6 +813,7 @@ describe("cli", () => {
     });
     vi.doMock("node:readline", () => ({ createInterface }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -912,6 +942,7 @@ describe("cli", () => {
       };
     });
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1044,6 +1075,7 @@ describe("cli", () => {
       createInterface: vi.fn(() => readlineInterface),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1171,6 +1203,7 @@ describe("cli", () => {
       createInterface: vi.fn(() => readlineInterface),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1295,6 +1328,7 @@ describe("cli", () => {
       })),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1394,6 +1428,7 @@ describe("cli", () => {
       })),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1583,6 +1618,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1659,6 +1695,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1753,6 +1790,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1868,6 +1906,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
