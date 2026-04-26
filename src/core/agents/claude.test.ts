@@ -8,8 +8,13 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { ClaudeAgent } from "./claude.js";
+import { buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
+
+const STOP_SCHEMA = buildAgentOutputSchema({
+  includeStopField: true,
+});
 
 function createMockProcess() {
   const proc = Object.assign(new EventEmitter(), {
@@ -40,8 +45,11 @@ describe("ClaudeAgent", () => {
   it("spawns claude with stream-json output format", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
+    const unixAgent = new ClaudeAgent({
+      platform: "darwin",
+    });
 
-    agent.run("test prompt", "/work/dir");
+    unixAgent.run("test prompt", "/work/dir");
 
     expect(mockSpawn).toHaveBeenCalledWith(
       "claude",
@@ -57,10 +65,36 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: true,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },
+    );
+  });
+
+  it("uses the configured schema for --json-schema", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({
+      schema: STOP_SCHEMA,
+    });
+
+    configuredAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        JSON.stringify(STOP_SCHEMA),
+        "--dangerously-skip-permissions",
+      ],
+      expect.any(Object),
     );
   });
 
@@ -87,6 +121,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -118,6 +153,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -152,6 +188,7 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        detached: false,
         shell: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
@@ -207,6 +244,238 @@ describe("ClaudeAgent", () => {
       { stdio: "ignore" },
     );
     expect(proc.kill).not.toHaveBeenCalled();
+  });
+
+  it("terminates the process group after a final structured output if Claude stays alive", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+      const configuredAgent = new ClaudeAgent({
+        finalResultGraceMs: 25,
+        platform: "darwin",
+      });
+
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(24);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "done" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("force kills Claude if it ignores the final-result shutdown signal", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation((pid, signal) => {
+        if (pid === -4321 && signal === "SIGKILL") {
+          queueMicrotask(() => {
+            proc.emit("close", null);
+          });
+        }
+        return true;
+      });
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 4321 });
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({
+      finalResultGraceMs: 25,
+      platform: "darwin",
+    });
+
+    try {
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(25);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(processKill).not.toHaveBeenCalledWith(-4321, "SIGKILL");
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGKILL");
+
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "done" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("restarts the final-result cleanup timer when a later turn returns structured output", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+      const configuredAgent = new ClaudeAgent({
+        finalResultGraceMs: 25,
+        platform: "darwin",
+      });
+
+      const promise = configuredAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "first turn",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(20);
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 11,
+          cache_read_input_tokens: 12,
+          cache_creation_input_tokens: 13,
+          output_tokens: 14,
+        },
+        structured_output: {
+          success: true,
+          summary: "second turn",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(4);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(19);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await expect(promise).resolves.toMatchObject({
+        output: { success: true, summary: "second turn" },
+      });
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits 15 seconds by default before terminating after final structured output", async () => {
+    vi.useFakeTimers();
+    const processKill = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true);
+    try {
+      const proc = createMockProcess();
+      Object.defineProperty(proc, "pid", { value: 4321 });
+      mockSpawn.mockReturnValue(proc);
+      const unixAgent = new ClaudeAgent({
+        platform: "darwin",
+      });
+
+      const promise = unixAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 7,
+          cache_read_input_tokens: 8,
+          cache_creation_input_tokens: 9,
+          output_tokens: 10,
+        },
+        structured_output: {
+          success: true,
+          summary: "done",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(processKill).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processKill).toHaveBeenCalledWith(-4321, "SIGTERM");
+
+      proc.emit("close", null);
+      await promise;
+    } finally {
+      processKill.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("resolves with parsed output and usage on success", async () => {
@@ -737,5 +1006,216 @@ describe("ClaudeAgent", () => {
     await expect(promise).rejects.toThrow(
       "claude returned no structured_output",
     );
+  });
+
+  it("picks up structured_output from a later result event when the first had none", async () => {
+    // If the agent schedules a wakeup before calling StructuredOutput, the
+    // first result event has structured_output: null. A later turn produces
+    // the real answer, and that one should be used.
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 30,
+      },
+      structured_output: null,
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 25,
+        cache_creation_input_tokens: 5,
+        output_tokens: 50,
+      },
+      structured_output: {
+        success: true,
+        summary: "later turn submitted",
+        key_changes_made: [],
+        key_learnings: ["noticed after a wakeup"],
+      },
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "later turn submitted",
+      key_changes_made: [],
+      key_learnings: ["noticed after a wakeup"],
+    });
+  });
+
+  it("keeps an earlier structured_output when later result events arrive with null output", async () => {
+    // ScheduleWakeup / Stop-hook continuations can produce additional
+    // result events after the iteration has already submitted its
+    // structured output. Those follow-up result events have
+    // structured_output: null and must not clobber the real one.
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 21,
+        cache_creation_input_tokens: 5,
+        output_tokens: 42,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+  });
+
+  it("keeps latest usage when later success result omits structured output", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 13,
+        cache_read_input_tokens: 24,
+        cache_creation_input_tokens: 6,
+        output_tokens: 47,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 37,
+      outputTokens: 47,
+      cacheReadTokens: 24,
+      cacheCreationTokens: 6,
+    });
+  });
+
+  it("keeps the last structured success when a later error result arrives", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        output_tokens: 40,
+      },
+      structured_output: {
+        success: true,
+        summary: "first real result",
+        key_changes_made: ["file.ts"],
+        key_learnings: [],
+      },
+    });
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "error_max_turns",
+      is_error: true,
+      usage: {
+        input_tokens: 11,
+        cache_read_input_tokens: 21,
+        cache_creation_input_tokens: 5,
+        output_tokens: 42,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "first real result",
+      key_changes_made: ["file.ts"],
+      key_learnings: [],
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 32,
+      outputTokens: 42,
+      cacheReadTokens: 21,
+      cacheCreationTokens: 5,
+    });
   });
 });

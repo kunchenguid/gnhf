@@ -33,6 +33,7 @@ export interface OrchestratorState {
   successCount: number;
   failCount: number;
   consecutiveFailures: number;
+  consecutiveErrors: number;
   startTime: Date;
   waitingUntil: Date | null;
   lastMessage: string | null;
@@ -83,6 +84,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     successCount: 0,
     failCount: 0,
     consecutiveFailures: 0,
+    consecutiveErrors: 0,
     startTime: new Date(),
     waitingUntil: null,
     lastMessage: null,
@@ -266,16 +268,16 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           break;
         }
 
-        if (this.state.consecutiveFailures > 0 && !this.stopRequested) {
+        if (this.state.consecutiveErrors > 0 && !this.stopRequested) {
           const backoffMs =
-            60_000 * Math.pow(2, this.state.consecutiveFailures - 1);
+            60_000 * Math.pow(2, this.state.consecutiveErrors - 1);
           this.state.status = "waiting";
           this.state.waitingUntil = new Date(Date.now() + backoffMs);
           this.emit("state", this.getState());
 
           appendDebugLog("backoff:start", {
             iteration: this.state.currentIteration,
-            consecutiveFailures: this.state.consecutiveFailures,
+            consecutiveErrors: this.state.consecutiveErrors,
             backoffMs,
           });
 
@@ -396,6 +398,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           `[FAIL] ${result.output.summary}`,
           result.output.summary,
           toStringArray(result.output.key_learnings),
+          "reported",
         ),
         shouldFullyStop,
       };
@@ -437,7 +440,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       const summary = err instanceof Error ? err.message : String(err);
       return {
         type: "completed",
-        record: this.recordFailure(`[ERROR] ${summary}`, summary, []),
+        record: this.recordFailure(`[ERROR] ${summary}`, summary, [], "error"),
         shouldFullyStop: false,
       };
     } finally {
@@ -464,6 +467,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     );
     this.state.successCount++;
     this.state.consecutiveFailures = 0;
+    this.state.consecutiveErrors = 0;
     return {
       number: this.state.currentIteration,
       success: true,
@@ -478,6 +482,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     notesSummary: string,
     recordSummary: string,
     learnings: string[],
+    kind: "reported" | "error",
   ): IterationRecord {
     appendNotes(
       this.runInfo.notesPath,
@@ -489,6 +494,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     resetHard(this.cwd);
     this.state.failCount++;
     this.state.consecutiveFailures++;
+    // Only hard errors (agent threw) escalate the backoff streak. Explicit
+    // agent-reported failures indicate the loop is healthy - the agent tried
+    // and concluded it couldn't succeed - so we move straight to the next
+    // iteration.
+    if (kind === "error") {
+      this.state.consecutiveErrors++;
+    } else {
+      this.state.consecutiveErrors = 0;
+    }
     return {
       number: this.state.currentIteration,
       success: false,

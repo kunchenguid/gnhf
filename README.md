@@ -45,7 +45,7 @@ gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.co
 You wake up to a branch full of clean work and a log of everything that happened.
 
 - **Dead simple** — one command starts an autonomous loop that runs until you Ctrl+C or a configured runtime cap is reached
-- **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries and exponential backoff
+- **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; hard agent errors back off exponentially while agent-reported failures continue immediately
 - **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
 - **Agent-agnostic** — works with Claude Code, Codex, Rovo Dev, or OpenCode out of the box
 
@@ -122,7 +122,7 @@ npm link
               ┌──────────┐  ┌───────────┐                  │
               │  commit  │  │ git reset │                  │
               │  append  │  │  --hard   │                  │
-              │ notes.md │  │  backoff  │                  │
+              │ notes.md │  │ maybe wait│                  │
               └────┬─────┘  └─────┬─────┘                  │
                    │              │                        │
                    │   ┌──────────┘                        │
@@ -136,10 +136,12 @@ npm link
 ```
 
 - **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
+- **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, while hard agent errors use exponential backoff
 - **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met; uncommitted work is rolled back in either case, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
+- **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
 - **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
-- **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off
+- **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit
 
 ### Worktree Mode
 
@@ -165,17 +167,19 @@ Pass `--worktree` to run each agent in an isolated [git worktree](https://git-sc
 | `echo "<prompt>" \| gnhf` | Pipe prompt via stdin                           |
 | `cat prd.md \| gnhf`      | Pipe a large spec or PRD via stdin              |
 
+If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf asks whether to update `prompt.md` and continue the existing run history, start a new branch, or quit. When the prompt came from stdin, that confirmation is read from the controlling terminal, so it must be available.
+
 ### Flags
 
-| Flag                     | Description                                                           | Default                |
-| ------------------------ | --------------------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)            | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                      | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                             | unlimited              |
-| `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited         |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)    | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently) | `false`                |
-| `--version`              | Show version                                                          |                        |
+| Flag                     | Description                                                                | Default                |
+| ------------------------ | -------------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, or `opencode`)                 | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                           | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                  | unlimited              |
+| `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)         | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)      | `false`                |
+| `--version`              | Show version                                                               |                        |
 
 ## Configuration
 
@@ -240,14 +244,16 @@ Including a snippet of `gnhf.log` is the single most useful thing you can attach
 
 `gnhf` supports four agents:
 
-| Agent       | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                            |
-| ----------- | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode.                                                                                                                                                        |
-| Codex       | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                    |
-| Rovo Dev    | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                           |
-| OpenCode    | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts. |
+| Agent       | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                                        |
+| ----------- | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period. |
+| Codex       | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                |
+| Rovo Dev    | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                       |
+| OpenCode    | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.             |
 
 ## Development
+
+If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). Human-authored PRs targeting `main` must be opened via `git push no-mistakes` so the required `Require no-mistakes` check passes.
 
 ```sh
 npm run build          # Build with tsdown

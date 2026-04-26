@@ -4,7 +4,7 @@ This file provides guidance to agents1 when working with code in this repository
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, or OpenCode) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard` with exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, or OpenCode) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, and only hard agent errors trigger exponential backoff. Target: Node 20+, published to npm as a single-file ESM bundle.
 
 ## Commands
 
@@ -29,16 +29,16 @@ Entry point is `src/cli.ts`. It parses flags with commander, resolves config, ha
 
 ### Run lifecycle (the critical flow)
 
-1. `cli.ts` decides one of three modes: new branch, resume an existing `gnhf/<slug>` branch, or `--worktree` (creates a sibling `<repo>-gnhf-worktrees/<slug>/` checkout). `setupRun`/`resumeRun` in `src/core/run.ts` create `.gnhf/runs/<runId>/` with `prompt.md`, `notes.md`, `output-schema.json`, `base-commit`, and `gnhf.log`, and add `.gnhf/runs/` to `.git/info/exclude` so run metadata stays local.
-2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), call `agent.run(...)`, then on success `commitAll` + append to `notes.md`; on failure `resetHard` and back off. Three consecutive failures abort. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), and `--stop-when` (post-iteration, honored on both successful and failed iterations when the agent sets `should_fully_stop` in its output).
+1. `cli.ts` decides one of three modes: new branch, resume an existing `gnhf/<slug>` branch, or `--worktree` (creates a sibling `<repo>-gnhf-worktrees/<slug>/` checkout). When resuming with a different prompt, it asks whether to update `prompt.md` and continue the existing run history, start a new branch, or quit; if stdin is piped, that confirmation comes from the controlling terminal before any sleep-prevention re-exec. `setupRun`/`resumeRun` in `src/core/run.ts` create `.gnhf/runs/<runId>/` with `prompt.md`, `notes.md`, `output-schema.json`, `base-commit`, and `gnhf.log`, and add `.gnhf/runs/` to `.git/info/exclude` so run metadata stays local.
+2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), call `agent.run(...)`, then on success `commitAll` + append to `notes.md`; on failure `resetHard`. Agent-reported failures continue immediately, while thrown agent errors increment the backoff streak. Three consecutive failures abort. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), and `--stop-when` (post-iteration, honored on both successful and failed iterations when the agent sets `should_fully_stop` in its output).
 3. `Renderer` (`src/renderer.ts` + `src/renderer-diff.ts`) is a cell-based TUI using the alt screen buffer. `cli.ts` enters/exits alt screen around it. The renderer subscribes to orchestrator events, diffs frames to minimize writes, and updates the terminal title live. `MockOrchestrator` (`src/mock-orchestrator.ts`) drives the renderer offline via `--mock` for demos/testing.
 4. Shutdown path: SIGINT/SIGTERM → `orchestrator.stop()` (aborts the active iteration, rolls back uncommitted work) → renderer exits → 5s force-exit timeout. If it's a `--worktree` run with zero commits, the worktree is removed; otherwise it's preserved and the path is printed.
 
 ### Agents (`src/core/agents/`)
 
-Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`) that matches `AGENT_OUTPUT_SCHEMA`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
+Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`, plus `should_fully_stop` only when `--stop-when` is active) that matches the schema built by `buildAgentOutputSchema(...)`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
 
-- `claude.ts` / `codex.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`.
+- `claude.ts` / `codex.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, and after a short grace period shuts down a lingering Claude process tree if it stays alive.
 - `rovodev.ts` / `opencode.ts`: long-running local HTTP servers managed via `managed-process.ts` (start once, reuse across iterations, close on shutdown). OpenCode creates a per-run session and applies a blanket allow rule to avoid prompt blocking.
 - `stream-utils.ts`: shared JSONL parsing, `AbortSignal` wiring, and child-process lifecycle helpers. When touching agent streaming, start here.
 

@@ -1,6 +1,10 @@
 import {
+  closeSync,
+  createReadStream,
+  createWriteStream,
   existsSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   rmdirSync,
@@ -50,6 +54,12 @@ const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
 const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
 const GNHF_REEXEC_STDIN_PROMPT_FILENAME = "prompt.txt";
 
+class PromptSignalError extends Error {
+  constructor(public readonly signal: NodeJS.Signals) {
+    super(signal);
+  }
+}
+
 function parseNonNegativeInteger(value: string): number {
   if (!/^\d+$/.test(value)) {
     throw new InvalidArgumentError("must be a non-negative integer");
@@ -79,13 +89,17 @@ function humanizeErrorMessage(message: string): string {
   return message;
 }
 
-function initializeNewBranch(prompt: string, cwd: string): RunInfo {
+function initializeNewBranch(
+  prompt: string,
+  cwd: string,
+  schemaOptions: { includeStopField: boolean },
+): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
   const branchName = slugifyPrompt(prompt);
   createBranch(branchName, cwd);
   const runId = branchName.split("/")[1]!;
-  return setupRun(runId, prompt, baseCommit, cwd);
+  return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
 }
 
 interface WorktreeRunResult {
@@ -95,8 +109,12 @@ interface WorktreeRunResult {
   resumed: boolean;
 }
 
-function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
-  // Intentionally skip ensureCleanWorkingTree(). git worktree add creates
+function initializeWorktreeRun(
+  prompt: string,
+  cwd: string,
+  schemaOptions: { includeStopField: boolean },
+): WorktreeRunResult {
+  // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
   // main checkout don't carry over, so a dirty tree is harmless here.
   const repoRoot = getRepoRootDir(cwd);
@@ -140,7 +158,7 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
           `"git worktree remove ${worktreePath}" to start fresh.`,
       );
     }
-    const runInfo = resumeRun(runId, worktreePath);
+    const runInfo = resumeRun(runId, worktreePath, schemaOptions);
     return {
       runInfo,
       worktreePath,
@@ -150,18 +168,94 @@ function initializeWorktreeRun(prompt: string, cwd: string): WorktreeRunResult {
   }
 
   createWorktree(repoRoot, worktreePath, branchName);
-  const runInfo = setupRun(runId, prompt, baseCommit, worktreePath);
+  const runInfo = setupRun(
+    runId,
+    prompt,
+    baseCommit,
+    worktreePath,
+    schemaOptions,
+  );
   return { runInfo, worktreePath, effectiveCwd: worktreePath, resumed: false };
 }
 
-function ask(question: string): Promise<string> {
+function openPromptTerminal(): {
+  input: NodeJS.ReadableStream;
+  output: NodeJS.WritableStream;
+  cleanup: () => void;
+} {
+  if (process.stdin.isTTY) {
+    return {
+      input: process.stdin,
+      output: process.stderr,
+      cleanup: () => {},
+    };
+  }
+
+  const inputPath = process.platform === "win32" ? "CONIN$" : "/dev/tty";
+  const outputPath = process.platform === "win32" ? "CONOUT$" : "/dev/tty";
+  const inputFd = openSync(inputPath, "r");
+  try {
+    const outputFd = openSync(outputPath, "w");
+    try {
+      const input = createReadStream("", { autoClose: true, fd: inputFd });
+      const output = createWriteStream("", { autoClose: true, fd: outputFd });
+      return {
+        input,
+        output,
+        cleanup: () => {
+          input.destroy();
+          output.destroy();
+        },
+      };
+    } catch (error) {
+      closeSync(outputFd);
+      throw error;
+    }
+  } catch (error) {
+    closeSync(inputFd);
+    throw error;
+  }
+}
+
+function ask(
+  question: string,
+  closeMessage: string,
+  unavailableMessage: string,
+): Promise<string> {
+  let terminal;
+  try {
+    terminal = openPromptTerminal();
+  } catch {
+    throw new Error(unavailableMessage);
+  }
+
   const rl = createInterface({
-    input: process.stdin,
-    output: process.stderr,
+    input: terminal.input,
+    output: terminal.output,
   });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
+  return new Promise((resolve, reject) => {
+    const handleClose = () => {
+      terminal.cleanup();
+      rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
+      reject(new Error(closeMessage));
+    };
+
+    const handleSigInt = () => {
+      rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
       rl.close();
+      terminal.cleanup();
+      reject(new PromptSignalError("SIGINT"));
+    };
+
+    rl.once("close", handleClose);
+    rl.once("SIGINT", handleSigInt);
+    rl.question(question, (answer) => {
+      rl.off("close", handleClose);
+      rl.off("SIGINT", handleSigInt);
+      rl.close();
+      terminal.cleanup();
       resolve(answer.trim().toLowerCase());
     });
   });
@@ -361,6 +455,10 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
+      const schemaOptions = {
+        includeStopField: options.stopWhen !== undefined,
+      };
+
       let runInfo;
       let startIteration = 0;
 
@@ -377,7 +475,7 @@ program
           process.exit(1);
         }
 
-        const wt = initializeWorktreeRun(prompt, cwd);
+        const wt = initializeWorktreeRun(prompt, cwd, schemaOptions);
         runInfo = wt.runInfo;
         effectiveCwd = wt.effectiveCwd;
         worktreePath = wt.worktreePath;
@@ -411,7 +509,7 @@ program
         }
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
-        const existing = resumeRun(existingRunId, cwd);
+        const existing = resumeRun(existingRunId, cwd, schemaOptions);
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
 
         if (!prompt || prompt === existingPrompt) {
@@ -421,17 +519,26 @@ program
         } else {
           const answer = await ask(
             `You are on gnhf branch "${currentBranch}".\n` +
-              `  (o) Overwrite current run with new prompt\n` +
+              `  (o) Update prompt and continue current run\n` +
               `  (n) Start a new branch on top of this one\n` +
               `  (q) Quit\n` +
               `Choose [o/n/q]: `,
+            "The overwrite prompt closed before a choice was entered. Re-run gnhf from an interactive terminal and choose o, n, or q.",
+            "Cannot show the overwrite prompt because stdin is not interactive. Re-run gnhf from an interactive terminal and choose o, n, or q.",
           );
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
-            runInfo = setupRun(existingRunId, prompt, existing.baseCommit, cwd);
+            runInfo = setupRun(
+              existingRunId,
+              prompt,
+              existing.baseCommit,
+              cwd,
+              schemaOptions,
+            );
+            startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
-            runInfo = initializeNewBranch(prompt, cwd);
+            runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);
           }
@@ -442,7 +549,7 @@ program
           return;
         }
 
-        runInfo = initializeNewBranch(prompt, cwd);
+        runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
       }
 
       let sleepPreventionCleanup: (() => Promise<void>) | null = null;
@@ -502,6 +609,7 @@ program
         runInfo,
         config.agentPathOverride[config.agent],
         config.agentArgsOverride?.[config.agent],
+        schemaOptions,
       );
       const orchestrator = new Orchestrator(
         config,
@@ -635,5 +743,8 @@ function die(message: string): never {
 try {
   await program.parseAsync();
 } catch (err) {
+  if (err instanceof PromptSignalError) {
+    process.exit(getSignalExitCode(err.signal));
+  }
   die(err instanceof Error ? err.message : String(err));
 }

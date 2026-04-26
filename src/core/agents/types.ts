@@ -6,18 +6,37 @@ export interface AgentOutput {
   should_fully_stop?: boolean;
 }
 
-export const AGENT_OUTPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
+export interface AgentOutputSchema {
+  type: "object";
+  additionalProperties: false;
+  properties: Record<string, { type: string; items?: { type: string } }>;
+  required: string[];
+}
+
+// Codex's --output-schema enforces OpenAI strict mode, which requires every
+// key in `properties` to also appear in `required` when additionalProperties
+// is false. So include should_fully_stop only when the run actually uses it.
+export function buildAgentOutputSchema(opts: {
+  includeStopField: boolean;
+}): AgentOutputSchema {
+  const properties: AgentOutputSchema["properties"] = {
     success: { type: "boolean" },
     summary: { type: "string" },
     key_changes_made: { type: "array", items: { type: "string" } },
     key_learnings: { type: "array", items: { type: "string" } },
-    should_fully_stop: { type: "boolean" },
-  },
-  required: ["success", "summary", "key_changes_made", "key_learnings"],
-} as const;
+  };
+  const required = ["success", "summary", "key_changes_made", "key_learnings"];
+  if (opts.includeStopField) {
+    properties.should_fully_stop = { type: "boolean" };
+    required.push("should_fully_stop");
+  }
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties,
+    required,
+  };
+}
 
 export interface TokenUsage {
   inputTokens: number;

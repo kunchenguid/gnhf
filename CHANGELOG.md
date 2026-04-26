@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.26](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.25...gnhf-v0.1.26) (2026-04-24)
+
+
+### Bug Fixes
+
+* **agents:** preserve final Claude output before forced shutdown ([#93](https://github.com/kunchenguid/gnhf/issues/93)) ([61e37a8](https://github.com/kunchenguid/gnhf/commit/61e37a87ea3811e16f1e04ba7dd38db8ce94a011))
+
+## [0.1.25](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.24...gnhf-v0.1.25) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cli:** preserve run history when updating a resumed prompt ([#91](https://github.com/kunchenguid/gnhf/issues/91)) ([61306e9](https://github.com/kunchenguid/gnhf/commit/61306e9a2a29f8ebd6885f1fe02bdf1fd3b8917b))
+* **core:** preserve agent output and back off only on hard errors ([#89](https://github.com/kunchenguid/gnhf/issues/89)) ([b369ae8](https://github.com/kunchenguid/gnhf/commit/b369ae80fd752d11729046d971a5ab09be18c394))
+
+## [0.1.24](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.23...gnhf-v0.1.24) (2026-04-23)
+
+
+### Bug Fixes
+
+* **agents:** make stop output schema conditional on --stop-when ([#82](https://github.com/kunchenguid/gnhf/issues/82)) ([36f69e8](https://github.com/kunchenguid/gnhf/commit/36f69e8d480f259b0142eb5aa9e1b25ad69f09cc))
+* **cli:** handle resume prompt overwrite from the controlling terminal ([#77](https://github.com/kunchenguid/gnhf/issues/77)) ([cc18215](https://github.com/kunchenguid/gnhf/commit/cc1821531af107adfd31253feabdd24077867110))
+
 ## [0.1.23](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.22...gnhf-v0.1.23) (2026-04-18)
 
 

@@ -23,7 +23,15 @@ vi.mock("../debug-log.js", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { OpenCodeAgent } from "./opencode.js";
-import { AGENT_OUTPUT_SCHEMA } from "./types.js";
+import { buildAgentOutputSchema } from "./types.js";
+
+const DEFAULT_AGENT_OUTPUT_SCHEMA = buildAgentOutputSchema({
+  includeStopField: false,
+});
+
+const STOP_AGENT_OUTPUT_SCHEMA = buildAgentOutputSchema({
+  includeStopField: true,
+});
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -455,7 +463,7 @@ describe("OpenCodeAgent", () => {
     expect(messageBody.parts[0]?.text).toContain("reply with only valid JSON");
     expect(messageBody.format).toEqual({
       type: "json_schema",
-      schema: AGENT_OUTPUT_SCHEMA,
+      schema: DEFAULT_AGENT_OUTPUT_SCHEMA,
       retryCount: 1,
     });
     expect(
@@ -489,6 +497,52 @@ describe("OpenCodeAgent", () => {
     expect(onMessage).toHaveBeenCalledWith(
       '{"success":true,"summary":"done","key_changes_made":[],"key_learnings":[]}',
     );
+  });
+
+  it("uses the configured schema in both the prompt text and request format", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      schema: STOP_AGENT_OUTPUT_SCHEMA,
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "session-123",
+          directory: "/repo",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 100,
+            output: 20,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await configuredAgent.run("test prompt", "/repo");
+
+    const messageBody = JSON.parse(
+      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    );
+    expect(messageBody.parts[0]?.text).toContain(
+      JSON.stringify(STOP_AGENT_OUTPUT_SCHEMA),
+    );
+    expect(messageBody.format).toEqual({
+      type: "json_schema",
+      schema: STOP_AGENT_OUTPUT_SCHEMA,
+      retryCount: 1,
+    });
   });
 
   it("passes configured extra args through to opencode serve", async () => {

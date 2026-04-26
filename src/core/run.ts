@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
-import { AGENT_OUTPUT_SCHEMA } from "./agents/types.js";
+import { buildAgentOutputSchema } from "./agents/types.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
 export interface RunInfo {
@@ -24,12 +24,16 @@ export interface RunInfo {
 
 const LOG_FILENAME = "gnhf.log";
 
-function writeSchemaFile(schemaPath: string): void {
+function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
   writeFileSync(
     schemaPath,
-    JSON.stringify(AGENT_OUTPUT_SCHEMA, null, 2),
+    JSON.stringify(buildAgentOutputSchema({ includeStopField }), null, 2),
     "utf-8",
   );
+}
+
+export interface RunSchemaOptions {
+  includeStopField: boolean;
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
@@ -61,6 +65,7 @@ export function setupRun(
   prompt: string,
   baseCommit: string,
   cwd: string,
+  schemaOptions: RunSchemaOptions,
 ): RunInfo {
   ensureRunMetadataIgnored(cwd);
 
@@ -71,14 +76,16 @@ export function setupRun(
   writeFileSync(promptPath, prompt, "utf-8");
 
   const notesPath = join(runDir, "notes.md");
-  writeFileSync(
-    notesPath,
-    `# gnhf run: ${runId}\n\nObjective: ${prompt}\n\n## Iteration Log\n`,
-    "utf-8",
-  );
+  if (!existsSync(notesPath)) {
+    writeFileSync(
+      notesPath,
+      `# gnhf run: ${runId}\n\nObjective: see .gnhf/runs/${runId}/prompt.md\n\n## Iteration Log\n`,
+      "utf-8",
+    );
+  }
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath);
+  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
 
   const logPath = join(runDir, LOG_FILENAME);
 
@@ -103,7 +110,11 @@ export function setupRun(
   };
 }
 
-export function resumeRun(runId: string, cwd: string): RunInfo {
+export function resumeRun(
+  runId: string,
+  cwd: string,
+  schemaOptions: RunSchemaOptions,
+): RunInfo {
   const runDir = join(cwd, ".gnhf", "runs", runId);
   if (!existsSync(runDir)) {
     throw new Error(`Run directory not found: ${runDir}`);
@@ -112,7 +123,7 @@ export function resumeRun(runId: string, cwd: string): RunInfo {
   const promptPath = join(runDir, "prompt.md");
   const notesPath = join(runDir, "notes.md");
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath);
+  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
   const logPath = join(runDir, LOG_FILENAME);
   const baseCommitPath = join(runDir, "base-commit");
   const baseCommit = existsSync(baseCommitPath)

@@ -48,7 +48,9 @@ describe("setupRun", () => {
   });
 
   it("creates the run directory recursively", () => {
-    setupRun("test-run-1", "fix bugs", "abc123", P);
+    setupRun("test-run-1", "fix bugs", "abc123", P, {
+      includeStopField: false,
+    });
     expect(mockMkdirSync).toHaveBeenCalledWith(join(P, ".git", "info"), {
       recursive: true,
     });
@@ -59,7 +61,7 @@ describe("setupRun", () => {
   });
 
   it("writes the ignore rule to .git/info/exclude", () => {
-    setupRun("run-abc", "test", "abc123", P);
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       join(P, ".git", "info", "exclude"),
@@ -69,7 +71,9 @@ describe("setupRun", () => {
   });
 
   it("writes PROMPT.md with the prompt text", () => {
-    setupRun("run-abc", "improve coverage", "abc123", P);
+    setupRun("run-abc", "improve coverage", "abc123", P, {
+      includeStopField: false,
+    });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       join(P, ".gnhf", "runs", "run-abc", "prompt.md"),
       "improve coverage",
@@ -77,20 +81,23 @@ describe("setupRun", () => {
     );
   });
 
-  it("writes notes.md with header and objective", () => {
-    setupRun("run-abc", "improve coverage", "abc123", P);
+  it("writes notes.md with header that points at prompt.md instead of inlining the prompt", () => {
+    setupRun("run-abc", "improve coverage", "abc123", P, {
+      includeStopField: false,
+    });
     const notesCall = mockWriteFileSync.mock.calls.find(
       (call) => typeof call[0] === "string" && call[0].endsWith("notes.md"),
     );
     expect(notesCall).toBeDefined();
     const content = notesCall![1] as string;
     expect(content).toContain("# gnhf run: run-abc");
-    expect(content).toContain("Objective: improve coverage");
+    expect(content).toContain(".gnhf/runs/run-abc/prompt.md");
+    expect(content).not.toContain("improve coverage");
     expect(content).toContain("## Iteration Log");
   });
 
   it("writes output-schema.json with valid JSON schema", () => {
-    setupRun("run-abc", "test", "abc123", P);
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
     const schemaCall = mockWriteFileSync.mock.calls.find(
       (call) =>
         typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
@@ -105,8 +112,30 @@ describe("setupRun", () => {
     expect(schema.required).toContain("key_learnings");
   });
 
+  it("omits should_fully_stop from the schema when includeStopField is false", () => {
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.should_fully_stop).toBeUndefined();
+    expect(schema.required).not.toContain("should_fully_stop");
+  });
+
+  it("includes should_fully_stop in both properties and required when includeStopField is true", () => {
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: true });
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.should_fully_stop).toEqual({ type: "boolean" });
+    expect(schema.required).toContain("should_fully_stop");
+  });
+
   it("writes the branch base commit for new runs", () => {
-    setupRun("run-abc", "test", "abc123", P);
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       join(P, ".gnhf", "runs", "run-abc", "base-commit"),
@@ -122,7 +151,7 @@ describe("setupRun", () => {
       path === baseCommitPath ? "old123\n" : "",
     );
 
-    setupRun("run-abc", "test", "new456", P);
+    setupRun("run-abc", "test", "new456", P, { includeStopField: false });
 
     expect(mockWriteFileSync).not.toHaveBeenCalledWith(
       baseCommitPath,
@@ -131,9 +160,36 @@ describe("setupRun", () => {
     );
   });
 
+  it("preserves the existing notes.md on overwrite so prior iteration log survives", () => {
+    const notesPath = join(P, ".gnhf", "runs", "run-abc", "notes.md");
+    mockExistsSync.mockImplementation((path) => path === notesPath);
+
+    setupRun("run-abc", "new prompt", "abc123", P, { includeStopField: false });
+
+    const notesCall = mockWriteFileSync.mock.calls.find(
+      (call) => typeof call[0] === "string" && call[0].endsWith("notes.md"),
+    );
+    expect(notesCall).toBeUndefined();
+  });
+
+  it("still overwrites prompt.md on overwrite so the new prompt takes effect", () => {
+    const notesPath = join(P, ".gnhf", "runs", "run-abc", "notes.md");
+    mockExistsSync.mockImplementation((path) => path === notesPath);
+
+    setupRun("run-abc", "new prompt", "abc123", P, { includeStopField: false });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "prompt.md"),
+      "new prompt",
+      "utf-8",
+    );
+  });
+
   it("returns correct RunInfo paths", () => {
     const runDir = join(P, ".gnhf", "runs", "my-run");
-    const info = setupRun("my-run", "prompt text", "abc123", P);
+    const info = setupRun("my-run", "prompt text", "abc123", P, {
+      includeStopField: false,
+    });
     expect(info).toEqual({
       runId: "my-run",
       runDir,
@@ -156,7 +212,7 @@ describe("resumeRun", () => {
     const runDir = join(P, ".gnhf", "runs", "run-abc");
     mockExistsSync.mockImplementation((path) => path === runDir);
 
-    resumeRun("run-abc", P);
+    resumeRun("run-abc", P, { includeStopField: false });
 
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       join(runDir, "output-schema.json"),
@@ -169,6 +225,23 @@ describe("resumeRun", () => {
     );
     const schema = JSON.parse(schemaCall![1] as string);
     expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties.should_fully_stop).toBeUndefined();
+    expect(schema.required).not.toContain("should_fully_stop");
+  });
+
+  it("rewrites output-schema.json with should_fully_stop when includeStopField is true", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    mockExistsSync.mockImplementation((path) => path === runDir);
+
+    resumeRun("run-abc", P, { includeStopField: true });
+
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.should_fully_stop).toEqual({ type: "boolean" });
+    expect(schema.required).toContain("should_fully_stop");
   });
 
   it("reads the stored base commit when present", () => {
@@ -181,7 +254,7 @@ describe("resumeRun", () => {
       path === baseCommitPath ? "abc123\n" : "",
     );
 
-    const info = resumeRun("run-abc", P);
+    const info = resumeRun("run-abc", P, { includeStopField: false });
 
     expect(info.baseCommit).toBe("abc123");
     expect(info.logPath).toBe(join(runDir, "gnhf.log"));
@@ -192,7 +265,7 @@ describe("resumeRun", () => {
     mockExistsSync.mockImplementation((path) => path === runDir);
     mockFindLegacyRunBaseCommit.mockReturnValue("legacy123");
 
-    const info = resumeRun("run-abc", P);
+    const info = resumeRun("run-abc", P, { includeStopField: false });
 
     expect(mockFindLegacyRunBaseCommit).toHaveBeenCalledWith("run-abc", P);
     expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -209,7 +282,7 @@ describe("resumeRun", () => {
     mockFindLegacyRunBaseCommit.mockReturnValue(null);
     mockGetHeadCommit.mockReturnValue("head456");
 
-    const info = resumeRun("run-abc", P);
+    const info = resumeRun("run-abc", P, { includeStopField: false });
 
     expect(mockGetHeadCommit).toHaveBeenCalledWith(P);
     expect(info.baseCommit).toBe("head456");

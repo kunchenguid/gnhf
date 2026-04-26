@@ -41,6 +41,16 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("smallest logical unit");
   });
 
+  it("instructs agents to submit structured output only after cleanup and final verification", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "test",
+    });
+    expect(result).toContain("Only submit the final JSON object after");
+    expect(result).toContain("stopped any background processes");
+  });
+
   it("produces a prompt identical to the default when stopWhen is not set", () => {
     const baseline = buildIterationPrompt({
       n: 1,
@@ -68,5 +78,7 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("Stop Condition");
     expect(result).toContain("all tasks are done");
     expect(result).toContain("should_fully_stop");
+    expect(result).toContain("set it to false");
+    expect(result).not.toContain("omit it");
   });
 });
