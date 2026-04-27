@@ -140,7 +140,7 @@ function isSameUsage(a: TokenUsage, b: TokenUsage): boolean {
   );
 }
 
-function messageKey(message: JsonRecord, fallback: string): string {
+function messageKey(message: JsonRecord): string | null {
   const responseId = stringField(message, ["responseId", "id"]);
   if (responseId) return responseId;
 
@@ -149,7 +149,7 @@ function messageKey(message: JsonRecord, fallback: string): string {
     return `timestamp:${timestamp}`;
   }
 
-  return fallback;
+  return null;
 }
 
 function roleOf(message: unknown): string | undefined {
@@ -294,7 +294,8 @@ export class PiAgent implements Agent {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       };
-      const anonymousMessageKey = "assistant-anonymous";
+      const anonymousKeyMap = new WeakMap<JsonRecord, string>();
+      let anonymousKeySeq = 0;
 
       const updateUsage = (message: JsonRecord) => {
         const usage = isRecord(message.usage)
@@ -302,7 +303,16 @@ export class PiAgent implements Agent {
           : null;
         if (!usage) return;
 
-        const key = messageKey(message, anonymousMessageKey);
+        let key = messageKey(message);
+        if (key === null) {
+          if (!anonymousKeyMap.has(message)) {
+            anonymousKeyMap.set(
+              message,
+              `assistant-anonymous-${anonymousKeySeq++}`,
+            );
+          }
+          key = anonymousKeyMap.get(message)!;
+        }
         usageByMessageKey.set(key, usage);
 
         const cumulative: TokenUsage = {
@@ -373,7 +383,11 @@ export class PiAgent implements Agent {
           rememberAssistantMessage(event.message);
         }
 
-        if (event.type === "agent_end" && Array.isArray(event.messages)) {
+        if (
+          event.type === "agent_end" &&
+          Array.isArray(event.messages) &&
+          !latestAssistantMessage
+        ) {
           for (let i = event.messages.length - 1; i >= 0; i -= 1) {
             const message = event.messages[i];
             if (roleOf(message) === "assistant") {
