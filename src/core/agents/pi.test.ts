@@ -176,6 +176,39 @@ describe("PiAgent", () => {
     expect(onMessage).toHaveBeenCalledWith(finalOutput());
   });
 
+  it("does not inflate usage when anonymous message streams multiple message_update events", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+    const agent = new PiAgent();
+
+    const promise = agent.run("test prompt", "/work/dir", { onUsage });
+    emitJson(proc, {
+      type: "message_update",
+      message: { role: "assistant", usage: { input: 5, output: 3 } },
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hel" },
+    });
+    emitJson(proc, {
+      type: "message_update",
+      message: { role: "assistant", usage: { input: 5, output: 3 } },
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "lo" },
+    });
+    emitJson(proc, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        usage: { input: 5, output: 3 },
+        content: [{ type: "text", text: finalOutput() }],
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({ output: { success: true } });
+    const lastCall = onUsage.mock.calls[onUsage.mock.calls.length - 1][0];
+    expect(lastCall.inputTokens).toBe(5);
+    expect(lastCall.outputTokens).toBe(3);
+  });
+
   it("maps usage from assistant messages and defaults missing fields to zero", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

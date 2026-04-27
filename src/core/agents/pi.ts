@@ -294,10 +294,10 @@ export class PiAgent implements Agent {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       };
-      const anonymousKeyMap = new WeakMap<JsonRecord, string>();
       let anonymousKeySeq = 0;
+      let currentStreamingMessageKey: string | null = null;
 
-      const updateUsage = (message: JsonRecord) => {
+      const updateUsage = (message: JsonRecord, streaming = false) => {
         const usage = isRecord(message.usage)
           ? toTokenUsage(message.usage)
           : null;
@@ -305,13 +305,12 @@ export class PiAgent implements Agent {
 
         let key = messageKey(message);
         if (key === null) {
-          if (!anonymousKeyMap.has(message)) {
-            anonymousKeyMap.set(
-              message,
-              `assistant-anonymous-${anonymousKeySeq++}`,
-            );
+          if (streaming && currentStreamingMessageKey !== null) {
+            key = currentStreamingMessageKey;
+          } else {
+            key = `assistant-anonymous-${anonymousKeySeq++}`;
+            if (streaming) currentStreamingMessageKey = key;
           }
-          key = anonymousKeyMap.get(message)!;
         }
         usageByMessageKey.set(key, usage);
 
@@ -334,17 +333,17 @@ export class PiAgent implements Agent {
         }
       };
 
-      const rememberAssistantMessage = (message: unknown) => {
+      const rememberAssistantMessage = (message: unknown, streaming = false) => {
         if (!isRecord(message) || roleOf(message) !== "assistant") return;
         latestAssistantMessage = message;
-        updateUsage(message);
+        updateUsage(message, streaming);
       };
 
       parseJSONLStream<JsonRecord>(child.stdout!, logStream, (event) => {
         if (!isRecord(event)) return;
 
         if (event.type === "message_update") {
-          rememberAssistantMessage(event.message);
+          rememberAssistantMessage(event.message, true);
 
           if (isRecord(event.assistantMessageEvent)) {
             const assistantEvent = event.assistantMessageEvent;
@@ -380,7 +379,8 @@ export class PiAgent implements Agent {
         }
 
         if (event.type === "message_end" || event.type === "turn_end") {
-          rememberAssistantMessage(event.message);
+          rememberAssistantMessage(event.message, true);
+          currentStreamingMessageKey = null;
         }
 
         if (
