@@ -9,6 +9,7 @@ export const AGENT_NAMES = [
   "rovodev",
   "opencode",
   "copilot",
+  "pi",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
@@ -101,6 +102,34 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "--share" ||
         arg.startsWith("--share=") ||
         arg === "--share-gist"
+      );
+    case "pi":
+      return (
+        arg === "--mode" ||
+        arg.startsWith("--mode=") ||
+        arg === "--print" ||
+        arg === "-p" ||
+        arg === "--continue" ||
+        arg === "-c" ||
+        arg === "--resume" ||
+        arg === "-r" ||
+        arg === "--session" ||
+        arg.startsWith("--session=") ||
+        arg === "--fork" ||
+        arg.startsWith("--fork=") ||
+        arg === "--session-dir" ||
+        arg.startsWith("--session-dir=") ||
+        arg === "--no-session" ||
+        arg === "--export" ||
+        arg.startsWith("--export=") ||
+        arg === "--list-models" ||
+        arg.startsWith("--list-models=") ||
+        arg === "--help" ||
+        arg === "-h" ||
+        arg === "--version" ||
+        arg === "-v" ||
+        arg === "--api-key" ||
+        arg.startsWith("--api-key=")
       );
   }
 }
@@ -363,6 +392,7 @@ function serializeConfig(config: Config): string {
     "#   claude: /path/to/custom-claude",
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
+    "#   pi: /path/to/custom-pi",
     "",
     "# Per-agent CLI arg overrides (optional)",
     "# agentArgsOverride:",
@@ -375,6 +405,13 @@ function serializeConfig(config: Config): string {
     "#   copilot:",
     "#     - --model",
     "#     - gpt-5.4",
+    "#   pi:",
+    "#     - --provider",
+    "#     - openai-codex",
+    "#     - --model",
+    "#     - gpt-5.5",
+    "#     - --thinking",
+    "#     - high",
   ];
 
   if (agentPathOverrideSection) {

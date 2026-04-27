@@ -16,7 +16,14 @@ import type { RunInfo } from "./core/run.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
-const TEST_AGENT_NAMES = ["claude", "codex", "rovodev", "opencode", "copilot"];
+const TEST_AGENT_NAMES = [
+  "claude",
+  "codex",
+  "rovodev",
+  "opencode",
+  "copilot",
+  "pi",
+];
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -671,6 +678,28 @@ describe("cli", () => {
     expect(loadConfig).toHaveBeenCalledWith({ agent: "copilot" });
     expect(createAgent).toHaveBeenCalledWith(
       "copilot",
+      stubRunInfo,
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+  });
+
+  it("accepts pi as an explicit --agent override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "pi"],
+      {
+        agent: "pi",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "pi" });
+    expect(createAgent).toHaveBeenCalledWith(
+      "pi",
       stubRunInfo,
       undefined,
       undefined,

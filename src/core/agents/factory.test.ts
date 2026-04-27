@@ -33,6 +33,17 @@ vi.mock("./copilot.js", () => {
   return { CopilotAgent };
 });
 
+vi.mock("./pi.js", () => {
+  const PiAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "pi";
+    this.deps = deps;
+  });
+  return { PiAgent };
+});
+
 vi.mock("./rovodev.js", () => {
   const RovoDevAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -62,6 +73,7 @@ import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
+import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
 import type { RunInfo } from "../run.js";
 
@@ -205,6 +217,46 @@ describe("createAgent", () => {
       extraArgs: ["-m", "gpt-5.4", "--full-auto"],
     });
     expect(agent.name).toBe("codex");
+  });
+
+  it("creates a PiAgent when name is 'pi'", () => {
+    const agent = createAgent("pi", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(PiAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("pi");
+  });
+
+  it("passes path override and extra args through to the PiAgent", () => {
+    const agent = createAgent(
+      "pi",
+      stubRunInfo,
+      "/custom/pi",
+      ["--provider", "openai-codex", "--model", "gpt-5.5"],
+      { includeStopField: false },
+    );
+
+    expect(PiAgent).toHaveBeenCalledWith({
+      bin: "/custom/pi",
+      extraArgs: ["--provider", "openai-codex", "--model", "gpt-5.5"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("pi");
+  });
+
+  it("hands PiAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("pi", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(PiAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
   });
 
   it("creates a RovoDevAgent when name is 'rovodev'", () => {

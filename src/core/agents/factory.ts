@@ -5,6 +5,7 @@ import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
+import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
 
 export interface CreateAgentOptions {
@@ -41,6 +42,12 @@ export function createAgent(
       });
     case "opencode":
       return new OpenCodeAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+        schema,
+      });
+    case "pi":
+      return new PiAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,
