@@ -186,12 +186,20 @@ describe("PiAgent", () => {
     emitJson(proc, {
       type: "message_update",
       message: { role: "assistant", usage: { input: 5, output: 3 } },
-      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hel" },
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "hel",
+      },
     });
     emitJson(proc, {
       type: "message_update",
       message: { role: "assistant", usage: { input: 5, output: 3 } },
-      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "lo" },
+      assistantMessageEvent: {
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "lo",
+      },
     });
     emitJson(proc, {
       type: "message_end",

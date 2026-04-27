@@ -333,7 +333,10 @@ export class PiAgent implements Agent {
         }
       };
 
-      const rememberAssistantMessage = (message: unknown, streaming = false) => {
+      const rememberAssistantMessage = (
+        message: unknown,
+        streaming = false,
+      ) => {
         if (!isRecord(message) || roleOf(message) !== "assistant") return;
         latestAssistantMessage = message;
         updateUsage(message, streaming);
