@@ -4,6 +4,11 @@ import type {
   OrchestratorEvents,
   IterationRecord,
 } from "./core/orchestrator.js";
+import {
+  getInterruptDisposition,
+  getInterruptHint,
+  type InterruptDisposition,
+} from "./core/interrupt-state.js";
 
 function mockIter(
   n: number,
@@ -134,8 +139,9 @@ function randInt(min: number, max: number): number {
 const INITIAL_ELAPSED_MS = 8 * 3_600_000 + 7 * 60_000 + 17_000; // 08:07:17
 
 export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
-  private state: OrchestratorState = {
+  private state: Omit<OrchestratorState, "interruptHint"> = {
     status: "running",
+    gracefulStopRequested: false,
     currentIteration: 14,
     totalInputTokens: 87_300_000,
     totalOutputTokens: 860_000,
@@ -153,19 +159,46 @@ export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
   private tokenTimer: ReturnType<typeof setTimeout> | null = null;
   private messageTimer: ReturnType<typeof setTimeout> | null = null;
   private messageIndex = 0;
+  private stoppedEventEmitted = false;
 
   getState(): OrchestratorState {
-    return { ...this.state, iterations: [...this.state.iterations] };
+    return {
+      ...this.state,
+      interruptHint: getInterruptHint(this.state),
+      iterations: [...this.state.iterations],
+    };
   }
 
   stop(): void {
+    if (this.state.status === "stopped") {
+      return;
+    }
     if (this.tokenTimer) clearTimeout(this.tokenTimer);
     if (this.messageTimer) clearTimeout(this.messageTimer);
     this.tokenTimer = null;
     this.messageTimer = null;
     this.state.status = "stopped";
+    this.state.gracefulStopRequested = false;
     this.emit("state", this.getState());
-    this.emit("stopped");
+    this.emitStopped();
+  }
+
+  requestGracefulStop(): void {
+    if (this.state.gracefulStopRequested || this.state.status !== "running") {
+      return;
+    }
+    this.state.gracefulStopRequested = true;
+    this.emit("state", this.getState());
+  }
+
+  handleInterrupt(): InterruptDisposition {
+    const disposition = getInterruptDisposition(this.state);
+    if (disposition === "request-graceful-stop") {
+      this.requestGracefulStop();
+    } else if (disposition === "force-stop") {
+      this.stop();
+    }
+    return disposition;
   }
 
   start(): void {
@@ -181,6 +214,10 @@ export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
   private scheduleTokenBump(): void {
     this.tokenTimer = setTimeout(
       () => {
+        if (this.state.gracefulStopRequested) {
+          this.stop();
+          return;
+        }
         this.state.totalInputTokens += randInt(40_000, 180_000);
         this.state.totalOutputTokens += randInt(200, 2_000);
         this.emit("state", this.getState());
@@ -193,10 +230,22 @@ export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
   private scheduleNextMessage(): void {
     const delay = randInt(3000, 7000);
     this.messageTimer = setTimeout(() => {
+      if (this.state.gracefulStopRequested) {
+        this.stop();
+        return;
+      }
       this.messageIndex = (this.messageIndex + 1) % AGENT_MESSAGES.length;
       this.state.lastMessage = AGENT_MESSAGES[this.messageIndex];
       this.emit("state", this.getState());
       this.scheduleNextMessage();
     }, delay);
+  }
+
+  private emitStopped(): void {
+    if (this.stoppedEventEmitted) {
+      return;
+    }
+    this.stoppedEventEmitted = true;
+    this.emit("stopped");
   }
 }

@@ -3,9 +3,15 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
 
-export type AgentName = "claude" | "codex" | "rovodev" | "opencode";
+export const AGENT_NAMES = [
+  "claude",
+  "codex",
+  "rovodev",
+  "opencode",
+  "copilot",
+] as const;
 
-const AGENT_NAMES = ["claude", "codex", "rovodev", "opencode"] as const;
+export type AgentName = (typeof AGENT_NAMES)[number];
 
 export interface Config {
   agent: AgentName;
@@ -24,6 +30,11 @@ const DEFAULT_CONFIG: Config = {
 };
 
 class InvalidConfigError extends Error {}
+
+function formatAgentNameList(): string {
+  const quoted = AGENT_NAMES.map((name) => `"${name}"`);
+  return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1]}`;
+}
 
 function normalizePreventSleep(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
@@ -71,6 +82,25 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "rovodev" ||
         arg === "serve" ||
         arg === "--disable-session-token"
+      );
+    case "copilot":
+      return (
+        arg === "-p" ||
+        arg === "--prompt" ||
+        arg.startsWith("--prompt=") ||
+        arg === "-i" ||
+        arg === "--interactive" ||
+        arg.startsWith("--interactive=") ||
+        arg === "-s" ||
+        arg === "--silent" ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--stream" ||
+        arg.startsWith("--stream=") ||
+        arg === "--no-color" ||
+        arg === "--share" ||
+        arg.startsWith("--share=") ||
+        arg === "--share-gist"
       );
   }
 }
@@ -120,7 +150,7 @@ function normalizeAgentPathOverride(
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!validNames.has(key)) {
       throw new InvalidConfigError(
-        `Invalid agent name in agentPathOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,
+        `Invalid agent name in agentPathOverride: "${key}". Use ${formatAgentNameList()}.`,
       );
     }
     if (typeof val !== "string") {
@@ -193,7 +223,7 @@ function normalizeAgentArgsOverride(
   )) {
     if (!validNames.has(key)) {
       throw new InvalidConfigError(
-        `Invalid agent name in agentArgsOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,
+        `Invalid agent name in agentArgsOverride: "${key}". Use ${formatAgentNameList()}.`,
       );
     }
     const args = normalizeAgentExtraArgs(
@@ -332,6 +362,7 @@ function serializeConfig(config: Config): string {
     "# agentPathOverride:",
     "#   claude: /path/to/custom-claude",
     "#   codex: /path/to/custom-codex",
+    "#   copilot: /path/to/custom-copilot",
     "",
     "# Per-agent CLI arg overrides (optional)",
     "# agentArgsOverride:",
@@ -341,6 +372,9 @@ function serializeConfig(config: Config): string {
     "#     - -c",
     '#     - model_reasoning_effort="high"',
     "#     - --full-auto",
+    "#   copilot:",
+    "#     - --model",
+    "#     - gpt-5.4",
   ];
 
   if (agentPathOverrideSection) {

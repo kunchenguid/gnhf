@@ -58,6 +58,8 @@ const runInfo: RunInfo = {
   logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
   baseCommit: "base123",
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
+  stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
+  stopWhen: undefined,
 };
 
 function createSuccessResult(summary = "done"): AgentResult {
@@ -460,6 +462,149 @@ describe("Orchestrator stop limits", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("finishes the active iteration before stopping gracefully", async () => {
+    let resolveRun!: (result: AgentResult) => void;
+    const close = vi.fn(() => Promise.resolve());
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+      close,
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    orchestrator.requestGracefulStop();
+    resolveRun(createSuccessResult("finished before shutdown"));
+    await startPromise;
+
+    expect(mockAppendNotes).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState().status).toBe("stopped");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors a graceful stop requested before the loop starts", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    orchestrator.requestGracefulStop();
+    await orchestrator.start();
+
+    expect(agent.run).not.toHaveBeenCalled();
+    expect(orchestrator.getState().status).toBe("stopped");
+  });
+
+  it("prefers graceful stop over stopWhen after the active iteration finishes", async () => {
+    let resolveRun!: (result: AgentResult) => void;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { stopWhen: "done" },
+    );
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    orchestrator.requestGracefulStop();
+    resolveRun({
+      output: {
+        success: true,
+        summary: "done",
+        key_changes_made: ["file.ts"],
+        key_learnings: ["learning"],
+        should_fully_stop: true,
+      },
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+    });
+    await startPromise;
+
+    expect(abort).not.toHaveBeenCalled();
+    expect(orchestrator.getState().status).toBe("stopped");
+  });
+
+  it("cuts short backoff when graceful stop is requested", async () => {
+    vi.useFakeTimers();
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        throw new Error("transient error");
+      }),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+
+    orchestrator.requestGracefulStop();
+    await vi.runAllTimersAsync();
+    await startPromise;
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(orchestrator.getState().status).toBe("stopped");
+  });
+
   it("emits stopped only after agent cleanup completes", async () => {
     let resolveClose!: () => void;
     const close = vi.fn(
@@ -493,6 +638,47 @@ describe("Orchestrator stop limits", () => {
     resolveClose();
     await Promise.resolve();
     await Promise.resolve();
+
+    expect(stopped).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-emit stopped when stop is called after the loop is done", async () => {
+    let resolveRun!: (result: AgentResult) => void;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const stopped = vi.fn();
+    orchestrator.on("stopped", stopped);
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    orchestrator.requestGracefulStop();
+    resolveRun(createSuccessResult("finished before shutdown"));
+    await startPromise;
+
+    expect(stopped).toHaveBeenCalledTimes(1);
+
+    orchestrator.stop();
+    orchestrator.stop();
 
     expect(stopped).toHaveBeenCalledTimes(1);
   });

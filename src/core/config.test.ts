@@ -22,7 +22,7 @@ const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
-  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
+  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n#   copilot: /path/to/custom-copilot\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n#   copilot:\n#     - --model\n#     - gpt-5.4\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -182,6 +182,29 @@ describe("loadConfig", () => {
     });
   });
 
+  it("supports bootstrapping copilot as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "copilot" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      BOOTSTRAP_CONFIG_TEMPLATE("copilot"),
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "copilot",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
+  });
+
   it("reads config from ~/.gnhf/config.yml", () => {
     mockReadFileSync.mockReturnValue("agent: codex\n");
 
@@ -287,6 +310,9 @@ describe("loadConfig", () => {
         "  opencode:",
         "    - --model",
         "    - gpt-5",
+        "  copilot:",
+        "    - --model",
+        "    - gpt-5.4",
         "",
       ].join("\n"),
     );
@@ -298,6 +324,7 @@ describe("loadConfig", () => {
       codex: ["-m", "gpt-5.4"],
       rovodev: ["--profile", "work"],
       opencode: ["--model", "gpt-5"],
+      copilot: ["--model", "gpt-5.4"],
     });
   });
 
@@ -455,6 +482,16 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig()).toThrow(
       /agentArgsOverride\.rovodev\[0\].*managed by gnhf/,
+    );
+  });
+
+  it("throws when agentArgsOverride.copilot contains gnhf-managed flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  copilot:\n    - --output-format=json\n",
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /agentArgsOverride\.copilot\[0\].*managed by gnhf/,
     );
   });
 });

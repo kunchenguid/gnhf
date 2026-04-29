@@ -1,5 +1,7 @@
+import { EventEmitter } from "node:events";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -14,6 +16,7 @@ import type { RunInfo } from "./core/run.js";
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
+const TEST_AGENT_NAMES = ["claude", "codex", "rovodev", "opencode", "copilot"];
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -24,6 +27,8 @@ const stubRunInfo: RunInfo = {
   logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
   baseCommit: "abc123",
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
+  stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
+  stopWhen: undefined,
 };
 
 interface CliMockOverrides {
@@ -76,11 +81,16 @@ async function runCliWithMocks(
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
   const orchestratorStop = vi.fn();
+  const orchestratorRequestGracefulStop = vi.fn();
+  const orchestratorHandleInterrupt = vi.fn(
+    () => "request-graceful-stop" as const,
+  );
   const orchestratorOn = vi.fn();
   const orchestratorGetState =
     overrides.orchestratorGetState ??
     vi.fn(() => ({
       status: "running" as const,
+      gracefulStopRequested: false,
       currentIteration: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
@@ -101,7 +111,10 @@ async function runCliWithMocks(
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
-  vi.doMock("./core/config.js", () => ({ loadConfig }));
+  vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
+    loadConfig,
+  }));
   vi.doMock("./core/debug-log.js", () => ({
     appendDebugLog,
     initDebugLog,
@@ -137,6 +150,8 @@ async function runCliWithMocks(
       }
       start = orchestratorStart;
       stop = orchestratorStop;
+      requestGracefulStop = orchestratorRequestGracefulStop;
+      handleInterrupt = orchestratorHandleInterrupt;
       on = orchestratorOn;
       getState = orchestratorGetState;
     },
@@ -191,9 +206,333 @@ async function runCliWithMocks(
     createAgent,
     orchestratorCtor,
     orchestratorGetState,
+    orchestratorRequestGracefulStop,
     readStdinText,
     startSleepPrevention,
   };
+}
+
+async function runSigintCliTest({
+  forceOnSecondSigint,
+  initialStatus = "running",
+}: {
+  forceOnSecondSigint: boolean;
+  initialStatus?: "running" | "aborted" | "stopped";
+}): Promise<{
+  exitSpy: ReturnType<typeof vi.spyOn>;
+  orchestratorStop: ReturnType<typeof vi.fn>;
+  orchestratorRequestGracefulStop: ReturnType<typeof vi.fn>;
+  rendererStop: ReturnType<typeof vi.fn>;
+}> {
+  const originalArgv = [...process.argv];
+  const stdoutWrite = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation(() => true);
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const exitSpy = vi
+    .spyOn(process, "exit")
+    .mockImplementation((() => undefined) as typeof process.exit);
+  const processOn = vi.spyOn(process, "on");
+  const processOff = vi.spyOn(process, "off");
+  const signalHandlers = new Map<string, () => void>();
+  processOn.mockImplementation(((event: string, listener: () => void) => {
+    if (event === "SIGINT" || event === "SIGTERM") {
+      signalHandlers.set(event, listener);
+    }
+    return process;
+  }) as typeof process.on);
+  processOff.mockImplementation((() => process) as typeof process.off);
+
+  let resolveStart!: () => void;
+  let resolveRendererExit!: () => void;
+  const rendererExitPromise = new Promise<void>((resolve) => {
+    resolveRendererExit = resolve;
+  });
+  const state = {
+    status: initialStatus,
+    gracefulStopRequested: false,
+    currentIteration: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    commitCount: 0,
+    iterations: [],
+    successCount: 0,
+    failCount: 0,
+    consecutiveFailures: 0,
+    startTime: new Date("2026-01-01T00:00:00Z"),
+    waitingUntil: null,
+    lastMessage: null,
+  };
+  const rendererStop = vi.fn(() => {
+    resolveRendererExit();
+  });
+  const orchestratorStop = vi.fn();
+  const orchestratorRequestGracefulStop = vi.fn(() => {
+    state.gracefulStopRequested = true;
+    if (!forceOnSecondSigint) {
+      resolveStart();
+    }
+  });
+  const orchestratorHandleInterrupt = vi.fn(() => {
+    if (state.status === "aborted") {
+      return "exit" as const;
+    }
+    if (state.gracefulStopRequested || state.status === "stopped") {
+      orchestratorStop();
+      return "force-stop" as const;
+    }
+    orchestratorRequestGracefulStop();
+    return "request-graceful-stop" as const;
+  });
+
+  vi.resetModules();
+  vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
+    loadConfig: vi.fn(() => ({
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    })),
+  }));
+  vi.doMock("./core/git.js", () => ({
+    ensureCleanWorkingTree: vi.fn(),
+    createBranch: vi.fn(),
+    getHeadCommit: vi.fn(() => "abc123"),
+    getCurrentBranch: vi.fn(() => "main"),
+  }));
+  vi.doMock("./core/run.js", () => ({
+    setupRun: vi.fn(() => stubRunInfo),
+    resumeRun: vi.fn(),
+    getLastIterationNumber: vi.fn(() => 0),
+  }));
+  vi.doMock("./core/agents/factory.js", () => ({
+    createAgent: vi.fn(() => ({ name: "claude" })),
+  }));
+  vi.doMock("./core/orchestrator.js", () => ({
+    Orchestrator: class MockOrchestrator {
+      start = vi.fn(() => {
+        if (forceOnSecondSigint) {
+          return new Promise<void>(() => {});
+        }
+        if (initialStatus !== "running") {
+          return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        });
+      });
+      stop = orchestratorStop;
+      requestGracefulStop = orchestratorRequestGracefulStop;
+      handleInterrupt = orchestratorHandleInterrupt;
+      on = vi.fn();
+      getState = vi.fn(() => state);
+    },
+  }));
+  vi.doMock("./renderer.js", () => ({
+    Renderer: class MockRenderer {
+      start = vi.fn();
+      stop = rendererStop;
+      waitUntilExit = vi.fn(() => rendererExitPromise);
+    },
+  }));
+
+  process.argv = ["node", "gnhf", "ship it"];
+
+  try {
+    const cliPromise = import("./cli.js");
+
+    await vi.waitFor(() => {
+      expect(signalHandlers.has("SIGINT")).toBe(true);
+    });
+
+    signalHandlers.get("SIGINT")?.();
+    if (forceOnSecondSigint) {
+      signalHandlers.get("SIGINT")?.();
+      await vi.advanceTimersByTimeAsync(5_000);
+    } else {
+      await Promise.resolve();
+      if (rendererStop.mock.calls.length === 0 && initialStatus !== "running") {
+        rendererStop();
+      }
+    }
+    await cliPromise;
+
+    return {
+      exitSpy,
+      orchestratorStop,
+      orchestratorRequestGracefulStop,
+      rendererStop,
+    };
+  } finally {
+    process.argv = originalArgv;
+    stdoutWrite.mockRestore();
+    consoleError.mockRestore();
+    processOn.mockRestore();
+    processOff.mockRestore();
+    if (forceOnSecondSigint) {
+      vi.useRealTimers();
+    }
+  }
+}
+
+async function importCliExpectError(timeoutMs = 250): Promise<unknown> {
+  return Promise.race([
+    import("./cli.js").then(
+      () => "resolved",
+      (error) => error,
+    ),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("cli import timed out")), timeoutMs);
+    }),
+  ]);
+}
+
+async function runCliResumeWithActualRun(
+  args: string[],
+  storedStopWhen?: string,
+) {
+  const originalArgv = [...process.argv];
+  const originalCwd = process.cwd();
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  const stdoutWrite = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation(() => true);
+  const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+    code?: string | number | null,
+  ) => {
+    throw new Error(
+      `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+    );
+  }) as typeof process.exit);
+
+  const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-resume-test-"));
+  const runDir = join(tempDir, ".gnhf", "runs", "existing-run");
+  const promptPath = join(runDir, "prompt.md");
+  const baseCommitPath = join(runDir, "base-commit");
+  const stopWhenPath = join(runDir, "stop-when");
+  const schemaPath = join(runDir, "output-schema.json");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(promptPath, "existing prompt", "utf-8");
+  writeFileSync(baseCommitPath, "abc123\n", "utf-8");
+  if (storedStopWhen !== undefined) {
+    writeFileSync(stopWhenPath, `${storedStopWhen}\n`, "utf-8");
+  }
+
+  const appendDebugLog = vi.fn();
+  const createAgent = vi.fn(() => ({ name: "claude" }));
+  const orchestratorCtor = vi.fn();
+
+  vi.resetModules();
+  vi.doUnmock("./core/run.js");
+  vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
+    loadConfig: vi.fn(() => ({
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    })),
+  }));
+  vi.doMock("./core/debug-log.js", () => ({
+    appendDebugLog,
+    initDebugLog: vi.fn(),
+    serializeError: vi.fn(),
+  }));
+  vi.doMock("./core/git.js", () => ({
+    ensureCleanWorkingTree: vi.fn(),
+    createBranch: vi.fn(),
+    getHeadCommit: vi.fn(() => "abc123"),
+    getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+    getRepoRootDir: vi.fn(() => tempDir),
+    createWorktree: vi.fn(),
+    removeWorktree: vi.fn(),
+  }));
+  vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
+  vi.doMock("./core/sleep.js", () => ({
+    startSleepPrevention: vi.fn(() =>
+      Promise.resolve({ type: "skipped", reason: "unsupported" }),
+    ),
+  }));
+  vi.doMock("./core/orchestrator.js", () => ({
+    Orchestrator: class MockOrchestrator {
+      constructor(...ctorArgs: unknown[]) {
+        orchestratorCtor(...ctorArgs);
+      }
+      start = vi.fn(() => Promise.resolve());
+      stop = vi.fn();
+      on = vi.fn();
+      getState = vi.fn(() => ({
+        status: "completed" as const,
+        currentIteration: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        commitCount: 0,
+        iterations: [],
+        successCount: 0,
+        failCount: 0,
+        consecutiveFailures: 0,
+        startTime: new Date("2026-01-01T00:00:00Z"),
+        waitingUntil: null,
+        lastMessage: null,
+      }));
+    },
+  }));
+  vi.doMock("./renderer.js", () => ({
+    Renderer: class MockRenderer {
+      start = vi.fn();
+      stop = vi.fn();
+      waitUntilExit = vi.fn(() => Promise.resolve());
+    },
+  }));
+
+  let result!: {
+    appendDebugLog: typeof appendDebugLog;
+    createAgent: typeof createAgent;
+    orchestratorCtor: typeof orchestratorCtor;
+    schema: Record<string, unknown>;
+    stopWhenExists: boolean;
+    stopWhenContent?: string;
+  };
+
+  try {
+    process.chdir(tempDir);
+    process.argv = ["node", "gnhf", ...args];
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    await import("./cli.js");
+
+    const stopWhenExists = existsSync(stopWhenPath);
+    result = {
+      appendDebugLog,
+      createAgent,
+      orchestratorCtor,
+      schema: JSON.parse(readFileSync(schemaPath, "utf-8")) as Record<
+        string,
+        unknown
+      >,
+      stopWhenExists,
+      stopWhenContent: stopWhenExists
+        ? readFileSync(stopWhenPath, "utf-8")
+        : undefined,
+    };
+  } finally {
+    process.argv = originalArgv;
+    process.chdir(originalCwd);
+    if (originalIsTTY) {
+      Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+    }
+    stdoutWrite.mockRestore();
+    exitSpy.mockRestore();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  return result;
 }
 
 describe("cli", () => {
@@ -317,6 +656,28 @@ describe("cli", () => {
     );
   });
 
+  it("accepts copilot as an explicit --agent override", async () => {
+    const { loadConfig, createAgent } = await runCliWithMocks(
+      ["ship it", "--agent", "copilot"],
+      {
+        agent: "copilot",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith({ agent: "copilot" });
+    expect(createAgent).toHaveBeenCalledWith(
+      "copilot",
+      stubRunInfo,
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+  });
+
   it("passes per-agent config through to agent creation", async () => {
     const { createAgent } = await runCliWithMocks(["ship it"], {
       agent: "codex",
@@ -354,8 +715,89 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
-      { includeStopField: true },
+      { includeStopField: true, stopWhen: "all tests pass" },
     );
+  });
+
+  it("reuses the persisted stop-when condition when resuming without --stop-when", async () => {
+    const { appendDebugLog, createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], "all tests pass");
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ stopWhen: "all tests pass" }),
+      undefined,
+      undefined,
+      { includeStopField: true, stopWhen: "all tests pass" },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toMatchObject({
+      stopWhen: "all tests pass",
+    });
+    expect(schema).toMatchObject({
+      properties: expect.objectContaining({
+        should_fully_stop: { type: "boolean" },
+      }),
+    });
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:start",
+      expect.objectContaining({ stopWhen: "all tests pass" }),
+    );
+  });
+
+  it("overwrites the persisted stop-when condition when resuming with a new value", async () => {
+    const { orchestratorCtor, schema, stopWhenContent } =
+      await runCliResumeWithActualRun(
+        ["--stop-when", "all checks pass"],
+        "old condition",
+      );
+
+    expect(stopWhenContent).toBe("all checks pass\n");
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toMatchObject({
+      stopWhen: "all checks pass",
+    });
+    expect(schema).toMatchObject({
+      properties: expect.objectContaining({
+        should_fully_stop: { type: "boolean" },
+      }),
+    });
+  });
+
+  it("clears the persisted stop-when condition when resuming with an empty value", async () => {
+    const { orchestratorCtor, schema, stopWhenExists } =
+      await runCliResumeWithActualRun(["--stop-when", ""], "old condition");
+
+    expect(stopWhenExists).toBe(false);
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+    });
+    expect(
+      (schema.properties as Record<string, unknown>).should_fully_stop,
+    ).toBe(undefined);
+    expect(schema.required).not.toContain("should_fully_stop");
+  });
+
+  it("keeps resume behavior unchanged when no stop-when condition exists", async () => {
+    const { createAgent, orchestratorCtor, schema, stopWhenExists } =
+      await runCliResumeWithActualRun([]);
+
+    expect(stopWhenExists).toBe(false);
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ stopWhen: undefined }),
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+    });
+    expect(
+      (schema.properties as Record<string, unknown>).should_fully_stop,
+    ).toBe(undefined);
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {
@@ -640,7 +1082,10 @@ describe("cli", () => {
     );
 
     vi.resetModules();
-    vi.doMock("./core/config.js", () => ({ loadConfig }));
+    vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
+      loadConfig,
+    }));
     vi.doMock("./core/debug-log.js", () => ({
       appendDebugLog: vi.fn(),
       initDebugLog: vi.fn(),
@@ -786,6 +1231,7 @@ describe("cli", () => {
     });
     vi.doMock("node:readline", () => ({ createInterface }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -914,6 +1360,7 @@ describe("cli", () => {
       };
     });
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -970,15 +1417,7 @@ describe("cli", () => {
     });
 
     try {
-      const result = await Promise.race([
-        import("./cli.js").then(
-          () => "resolved",
-          (error) => error,
-        ),
-        new Promise((resolve) => {
-          setTimeout(() => resolve("timed-out"), 25);
-        }),
-      ]);
+      const result = await importCliExpectError();
 
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toMatch(
@@ -1046,6 +1485,7 @@ describe("cli", () => {
       createInterface: vi.fn(() => readlineInterface),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1102,15 +1542,7 @@ describe("cli", () => {
     });
 
     try {
-      const result = await Promise.race([
-        import("./cli.js").then(
-          () => "resolved",
-          (error) => error,
-        ),
-        new Promise((resolve) => {
-          setTimeout(() => resolve("timed-out"), 25);
-        }),
-      ]);
+      const result = await importCliExpectError();
 
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toMatch(
@@ -1173,6 +1605,7 @@ describe("cli", () => {
       createInterface: vi.fn(() => readlineInterface),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1229,15 +1662,7 @@ describe("cli", () => {
     });
 
     try {
-      const result = await Promise.race([
-        import("./cli.js").then(
-          () => "resolved",
-          (error) => error,
-        ),
-        new Promise((resolve) => {
-          setTimeout(() => resolve("timed-out"), 25);
-        }),
-      ]);
+      const result = await importCliExpectError();
 
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toMatch(
@@ -1297,6 +1722,7 @@ describe("cli", () => {
       })),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1396,6 +1822,7 @@ describe("cli", () => {
       })),
     }));
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1585,6 +2012,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1661,6 +2089,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1741,6 +2170,182 @@ describe("cli", () => {
     }
   });
 
+  it("uses the first SIGINT to request graceful shutdown", async () => {
+    const { exitSpy, orchestratorStop, orchestratorRequestGracefulStop } =
+      await runSigintCliTest({ forceOnSecondSigint: false });
+
+    expect(orchestratorRequestGracefulStop).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(130);
+    exitSpy.mockRestore();
+  });
+
+  it("keeps the aborted screen open when a graceful shutdown ends in abort", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+    const processOn = vi.spyOn(process, "on");
+    const processOff = vi.spyOn(process, "off");
+    const signalHandlers = new Map<string, () => void>();
+    processOn.mockImplementation(((event: string, listener: () => void) => {
+      if (event === "SIGINT" || event === "SIGTERM") {
+        signalHandlers.set(event, listener);
+      }
+      return process;
+    }) as typeof process.on);
+    processOff.mockImplementation((() => process) as typeof process.off);
+
+    let resolveStart!: () => void;
+    let resolveRendererExit!: (reason: "interrupted") => void;
+    const rendererExitPromise = new Promise<"interrupted">((resolve) => {
+      resolveRendererExit = resolve;
+    });
+    const state = {
+      status: "running" as "running" | "aborted",
+      gracefulStopRequested: false,
+      currentIteration: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null as string | null,
+    };
+    const rendererStop = vi.fn(() => {
+      resolveRendererExit("interrupted");
+    });
+    const orchestratorHandleInterrupt = vi.fn(() => {
+      state.gracefulStopRequested = true;
+      return "request-graceful-stop" as const;
+    });
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doMock("./core/orchestrator.js", () => ({
+      Orchestrator: class MockOrchestrator {
+        start = vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveStart = resolve;
+            }),
+        );
+        stop = vi.fn();
+        requestGracefulStop = vi.fn();
+        handleInterrupt = orchestratorHandleInterrupt;
+        on = vi.fn();
+        getState = vi.fn(() => state);
+      },
+    }));
+    vi.doMock("./renderer.js", () => ({
+      Renderer: class MockRenderer {
+        start = vi.fn();
+        stop = rendererStop;
+        waitUntilExit = vi.fn(() => rendererExitPromise);
+      },
+    }));
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      const cliPromise = import("./cli.js");
+
+      await vi.waitFor(() => {
+        expect(signalHandlers.has("SIGINT")).toBe(true);
+      });
+
+      signalHandlers.get("SIGINT")?.();
+      state.status = "aborted";
+      state.lastMessage = "3 consecutive failures";
+      resolveStart();
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(rendererStop).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+
+      resolveRendererExit("interrupted");
+      await cliPromise;
+
+      expect(exitSpy).toHaveBeenCalledWith(130);
+    } finally {
+      process.argv = originalArgv;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+      processOn.mockRestore();
+      processOff.mockRestore();
+    }
+  });
+
+  it("uses the second SIGINT to force shutdown", async () => {
+    vi.useFakeTimers();
+    const {
+      exitSpy,
+      orchestratorStop,
+      orchestratorRequestGracefulStop,
+      rendererStop,
+    } = await runSigintCliTest({ forceOnSecondSigint: true });
+
+    expect(orchestratorRequestGracefulStop).toHaveBeenCalledTimes(1);
+    expect(rendererStop).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(130);
+    exitSpy.mockRestore();
+  });
+
+  it("forces shutdown on SIGINT when the completed run screen is already showing", async () => {
+    const {
+      exitSpy,
+      orchestratorStop,
+      orchestratorRequestGracefulStop,
+      rendererStop,
+    } = await runSigintCliTest({
+      forceOnSecondSigint: false,
+      initialStatus: "aborted",
+    });
+
+    expect(orchestratorRequestGracefulStop).not.toHaveBeenCalled();
+    expect(rendererStop).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(130);
+    exitSpy.mockRestore();
+  });
+
   it("uses the SIGINT exit code when the renderer reports an interactive interrupt", async () => {
     const originalArgv = [...process.argv];
     const stdoutWrite = vi
@@ -1755,6 +2360,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1821,6 +2427,187 @@ describe("cli", () => {
     }
   });
 
+  it("routes raw ctrl+c through the renderer into orchestrator interrupt handling", async () => {
+    const originalArgv = [...process.argv];
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as typeof process.exit);
+
+    let dataHandler: ((data: Buffer) => void) | null = null;
+    const originalIsTTY = process.stdin.isTTY;
+    const originalSetRawMode = (
+      process.stdin as NodeJS.ReadStream & {
+        setRawMode?: (mode: boolean) => void;
+      }
+    ).setRawMode;
+    const originalResume = process.stdin.resume;
+    const originalPause = process.stdin.pause;
+    const originalOn = process.stdin.on;
+    const originalRemoveAllListeners = process.stdin.removeAllListeners;
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdin, "setRawMode", {
+      configurable: true,
+      value: vi.fn(() => process.stdin),
+    });
+    process.stdin.resume = vi.fn();
+    process.stdin.pause = vi.fn();
+    process.stdin.on = vi.fn(
+      (event: string, handler: (...args: unknown[]) => void) => {
+        if (event === "data") {
+          dataHandler = handler as (data: Buffer) => void;
+        }
+        return process.stdin;
+      },
+    ) as typeof process.stdin.on;
+    process.stdin.removeAllListeners = vi.fn(() => process.stdin);
+
+    const state: {
+      status: "running" | "stopped";
+      gracefulStopRequested: boolean;
+      interruptHint: "resume" | "force-stop";
+      currentIteration: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+      commitCount: number;
+      iterations: never[];
+      successCount: number;
+      failCount: number;
+      consecutiveFailures: number;
+      startTime: Date;
+      waitingUntil: null;
+      lastMessage: null;
+    } = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    let resolveStart!: () => void;
+    const orchestratorRequestGracefulStop = vi.fn();
+    const orchestratorStop = vi.fn();
+    const orchestratorHandleInterrupt = vi.fn();
+
+    vi.resetModules();
+    vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
+      loadConfig: vi.fn(() => ({
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      })),
+    }));
+    vi.doMock("./core/git.js", () => ({
+      ensureCleanWorkingTree: vi.fn(),
+      createBranch: vi.fn(),
+      getHeadCommit: vi.fn(() => "abc123"),
+      getCurrentBranch: vi.fn(() => "main"),
+    }));
+    vi.doMock("./core/run.js", () => ({
+      setupRun: vi.fn(() => stubRunInfo),
+      resumeRun: vi.fn(),
+      getLastIterationNumber: vi.fn(() => 0),
+    }));
+    vi.doMock("./core/agents/factory.js", () => ({
+      createAgent: vi.fn(() => ({ name: "claude" })),
+    }));
+    vi.doUnmock("./renderer.js");
+    vi.doMock("./core/orchestrator.js", () => {
+      return {
+        Orchestrator: class MockOrchestrator extends EventEmitter {
+          start = vi.fn(
+            () =>
+              new Promise<void>((resolve) => {
+                resolveStart = resolve;
+              }),
+          );
+          stop = vi.fn(() => {
+            orchestratorStop();
+            state.status = "stopped";
+            state.interruptHint = "force-stop";
+            this.emit("state", { ...state });
+            resolveStart();
+            this.emit("stopped");
+          });
+          requestGracefulStop = vi.fn(() => {
+            orchestratorRequestGracefulStop();
+            state.gracefulStopRequested = true;
+            state.interruptHint = "force-stop";
+            this.emit("state", { ...state });
+          });
+          handleInterrupt = vi.fn(() => {
+            orchestratorHandleInterrupt();
+            if (state.gracefulStopRequested || state.status === "stopped") {
+              this.stop();
+              return "force-stop" as const;
+            }
+            this.requestGracefulStop();
+            return "request-graceful-stop" as const;
+          });
+          getState = vi.fn(() => ({ ...state }));
+        },
+      };
+    });
+
+    process.argv = ["node", "gnhf", "ship it"];
+
+    try {
+      const cliPromise = import("./cli.js");
+
+      await vi.waitFor(() => {
+        expect(dataHandler).not.toBeNull();
+      });
+
+      dataHandler!(Buffer.from([3]));
+      expect(orchestratorRequestGracefulStop).toHaveBeenCalledTimes(1);
+
+      dataHandler!(Buffer.from([3]));
+      await cliPromise;
+
+      expect(orchestratorHandleInterrupt).toHaveBeenCalledTimes(2);
+      expect(orchestratorStop).toHaveBeenCalledTimes(1);
+      expect(exitSpy).toHaveBeenCalledWith(130);
+    } finally {
+      process.argv = originalArgv;
+      Object.defineProperty(process.stdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY,
+      });
+      Object.defineProperty(process.stdin, "setRawMode", {
+        configurable: true,
+        value: originalSetRawMode,
+      });
+      process.stdin.resume = originalResume;
+      process.stdin.pause = originalPause;
+      process.stdin.on = originalOn;
+      process.stdin.removeAllListeners = originalRemoveAllListeners;
+      stdoutWrite.mockRestore();
+      consoleError.mockRestore();
+      exitSpy.mockRestore();
+    }
+  });
+
   it("passes the worktree path as effectiveCwd to the orchestrator in --worktree mode", async () => {
     const createWorktree = vi.fn();
     const getRepoRootDir = vi.fn(() => "/repo");
@@ -1870,6 +2657,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},

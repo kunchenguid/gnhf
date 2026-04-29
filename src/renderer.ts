@@ -27,6 +27,8 @@ const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
 const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
+const GRACEFUL_STOP_HINT =
+  "[graceful stop requested, ctrl+c again to force stop, gnhf again to resume]";
 const DONE_HINT = "[ctrl+c to exit]";
 
 export type RendererExitReason = "interrupted" | "stopped";
@@ -314,8 +316,16 @@ function centerLineCells(content: Cell[], width: number): Cell[] {
   return [...emptyCells(pad), ...clamped, ...emptyCells(rightPad)];
 }
 
-function renderResumeHintCells(width: number, done?: boolean): Cell[] {
-  const hint = done ? DONE_HINT : RESUME_HINT;
+function renderResumeHintCells(
+  width: number,
+  interruptHint: OrchestratorState["interruptHint"],
+): Cell[] {
+  const hint =
+    interruptHint === "exit"
+      ? DONE_HINT
+      : interruptHint === "force-stop"
+        ? GRACEFUL_STOP_HINT
+        : RESUME_HINT;
   return centerLineCells(textToCells(hint, "dim"), width);
 }
 
@@ -479,8 +489,7 @@ export function buildFrameCells(
     frame.push(renderStarLineCells(bottomStars, terminalWidth, y, now));
   }
 
-  const isDone = state.status === "aborted";
-  frame.push(renderResumeHintCells(terminalWidth, isDone));
+  frame.push(renderResumeHintCells(terminalWidth, state.interruptHint));
   frame.push(emptyCells(terminalWidth));
 
   return frame;
@@ -547,6 +556,7 @@ export class Renderer {
   private seedTop: number;
   private seedBottom: number;
   private seedSide: number;
+  private onInterrupt: () => void;
   private readonly handleState = (newState: OrchestratorState) => {
     this.state = { ...newState, iterations: [...newState.iterations] };
     this.updateTerminalTitle();
@@ -555,10 +565,16 @@ export class Renderer {
     this.stop("stopped");
   };
 
-  constructor(orchestrator: Orchestrator, prompt: string, agentName: string) {
+  constructor(
+    orchestrator: Orchestrator,
+    prompt: string,
+    agentName: string,
+    onInterrupt: () => void,
+  ) {
     this.orchestrator = orchestrator;
     this.prompt = prompt;
     this.agentName = agentName;
+    this.onInterrupt = onInterrupt;
     this.state = orchestrator.getState();
     this.seedTop = Math.floor(Math.random() * 2147483646) + 1;
     this.seedBottom = Math.floor(Math.random() * 2147483646) + 1;
@@ -578,8 +594,7 @@ export class Renderer {
       process.stdin.resume();
       process.stdin.on("data", (data) => {
         if (data[0] === 3) {
-          this.stop("interrupted");
-          this.orchestrator.stop();
+          this.onInterrupt();
         }
       });
     }

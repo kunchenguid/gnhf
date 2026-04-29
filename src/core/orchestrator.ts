@@ -12,6 +12,12 @@ import {
   getHeadCommit,
   resetHard,
 } from "./git.js";
+import {
+  getInterruptDisposition,
+  getInterruptHint,
+  type InterruptDisposition,
+  type InterruptHint,
+} from "./interrupt-state.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 
 export interface IterationRecord {
@@ -23,8 +29,12 @@ export interface IterationRecord {
   timestamp: Date;
 }
 
+export type { InterruptDisposition, InterruptHint } from "./interrupt-state.js";
+
 export interface OrchestratorState {
   status: "running" | "waiting" | "aborted" | "stopped";
+  gracefulStopRequested: boolean;
+  interruptHint: InterruptHint;
   currentIteration: number;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -73,9 +83,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
   private loopDone = false;
+  private stoppedEventEmitted = false;
 
-  private state: OrchestratorState = {
+  private state: Omit<OrchestratorState, "interruptHint"> = {
     status: "running",
+    gracefulStopRequested: false,
     currentIteration: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
@@ -114,7 +126,39 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   }
 
   getState(): OrchestratorState {
-    return { ...this.state };
+    return { ...this.state, interruptHint: getInterruptHint(this.state) };
+  }
+
+  requestGracefulStop(): void {
+    if (
+      this.stopRequested ||
+      this.state.gracefulStopRequested ||
+      this.loopDone
+    ) {
+      return;
+    }
+
+    this.state.gracefulStopRequested = true;
+    appendDebugLog("orchestrator:graceful-stop-requested", {
+      iteration: this.state.currentIteration,
+      hasActiveIteration: this.activeIterationPromise !== null,
+      status: this.state.status,
+    });
+    this.emit("state", this.getState());
+
+    if (this.state.status === "waiting") {
+      this.activeAbortController?.abort();
+    }
+  }
+
+  handleInterrupt(): InterruptDisposition {
+    const disposition = getInterruptDisposition(this.state);
+    if (disposition === "request-graceful-stop") {
+      this.requestGracefulStop();
+    } else if (disposition === "force-stop") {
+      this.stop();
+    }
+    return disposition;
   }
 
   stop(): void {
@@ -125,9 +169,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       loopDone: this.loopDone,
     });
     this.activeAbortController?.abort();
+    this.state.gracefulStopRequested = false;
 
     if (this.loopDone) {
-      this.emit("stopped");
+      this.emitStopped();
       return;
     }
 
@@ -158,13 +203,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       resetHard(this.cwd);
       this.state.status = "stopped";
       this.emit("state", this.getState());
-      this.emit("stopped");
+      this.emitStopped();
     })();
   }
 
   async start(): Promise<void> {
     this.state.startTime = new Date();
     this.state.status = "running";
+    // Preserve a pre-start graceful-stop request. ctrl+c can land after the
+    // renderer starts listening but before the orchestrator loop begins.
     this.emit("state", this.getState());
 
     appendDebugLog("orchestrator:start", {
@@ -183,6 +230,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         const preIterationAbortReason = this.getPreIterationAbortReason();
         if (preIterationAbortReason) {
           this.abort(preIterationAbortReason);
+          break;
+        }
+        if (this.stopForGracefulShutdown()) {
           break;
         }
 
@@ -248,6 +298,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           commitCount: this.state.commitCount,
         });
 
+        if (this.stopForGracefulShutdown()) {
+          break;
+        }
+
         if (this.limits.stopWhen !== undefined && result.shouldFullyStop) {
           this.abort("stop condition met");
           break;
@@ -290,6 +344,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
           this.state.waitingUntil = null;
           if (!this.stopRequested) {
+            if (this.stopForGracefulShutdown()) {
+              break;
+            }
             this.state.status = "running";
             this.emit("state", this.getState());
           }
@@ -309,6 +366,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         await this.closeAgent();
       }
       this.loopDone = true;
+      if (this.didStopWithoutForce()) {
+        this.emitStopped();
+      }
       appendDebugLog("orchestrator:end", {
         status: this.state.status,
         iterations: this.state.currentIteration,
@@ -561,8 +621,32 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     return `max tokens reached (${totalTokens}/${this.limits.maxTokens})`;
   }
 
+  private finishGracefulStop(): void {
+    this.state.status = "stopped";
+    this.state.gracefulStopRequested = false;
+    this.state.waitingUntil = null;
+    appendDebugLog("orchestrator:graceful-stop-complete", {
+      iteration: this.state.currentIteration,
+      consecutiveFailures: this.state.consecutiveFailures,
+    });
+    this.emit("state", this.getState());
+  }
+
+  private stopForGracefulShutdown(): boolean {
+    if (!this.state.gracefulStopRequested) {
+      return false;
+    }
+    this.finishGracefulStop();
+    return true;
+  }
+
+  private didStopWithoutForce(): boolean {
+    return this.stopPromise === null && this.state.status === "stopped";
+  }
+
   private abort(reason: string): void {
     this.state.status = "aborted";
+    this.state.gracefulStopRequested = false;
     this.state.lastMessage = reason;
     this.state.waitingUntil = null;
     appendDebugLog("orchestrator:abort", {
@@ -583,6 +667,14 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       });
       // Best-effort cleanup only.
     }
+  }
+
+  private emitStopped(): void {
+    if (this.stoppedEventEmitted) {
+      return;
+    }
+    this.stoppedEventEmitted = true;
+    this.emit("stopped");
   }
 
   private snapshotGitState(): Record<string, unknown> {

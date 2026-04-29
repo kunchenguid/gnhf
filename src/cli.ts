@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
-import { loadConfig } from "./core/config.js";
+import { AGENT_NAMES, loadConfig, type AgentName } from "./core/config.js";
 import {
   appendDebugLog,
   initDebugLog,
@@ -33,6 +33,7 @@ import {
 } from "./core/git.js";
 import {
   type RunInfo,
+  type RunSchemaOptions,
   setupRun,
   resumeRun,
   getLastIterationNumber,
@@ -53,6 +54,10 @@ const GNHF_REEXEC_STDIN_PROMPT = "GNHF_REEXEC_STDIN_PROMPT";
 const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
 const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
 const GNHF_REEXEC_STDIN_PROMPT_FILENAME = "prompt.txt";
+const AGENT_NAME_SET = new Set<string>(AGENT_NAMES);
+const AGENT_NAME_LIST = `"${AGENT_NAMES.slice(0, -1).join('", "')}", or "${
+  AGENT_NAMES[AGENT_NAMES.length - 1]
+}"`;
 
 class PromptSignalError extends Error {
   constructor(public readonly signal: NodeJS.Signals) {
@@ -89,10 +94,29 @@ function humanizeErrorMessage(message: string): string {
   return message;
 }
 
+function isAgentName(name: string): name is AgentName {
+  return AGENT_NAME_SET.has(name);
+}
+
+function buildSchemaOptions(stopWhen: string | undefined): RunSchemaOptions {
+  return stopWhen === undefined
+    ? { includeStopField: false }
+    : { includeStopField: true, stopWhen };
+}
+
+function buildResumeSchemaOptions(
+  stopWhen: string | undefined,
+): RunSchemaOptions {
+  if (stopWhen === "") {
+    return { includeStopField: false, clearStopWhen: true };
+  }
+  return buildSchemaOptions(stopWhen);
+}
+
 function initializeNewBranch(
   prompt: string,
   cwd: string,
-  schemaOptions: { includeStopField: boolean },
+  schemaOptions: RunSchemaOptions,
 ): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
@@ -112,7 +136,7 @@ interface WorktreeRunResult {
 function initializeWorktreeRun(
   prompt: string,
   cwd: string,
-  schemaOptions: { includeStopField: boolean },
+  schemaOptions: RunSchemaOptions,
 ): WorktreeRunResult {
   // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
@@ -333,10 +357,7 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option(
-    "--agent <agent>",
-    "Agent to use (claude, codex, rovodev, or opencode)",
-  )
+  .option("--agent <agent>", `Agent to use (${AGENT_NAMES.join(", ")})`)
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -349,7 +370,7 @@ program
   )
   .option(
     "--stop-when <condition>",
-    "End the loop when the agent reports this natural-language condition is met",
+    'End when the agent reports this condition; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
   .option(
     "--prevent-sleep <mode>",
@@ -382,6 +403,9 @@ program
           mock as unknown as Orchestrator,
           "let's minimize app startup latency without sacrificing any functionality",
           "claude",
+          () => {
+            mock.handleInterrupt();
+          },
         );
         renderer.start();
         mock.start();
@@ -401,15 +425,9 @@ program
       let promptFromStdin = false;
 
       const agentName = options.agent;
-      if (
-        agentName !== undefined &&
-        agentName !== "claude" &&
-        agentName !== "codex" &&
-        agentName !== "rovodev" &&
-        agentName !== "opencode"
-      ) {
+      if (agentName !== undefined && !isAgentName(agentName)) {
         console.error(
-          `Unknown agent: ${options.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${options.agent}. Use ${AGENT_NAME_LIST}.`,
         );
         process.exit(1);
       }
@@ -417,7 +435,7 @@ program
       const loadedConfig = loadConfig(
         agentName
           ? {
-              agent: agentName as "claude" | "codex" | "rovodev" | "opencode",
+              agent: agentName,
             }
           : {},
       );
@@ -427,14 +445,9 @@ program
           ? {}
           : { preventSleep: options.preventSleep }),
       };
-      if (
-        config.agent !== "claude" &&
-        config.agent !== "codex" &&
-        config.agent !== "rovodev" &&
-        config.agent !== "opencode"
-      ) {
+      if (!isAgentName(config.agent)) {
         console.error(
-          `Unknown agent: ${config.agent}. Use "claude", "codex", "rovodev", or "opencode".`,
+          `Unknown agent: ${config.agent}. Use ${AGENT_NAME_LIST}.`,
         );
         process.exit(1);
       }
@@ -455,9 +468,10 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
-      const schemaOptions = {
-        includeStopField: options.stopWhen !== undefined,
-      };
+      const cliStopWhen =
+        options.stopWhen === "" ? undefined : options.stopWhen;
+      let effectiveStopWhen = cliStopWhen;
+      let schemaOptions = buildSchemaOptions(effectiveStopWhen);
 
       let runInfo;
       let startIteration = 0;
@@ -509,12 +523,23 @@ program
         }
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
-        const existing = resumeRun(existingRunId, cwd, schemaOptions);
+        let existing = resumeRun(existingRunId, cwd, {
+          includeStopField: false,
+        });
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
 
         if (!prompt || prompt === existingPrompt) {
+          existing = resumeRun(
+            existingRunId,
+            cwd,
+            buildResumeSchemaOptions(options.stopWhen),
+          );
+          const resumeStopWhen = existing.stopWhen;
+          const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
           prompt = existingPrompt;
           runInfo = existing;
+          effectiveStopWhen = resumeStopWhen;
+          schemaOptions = resumeSchemaOptions;
           startIteration = getLastIterationNumber(existing);
         } else {
           const answer = await ask(
@@ -529,15 +554,26 @@ program
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
+            existing = resumeRun(
+              existingRunId,
+              cwd,
+              buildResumeSchemaOptions(options.stopWhen),
+            );
+            const resumeStopWhen = existing.stopWhen;
+            const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
             runInfo = setupRun(
               existingRunId,
               prompt,
               existing.baseCommit,
               cwd,
-              schemaOptions,
+              resumeSchemaOptions,
             );
+            effectiveStopWhen = resumeStopWhen;
+            schemaOptions = resumeSchemaOptions;
             startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
+            effectiveStopWhen = cliStopWhen;
+            schemaOptions = buildSchemaOptions(effectiveStopWhen);
             runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);
@@ -594,7 +630,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
-        stopWhen: options.stopWhen,
+        stopWhen: effectiveStopWhen,
         preventSleep: config.preventSleep,
         agentArgsOverride: config.agentArgsOverride?.[config.agent],
         worktree: options.worktree,
@@ -621,30 +657,58 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
-          stopWhen: options.stopWhen,
+          stopWhen: effectiveStopWhen,
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;
+      let forceShutdownRequested = false;
 
-      enterAltScreen();
-      const renderer = new Renderer(orchestrator, prompt, config.agent);
-      renderer.start();
-
-      const requestShutdown = (signal: NodeJS.Signals) => {
-        if (shutdownSignal) return;
+      const requestForceShutdown = (signal: NodeJS.Signals) => {
+        if (forceShutdownRequested) return;
+        forceShutdownRequested = true;
         shutdownSignal = signal;
         appendDebugLog(`signal:${signal}`);
         renderer.stop();
-        orchestrator.stop();
       };
-      const handleSigInt = () => requestShutdown("SIGINT");
-      const handleSigTerm = () => requestShutdown("SIGTERM");
+      const handleSigInt = () => {
+        const disposition = orchestrator.handleInterrupt();
+        if (disposition === "force-stop") {
+          requestForceShutdown("SIGINT");
+          return;
+        }
+        if (disposition === "exit") {
+          shutdownSignal = "SIGINT";
+          appendDebugLog("signal:SIGINT");
+          renderer.stop("interrupted");
+          return;
+        }
+        shutdownSignal = "SIGINT";
+        appendDebugLog("signal:SIGINT");
+      };
+      const handleSigTerm = () => {
+        orchestrator.stop();
+        requestForceShutdown("SIGTERM");
+      };
+
+      enterAltScreen();
+      const renderer = new Renderer(
+        orchestrator,
+        prompt,
+        config.agent,
+        handleSigInt,
+      );
+      renderer.start();
+
       process.on("SIGINT", handleSigInt);
       process.on("SIGTERM", handleSigTerm);
 
       const orchestratorPromise = orchestrator
         .start()
         .finally(() => {
+          // Only aborted runs keep the done screen open. Graceful stops should
+          // exit as soon as the current iteration and shutdown cleanup finish,
+          // but a real abort still deserves the done screen even if a prior
+          // ctrl+c already set the eventual SIGINT exit code.
           const keepTui =
             orchestrator.getState().status === "aborted" && process.stdin.isTTY;
           if (!keepTui) {

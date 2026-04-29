@@ -166,6 +166,8 @@ describe("buildFrame", () => {
   it("wraps a trailing wide prompt glyph onto the next line instead of dropping it", () => {
     const state: OrchestratorState = {
       status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
@@ -196,6 +198,8 @@ describe("buildFrame", () => {
   it("shows the stop and resume hint on the second-to-last row with blank bottom padding", () => {
     const state: OrchestratorState = {
       status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
@@ -234,9 +238,48 @@ describe("buildFrame", () => {
     expect(Math.abs(leftPad - rightPad)).toBeLessThanOrEqual(1);
   });
 
+  it("shows the graceful stop hint after ctrl+c is requested once", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: true,
+      interruptHint: "force-stop",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const frame = buildFrame(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      120,
+      30,
+    );
+    const lines = stripCursorHome(frame).split("\n");
+
+    expect(stripAnsi(lines.at(-2) ?? "").trim()).toBe(
+      "[graceful stop requested, ctrl+c again to force stop, gnhf again to resume]",
+    );
+  });
+
   it("keeps all moon rows visible on tight terminals by reserving a real footer row", () => {
     const state: OrchestratorState = {
       status: "stopped",
+      gracefulStopRequested: false,
+      interruptHint: "force-stop",
       currentIteration: 61,
       totalInputTokens: 0,
       totalOutputTokens: 0,
@@ -271,7 +314,7 @@ describe("buildFrame", () => {
     expect(lines).toHaveLength(24);
     expect(moonLines).toHaveLength(3);
     expect(plainLines.at(-2)?.trim()).toBe(
-      "[ctrl+c to stop, gnhf again to resume]",
+      "[graceful stop requested, ctrl+c again to force stop, gnhf again to resume]",
     );
     expect(plainLines.at(-1)?.trim()).toBe("");
   });
@@ -285,6 +328,8 @@ describe("buildFrame", () => {
 
     const state: OrchestratorState = {
       status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
       currentIteration: 1,
       totalInputTokens: 500,
       totalOutputTokens: 300,
@@ -321,6 +366,8 @@ describe("buildFrame", () => {
   it("keeps stats visible when moon rows exceed the content viewport", () => {
     const state: OrchestratorState = {
       status: "stopped",
+      gracefulStopRequested: false,
+      interruptHint: "force-stop",
       currentIteration: 660,
       totalInputTokens: 1200,
       totalOutputTokens: 800,
@@ -358,6 +405,8 @@ describe("buildFrame", () => {
   it("uses the content builder height policy for the content viewport", () => {
     const state: OrchestratorState = {
       status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
       currentIteration: 1,
       totalInputTokens: 100,
       totalOutputTokens: 50,
@@ -412,6 +461,8 @@ describe("renderer module exports", () => {
 describe("buildContentCells adaptive height", () => {
   const state: OrchestratorState = {
     status: "running",
+    gracefulStopRequested: false,
+    interruptHint: "resume",
     currentIteration: 1,
     totalInputTokens: 100,
     totalOutputTokens: 50,
@@ -584,29 +635,20 @@ describe("buildContentCells adaptive height", () => {
 });
 
 describe("Renderer ctrl+c", () => {
-  it("hides immediately and then requests orchestrator stop", async () => {
+  async function runRendererCtrlCTest(state: OrchestratorState): Promise<{
+    onInterrupt: ReturnType<typeof vi.fn>;
+    orchestratorStop: ReturnType<typeof vi.fn>;
+    pause: typeof process.stdin.pause;
+    renderer: Renderer;
+  }> {
     vi.useFakeTimers();
-
-    const state: OrchestratorState = {
-      status: "running",
-      currentIteration: 1,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      commitCount: 0,
-      iterations: [],
-      successCount: 0,
-      failCount: 0,
-      consecutiveFailures: 0,
-      consecutiveErrors: 0,
-      startTime: new Date("2026-01-01T00:00:00Z"),
-      waitingUntil: null,
-      lastMessage: null,
-    };
-
     let dataHandler: ((data: Buffer) => void) | null = null;
+    const onInterrupt = vi.fn();
+    const orchestratorStop = vi.fn();
     const orchestrator = Object.assign(new EventEmitter(), {
       getState: vi.fn(() => state),
-      stop: vi.fn(),
+      stop: orchestratorStop,
+      requestGracefulStop: vi.fn(),
     }) as unknown as Orchestrator;
 
     const originalIsTTY = process.stdin.isTTY;
@@ -647,24 +689,28 @@ describe("Renderer ctrl+c", () => {
     ) as typeof process.stdin.on;
     process.stdin.removeAllListeners = vi.fn(() => process.stdin);
 
+    const renderer = new Renderer(
+      orchestrator,
+      "ship it",
+      "claude",
+      onInterrupt,
+    );
+
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
       renderer.start();
 
       expect(dataHandler).not.toBeNull();
       if (!dataHandler) {
         throw new Error("expected renderer to register a data handler");
       }
-      const onData = dataHandler as (data: Buffer) => void;
-      onData(Buffer.from([3]));
+      (dataHandler as unknown as (data: Buffer) => void)(Buffer.from([3]));
 
-      await expect(renderer.waitUntilExit()).resolves.toBe("interrupted");
-
-      expect(
-        orchestrator.stop as ReturnType<typeof vi.fn>,
-      ).toHaveBeenCalledTimes(1);
-      expect(process.stdin.pause).toHaveBeenCalledTimes(1);
-      expect(process.stdin.removeAllListeners).toHaveBeenCalledWith("data");
+      return {
+        onInterrupt,
+        orchestratorStop,
+        pause: process.stdin.pause,
+        renderer,
+      };
     } finally {
       Object.defineProperty(process.stdin, "isTTY", {
         configurable: true,
@@ -681,6 +727,87 @@ describe("Renderer ctrl+c", () => {
       stdoutWrite.mockRestore();
       vi.useRealTimers();
     }
+  }
+
+  it("delegates ctrl+c handling to the callback", async () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const { onInterrupt, orchestratorStop, pause } =
+      await runRendererCtrlCTest(state);
+
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("delegates ctrl+c when the aborted screen is shown", async () => {
+    const state: OrchestratorState = {
+      status: "aborted",
+      gracefulStopRequested: false,
+      interruptHint: "exit",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const { onInterrupt, orchestratorStop, pause } =
+      await runRendererCtrlCTest(state);
+
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("keeps routing ctrl+c to force-stop during graceful cleanup", async () => {
+    const state: OrchestratorState = {
+      status: "stopped",
+      gracefulStopRequested: false,
+      interruptHint: "force-stop",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const { onInterrupt, orchestratorStop, pause } =
+      await runRendererCtrlCTest(state);
+
+    expect(onInterrupt).toHaveBeenCalledTimes(1);
+    expect(orchestratorStop).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
   });
 });
 
@@ -734,6 +861,8 @@ describe("Renderer terminal title", () => {
 
   const baseState: OrchestratorState = {
     status: "running",
+    gracefulStopRequested: false,
+    interruptHint: "resume",
     currentIteration: 1,
     totalInputTokens: 12_400,
     totalOutputTokens: 8_200,
@@ -761,7 +890,7 @@ describe("Renderer terminal title", () => {
     const restoreStdoutTty = setTty(process.stdout, true);
 
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
 
       const titles = extractTerminalTitles(stdoutWrite);
@@ -790,7 +919,7 @@ describe("Renderer terminal title", () => {
     const restoreStdoutTty = setTty(process.stdout, false);
 
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
       renderer.stop();
 
@@ -816,7 +945,7 @@ describe("Renderer terminal title", () => {
     const restoreStdoutTty = setTty(process.stdout, true);
 
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
       stdoutWrite.mockClear();
 
@@ -851,7 +980,7 @@ describe("Renderer terminal title", () => {
     const restoreStdoutTty = setTty(process.stdout, true);
 
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
       renderer.stop("interrupted");
       stdoutWrite.mockClear();
@@ -883,7 +1012,7 @@ describe("Renderer terminal title", () => {
     const restoreStdoutTty = setTty(process.stdout, true);
 
     try {
-      const renderer = new Renderer(orchestrator, "ship it", "claude");
+      const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
       renderer.stop();
 

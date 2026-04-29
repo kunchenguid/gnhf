@@ -8,6 +8,7 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => ""),
   readdirSync: vi.fn(() => []),
   existsSync: vi.fn(() => false),
+  rmSync: vi.fn(),
 }));
 
 vi.mock("node:child_process", () => ({
@@ -144,6 +145,29 @@ describe("setupRun", () => {
     );
   });
 
+  it("writes the stop-when file when provided", () => {
+    setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: true,
+      stopWhen: "all tests pass",
+    });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "stop-when"),
+      "all tests pass\n",
+      "utf-8",
+    );
+  });
+
+  it("does not write the stop-when file when omitted", () => {
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
+
+    expect(mockWriteFileSync).not.toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "stop-when"),
+      expect.any(String),
+      "utf-8",
+    );
+  });
+
   it("preserves the existing branch base commit on overwrite", () => {
     const baseCommitPath = join(P, ".gnhf", "runs", "run-abc", "base-commit");
     mockExistsSync.mockImplementation((path) => path === baseCommitPath);
@@ -199,6 +223,8 @@ describe("setupRun", () => {
       logPath: join(runDir, "gnhf.log"),
       baseCommit: "abc123",
       baseCommitPath: join(runDir, "base-commit"),
+      stopWhenPath: join(runDir, "stop-when"),
+      stopWhen: undefined,
     });
   });
 });
@@ -258,6 +284,31 @@ describe("resumeRun", () => {
 
     expect(info.baseCommit).toBe("abc123");
     expect(info.logPath).toBe(join(runDir, "gnhf.log"));
+  });
+
+  it("reads the stored stop-when condition when present", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const stopWhenPath = join(runDir, "stop-when");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === stopWhenPath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === stopWhenPath ? "all tests pass\n" : "",
+    );
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.stopWhen).toBe("all tests pass");
+    expect(info.stopWhenPath).toBe(stopWhenPath);
+  });
+
+  it("returns undefined for stop-when when the file is missing", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    mockExistsSync.mockImplementation((path) => path === runDir);
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.stopWhen).toBeUndefined();
   });
 
   it("backfills missing base-commit for legacy runs", () => {

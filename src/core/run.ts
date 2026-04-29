@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   existsSync,
+  rmSync,
 } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -20,9 +21,12 @@ export interface RunInfo {
   logPath: string;
   baseCommit: string;
   baseCommitPath: string;
+  stopWhenPath: string;
+  stopWhen: string | undefined;
 }
 
 const LOG_FILENAME = "gnhf.log";
+const STOP_WHEN_FILENAME = "stop-when";
 
 function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
   writeFileSync(
@@ -34,6 +38,14 @@ function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
 
 export interface RunSchemaOptions {
   includeStopField: boolean;
+  stopWhen?: string;
+  clearStopWhen?: boolean;
+}
+
+function readStopWhen(stopWhenPath: string): string | undefined {
+  if (!existsSync(stopWhenPath)) return undefined;
+  const stopWhen = readFileSync(stopWhenPath, "utf-8").trim();
+  return stopWhen.length > 0 ? stopWhen : undefined;
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
@@ -98,6 +110,12 @@ export function setupRun(
     writeFileSync(baseCommitPath, `${baseCommit}\n`, "utf-8");
   }
 
+  const stopWhenPath = join(runDir, STOP_WHEN_FILENAME);
+  const stopWhen = schemaOptions.stopWhen;
+  if (stopWhen !== undefined) {
+    writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
+  }
+
   return {
     runId,
     runDir,
@@ -107,6 +125,8 @@ export function setupRun(
     logPath,
     baseCommit: resolvedBaseCommit,
     baseCommitPath,
+    stopWhenPath,
+    stopWhen,
   };
 }
 
@@ -123,12 +143,24 @@ export function resumeRun(
   const promptPath = join(runDir, "prompt.md");
   const notesPath = join(runDir, "notes.md");
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
   const logPath = join(runDir, LOG_FILENAME);
   const baseCommitPath = join(runDir, "base-commit");
   const baseCommit = existsSync(baseCommitPath)
     ? readFileSync(baseCommitPath, "utf-8").trim()
     : backfillLegacyBaseCommit(runId, baseCommitPath, cwd);
+  const stopWhenPath = join(runDir, STOP_WHEN_FILENAME);
+  let stopWhen = readStopWhen(stopWhenPath);
+  if (schemaOptions.clearStopWhen) {
+    rmSync(stopWhenPath, { force: true });
+    stopWhen = undefined;
+  } else if (schemaOptions.stopWhen !== undefined) {
+    stopWhen = schemaOptions.stopWhen;
+    writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
+  }
+  writeSchemaFile(
+    schemaPath,
+    schemaOptions.includeStopField || stopWhen !== undefined,
+  );
 
   return {
     runId,
@@ -139,6 +171,8 @@ export function resumeRun(
     logPath,
     baseCommit,
     baseCommitPath,
+    stopWhenPath,
+    stopWhen,
   };
 }
 

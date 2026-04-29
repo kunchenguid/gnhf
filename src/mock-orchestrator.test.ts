@@ -83,4 +83,36 @@ describe("MockOrchestrator", () => {
 
     expect(onState).toHaveBeenCalledTimes(callCountAfterStop);
   });
+
+  it("stops on the next scheduled update after graceful stop is requested", async () => {
+    const orchestrator = new MockOrchestrator();
+    const onState = vi.fn();
+    const onStopped = vi.fn();
+    orchestrator.on("state", onState);
+    orchestrator.on("stopped", onStopped);
+
+    orchestrator.start();
+    orchestrator.requestGracefulStop();
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(onStopped).toHaveBeenCalledTimes(1);
+    expect(onState.mock.calls.at(-1)?.[0]).toMatchObject({
+      status: "stopped",
+      gracefulStopRequested: false,
+    });
+  });
+
+  it("does not re-emit stopped when force-stop is requested again", () => {
+    const orchestrator = new MockOrchestrator();
+    const onState = vi.fn();
+    const onStopped = vi.fn();
+    orchestrator.on("state", onState);
+    orchestrator.on("stopped", onStopped);
+
+    orchestrator.stop();
+    orchestrator.handleInterrupt();
+
+    expect(onStopped).toHaveBeenCalledTimes(1);
+    expect(onState).toHaveBeenCalledTimes(1);
+  });
 });
