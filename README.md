@@ -221,9 +221,9 @@ agent: claude
 
 # Commit message convention (optional)
 # Defaults to: gnhf #<iteration>: <summary>
-# Use the angular preset for semantic-release compatible headers:
+# Use the conventional preset for semantic-release compatible headers:
 # commitMessage:
-#   preset: angular
+#   preset: conventional
 
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
@@ -246,7 +246,7 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
 - Omit it to keep the default `gnhf #<iteration>: <summary>` format.
-- Set `preset: angular` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
+- Set `preset: conventional` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
 
 ### Custom Agent Paths
 

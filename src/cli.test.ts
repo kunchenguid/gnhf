@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ANGULAR_COMMIT_MESSAGE } from "./core/commit-message.js";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
 
@@ -764,6 +764,102 @@ describe("cli", () => {
     );
   });
 
+  it("threads commit message fields into run setup and agent creation", async () => {
+    const { createAgent, setupRun } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    const expectedSchemaOptions = {
+      includeStopField: false,
+      commitFields: [
+        {
+          name: "type",
+          allowed: [
+            "build",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "test",
+            "chore",
+          ],
+        },
+        { name: "scope" },
+      ],
+    };
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      expectedSchemaOptions,
+    );
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      expectedSchemaOptions,
+    );
+  });
+
+  it("combines stop-when and commit message fields in schema options", async () => {
+    const { createAgent, setupRun } = await runCliWithMocks(
+      ["ship it", "--stop-when", "all checks pass"],
+      {
+        agent: "codex",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    const expectedSchemaOptions = {
+      includeStopField: true,
+      stopWhen: "all checks pass",
+      commitFields: [
+        {
+          name: "type",
+          allowed: [
+            "build",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "test",
+            "chore",
+          ],
+        },
+        { name: "scope" },
+      ],
+    };
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      expectedSchemaOptions,
+    );
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      expectedSchemaOptions,
+    );
+  });
+
   it("reuses the persisted stop-when condition when resuming without --stop-when", async () => {
     const { appendDebugLog, createAgent, orchestratorCtor, schema } =
       await runCliResumeWithActualRun([], "all tests pass");
@@ -843,52 +939,6 @@ describe("cli", () => {
     expect(
       (schema.properties as Record<string, unknown>).should_fully_stop,
     ).toBe(undefined);
-  });
-
-  it("threads commit message fields into run setup and agent creation", async () => {
-    const { createAgent, setupRun } = await runCliWithMocks(["ship it"], {
-      agent: "codex",
-      agentPathOverride: {},
-      agentArgsOverride: {},
-      commitMessage: ANGULAR_COMMIT_MESSAGE,
-      maxConsecutiveFailures: 3,
-      preventSleep: false,
-    });
-
-    const expectedSchemaOptions = {
-      includeStopField: false,
-      commitFields: [
-        {
-          name: "type",
-          allowed: [
-            "build",
-            "ci",
-            "docs",
-            "feat",
-            "fix",
-            "perf",
-            "refactor",
-            "test",
-            "chore",
-          ],
-        },
-        { name: "scope" },
-      ],
-    };
-    expect(setupRun).toHaveBeenCalledWith(
-      expect.stringMatching(/^ship-it-/),
-      "ship it",
-      "abc123",
-      process.cwd(),
-      expectedSchemaOptions,
-    );
-    expect(createAgent).toHaveBeenCalledWith(
-      "codex",
-      stubRunInfo,
-      undefined,
-      undefined,
-      expectedSchemaOptions,
-    );
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {

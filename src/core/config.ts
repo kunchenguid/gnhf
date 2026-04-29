@@ -432,9 +432,9 @@ function serializeConfig(config: Config): string {
     "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",
-    "# Use Angular-style semantic-release headers:",
+    "# Use Conventional Commits semantic-release headers:",
     "# commitMessage:",
-    "#   preset: angular",
+    "#   preset: conventional",
   ];
 
   if (agentPathOverrideSection) {

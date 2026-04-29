@@ -46,7 +46,7 @@ Reserved args managed by gnhf are rejected in `config.ts` via `isReservedAgentAr
 
 ### Config (`src/core/config.ts`)
 
-Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agentPathOverride` and `agentArgsOverride` are per-agent; paths resolve relative to `~/.gnhf/` and support `~` expansion. `commitMessage.preset: angular` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects.
+Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agentPathOverride` and `agentArgsOverride` are per-agent; paths resolve relative to `~/.gnhf/` and support `~` expansion. `commitMessage.preset: conventional` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects.
 
 ### Git helpers (`src/core/git.ts`)
 

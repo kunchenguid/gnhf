@@ -38,7 +38,7 @@ import {
   type Agent,
   type AgentResult,
 } from "./agents/types.js";
-import { ANGULAR_COMMIT_MESSAGE } from "./commit-message.js";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "./commit-message.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 
@@ -157,7 +157,7 @@ describe("Orchestrator output normalization", () => {
       })),
     };
     const orchestrator = new Orchestrator(
-      { ...config, commitMessage: ANGULAR_COMMIT_MESSAGE },
+      { ...config, commitMessage: CONVENTIONAL_COMMIT_MESSAGE },
       agent,
       runInfo,
       "ship it",

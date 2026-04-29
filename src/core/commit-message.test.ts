@@ -17,9 +17,9 @@ describe("buildCommitMessage", () => {
     expect(message).toBe("gnhf #3: add retry coverage");
   });
 
-  it("renders an Angular header with a scope", () => {
+  it("renders a Conventional Commits header with a scope", () => {
     const message = buildCommitMessage(
-      { preset: "angular" },
+      { preset: "conventional" },
       {
         success: true,
         summary: "handle empty output",
@@ -34,9 +34,9 @@ describe("buildCommitMessage", () => {
     expect(message).toBe("fix(core): handle empty output");
   });
 
-  it("renders an Angular header without a scope", () => {
+  it("renders a Conventional Commits header without a scope", () => {
     const message = buildCommitMessage(
-      { preset: "angular" },
+      { preset: "conventional" },
       {
         success: true,
         summary: "refresh docs",
@@ -53,7 +53,7 @@ describe("buildCommitMessage", () => {
 
   it("falls back to configured field defaults when output omits them", () => {
     const message = buildCommitMessage(
-      { preset: "angular" },
+      { preset: "conventional" },
       {
         success: true,
         summary: "tidy internal naming",
@@ -66,9 +66,9 @@ describe("buildCommitMessage", () => {
     expect(message).toBe("chore: tidy internal naming");
   });
 
-  it("falls back to the default Angular type when output provides an invalid type", () => {
+  it("falls back to the default Conventional Commits type when output provides an invalid type", () => {
     const message = buildCommitMessage(
-      { preset: "angular" },
+      { preset: "conventional" },
       {
         success: true,
         summary: "tidy internal naming",
@@ -84,7 +84,7 @@ describe("buildCommitMessage", () => {
 
   it("collapses newlines in rendered headers", () => {
     const message = buildCommitMessage(
-      { preset: "angular" },
+      { preset: "conventional" },
       {
         success: true,
         summary: "add parser\nwith extra spacing",

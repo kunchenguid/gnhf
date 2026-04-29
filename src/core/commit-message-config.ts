@@ -12,9 +12,9 @@ export function normalizeCommitMessageConfig(
   }
 
   const raw = value as Record<string, unknown>;
-  if (raw.preset !== "angular") {
+  if (raw.preset !== "conventional") {
     throw new InvalidConfigError(
-      `Invalid config value for commitMessage.preset: expected "angular"`,
+      `Invalid config value for commitMessage.preset: expected "conventional"`,
     );
   }
 
@@ -26,5 +26,5 @@ export function normalizeCommitMessageConfig(
     }
   }
 
-  return { preset: "angular" };
+  return { preset: "conventional" };
 }

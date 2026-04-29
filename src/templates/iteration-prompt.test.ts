@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildIterationPrompt } from "./iteration-prompt.js";
-import { ANGULAR_COMMIT_MESSAGE } from "../core/commit-message.js";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "../core/commit-message.js";
 
 describe("buildIterationPrompt", () => {
   it("includes the iteration number", () => {
@@ -88,7 +88,7 @@ describe("buildIterationPrompt", () => {
       n: 1,
       runId: "run-1",
       prompt: "do stuff",
-      commitMessage: ANGULAR_COMMIT_MESSAGE,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
     });
 
     expect(result).toContain("type: Commit type");

@@ -57,9 +57,9 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",
-    "# Use Angular-style semantic-release headers:",
+    "# Use Conventional Commits semantic-release headers:",
     "# commitMessage:",
-    "#   preset: angular",
+    "#   preset: conventional",
     "",
     "# Abort after this many consecutive failures",
     "maxConsecutiveFailures: 3",
@@ -283,13 +283,15 @@ describe("loadConfig", () => {
     expect(config.agent).toBe("codex");
   });
 
-  it("reads the Angular commit message preset from config", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: angular\n");
+  it("reads the conventional commit message preset from config", () => {
+    mockReadFileSync.mockReturnValue(
+      "commitMessage:\n  preset: conventional\n",
+    );
 
     const config = loadConfig();
 
     expect(config.commitMessage).toEqual({
-      preset: "angular",
+      preset: "conventional",
     });
   });
 
@@ -297,7 +299,7 @@ describe("loadConfig", () => {
     mockReadFileSync.mockReturnValue("commitMessage: {}\n");
 
     expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "angular"/,
+      /Invalid config value for commitMessage\.preset: expected "conventional"/,
     );
   });
 
@@ -313,7 +315,15 @@ describe("loadConfig", () => {
     mockReadFileSync.mockReturnValue("commitMessage:\n  preset: gnhf\n");
 
     expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "angular"/,
+      /Invalid config value for commitMessage\.preset: expected "conventional"/,
+    );
+  });
+
+  it("throws when commitMessage uses the old angular preset", () => {
+    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: angular\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid config value for commitMessage\.preset: expected "conventional"/,
     );
   });
 
@@ -321,7 +331,7 @@ describe("loadConfig", () => {
     mockReadFileSync.mockReturnValue(
       [
         "commitMessage:",
-        "  preset: angular",
+        "  preset: conventional",
         '  template: "{{type}}: {{summary}}"',
         "",
       ].join("\n"),
@@ -336,7 +346,7 @@ describe("loadConfig", () => {
     mockReadFileSync.mockReturnValue("commitMessage:\n  preset: semantic\n");
 
     expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "angular"/,
+      /Invalid config value for commitMessage\.preset: expected "conventional"/,
     );
   });
 
