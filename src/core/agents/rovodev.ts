@@ -391,7 +391,7 @@ export class RovoDevAgent implements Agent {
     server: RovoDevServer,
     signal?: AbortSignal,
   ): Promise<void> {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + 90_000;
     let spawnErrorMessage: string | null = null;
 
     server.child.once("error", (error) => {
