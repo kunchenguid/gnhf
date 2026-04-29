@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.28](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.27...gnhf-v0.1.28) (2026-04-29)
+
+
+### Bug Fixes
+
+* **core:** abort immediately on Claude low credit ([#102](https://github.com/kunchenguid/gnhf/issues/102)) ([28f54bb](https://github.com/kunchenguid/gnhf/commit/28f54bb939a098e463c40cefb0683da897b999e6))
+
 ## [0.1.27](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.26...gnhf-v0.1.27) (2026-04-29)
 
 
