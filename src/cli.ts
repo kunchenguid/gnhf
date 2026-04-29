@@ -219,6 +219,17 @@ function initializeWorktreeRun(
   let createdRunId = runId;
   let createdWorktreePath = worktreePath;
   for (let suffix = 0; suffix < 100; suffix += 1) {
+    const candidateBranchName = branchNameWithSuffix(branchName, suffix);
+    const candidateRunId = candidateBranchName.split("/")[1]!;
+    const candidateWorktreePath = makeWorktreePath(candidateRunId);
+    const resumed = resumePreservedWorktree(
+      candidateBranchName,
+      candidateRunId,
+      candidateWorktreePath,
+    );
+    if (resumed) return resumed;
+  }
+  for (let suffix = 0; suffix < 100; suffix += 1) {
     createdBranchName = branchNameWithSuffix(branchName, suffix);
     createdRunId = createdBranchName.split("/")[1]!;
     createdWorktreePath = makeWorktreePath(createdRunId);

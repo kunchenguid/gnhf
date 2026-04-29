@@ -2826,7 +2826,65 @@ describe("cli", () => {
         suffixedWorktreePath,
         { includeStopField: false },
       );
-      expect(createWorktree).toHaveBeenCalledTimes(1);
+      expect(createWorktree).not.toHaveBeenCalled();
+      expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes a preserved suffixed worktree before creating an available unsuffixed one", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const suffixedRunId = `${runId}-1`;
+    const suffixedBranch = `gnhf/${suffixedRunId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const suffixedWorktreePath = join(worktreeRoot, suffixedRunId);
+    mkdirSync(join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId), {
+      recursive: true,
+    });
+
+    const createWorktree = vi.fn(() => {
+      throw new Error("should resume preserved suffixed worktree");
+    });
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: suffixedRunId,
+      runDir: join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId),
+    }));
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          createWorktree,
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === suffixedWorktreePath ? suffixedBranch : "main",
+          ),
+          worktreeExists: vi.fn((_repo, path) => path === suffixedWorktreePath),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(
+        suffixedRunId,
+        suffixedWorktreePath,
+        { includeStopField: false },
+      );
+      expect(createWorktree).not.toHaveBeenCalled();
       expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
