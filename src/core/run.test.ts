@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 import { setupRun, appendNotes, resumeRun, toStringArray } from "./run.js";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "./commit-message.js";
 
 const P = "/project";
 
@@ -190,6 +191,33 @@ describe("setupRun", () => {
     );
   });
 
+  it("writes default commit message metadata when commitMessage is omitted", () => {
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "commit-message"),
+      "default\n",
+      "utf-8",
+    );
+  });
+
+  it("writes conventional commit message metadata when configured", () => {
+    setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "commit-message"),
+      "conventional\n",
+      "utf-8",
+    );
+  });
+
   it("preserves the existing branch base commit on overwrite", () => {
     const baseCommitPath = join(P, ".gnhf", "runs", "run-abc", "base-commit");
     mockExistsSync.mockImplementation((path) => path === baseCommitPath);
@@ -247,6 +275,8 @@ describe("setupRun", () => {
       baseCommitPath: join(runDir, "base-commit"),
       stopWhenPath: join(runDir, "stop-when"),
       stopWhen: undefined,
+      commitMessagePath: join(runDir, "commit-message"),
+      commitMessage: undefined,
     });
   });
 });
@@ -331,6 +361,86 @@ describe("resumeRun", () => {
     const info = resumeRun("run-abc", P, { includeStopField: false });
 
     expect(info.stopWhen).toBeUndefined();
+  });
+
+  it("uses stored default commit message metadata on resume even when live config is conventional", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "default\n" : "",
+    );
+
+    const info = resumeRun("run-abc", P, {
+      includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(info.commitMessage).toBeUndefined();
+    expect(info.commitMessagePath).toBe(commitMessagePath);
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toBeUndefined();
+    expect(schema.properties.scope).toBeUndefined();
+  });
+
+  it("uses stored conventional commit message metadata on resume even when live config is default", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "conventional\n" : "",
+    );
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toBeDefined();
+    expect(schema.properties.scope).toBeDefined();
+  });
+
+  it("backfills missing commit message metadata from an existing conventional schema", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const schemaPath = join(runDir, "output-schema.json");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === schemaPath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === schemaPath
+        ? JSON.stringify({
+            properties: {
+              type: { type: "string" },
+              scope: { type: "string" },
+            },
+          })
+        : "",
+    );
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      commitMessagePath,
+      "conventional\n",
+      "utf-8",
+    );
   });
 
   it("backfills missing base-commit for legacy runs", () => {

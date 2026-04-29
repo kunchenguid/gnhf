@@ -13,6 +13,11 @@ import {
   buildAgentOutputSchema,
   type AgentOutputCommitField,
 } from "./agents/types.js";
+import {
+  CONVENTIONAL_COMMIT_MESSAGE,
+  getCommitMessageSchemaFields,
+  type CommitMessageConfig,
+} from "./commit-message.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
 export interface RunInfo {
@@ -26,10 +31,13 @@ export interface RunInfo {
   baseCommitPath: string;
   stopWhenPath: string;
   stopWhen: string | undefined;
+  commitMessagePath: string;
+  commitMessage: CommitMessageConfig | undefined;
 }
 
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
+const COMMIT_MESSAGE_FILENAME = "commit-message";
 
 function writeSchemaFile(
   schemaPath: string,
@@ -52,6 +60,7 @@ function writeSchemaFile(
 export interface RunSchemaOptions {
   includeStopField: boolean;
   commitFields?: AgentOutputCommitField[];
+  commitMessage?: CommitMessageConfig;
   stopWhen?: string;
   clearStopWhen?: boolean;
 }
@@ -60,6 +69,69 @@ function readStopWhen(stopWhenPath: string): string | undefined {
   if (!existsSync(stopWhenPath)) return undefined;
   const stopWhen = readFileSync(stopWhenPath, "utf-8").trim();
   return stopWhen.length > 0 ? stopWhen : undefined;
+}
+
+function commitMessageMetadataValue(
+  commitMessage: CommitMessageConfig | undefined,
+): "default" | "conventional" {
+  return commitMessage?.preset ?? "default";
+}
+
+function readCommitMessageMetadata(
+  commitMessagePath: string,
+): CommitMessageConfig | undefined {
+  const value = readFileSync(commitMessagePath, "utf-8").trim();
+  if (value === "" || value === "default") return undefined;
+  if (value === "conventional") return CONVENTIONAL_COMMIT_MESSAGE;
+  throw new Error(`Unknown commit message metadata: ${value}`);
+}
+
+function inferCommitMessageFromSchema(
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (!existsSync(schemaPath)) return undefined;
+  try {
+    const schema = JSON.parse(readFileSync(schemaPath, "utf-8")) as {
+      properties?: Record<string, unknown>;
+    };
+    if (
+      schema.properties?.type !== undefined &&
+      schema.properties.scope !== undefined
+    ) {
+      return CONVENTIONAL_COMMIT_MESSAGE;
+    }
+  } catch {
+    // Legacy metadata is best-effort; malformed schemas fall back to default.
+  }
+  return undefined;
+}
+
+function resolveRunCommitMessage(
+  commitMessagePath: string,
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (existsSync(commitMessagePath)) {
+    return readCommitMessageMetadata(commitMessagePath);
+  }
+
+  const commitMessage = inferCommitMessageFromSchema(schemaPath);
+  writeFileSync(
+    commitMessagePath,
+    `${commitMessageMetadataValue(commitMessage)}\n`,
+    "utf-8",
+  );
+  return commitMessage;
+}
+
+function writeCommitMessageMetadata(
+  commitMessagePath: string,
+  commitMessage: CommitMessageConfig | undefined,
+): void {
+  writeFileSync(
+    commitMessagePath,
+    `${commitMessageMetadataValue(commitMessage)}\n`,
+    "utf-8",
+  );
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
@@ -129,6 +201,9 @@ export function setupRun(
   if (stopWhen !== undefined) {
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = schemaOptions.commitMessage;
+  writeCommitMessageMetadata(commitMessagePath, commitMessage);
 
   return {
     runId,
@@ -141,6 +216,8 @@ export function setupRun(
     baseCommitPath,
     stopWhenPath,
     stopWhen,
+    commitMessagePath,
+    commitMessage,
   };
 }
 
@@ -171,8 +248,12 @@ export function resumeRun(
     stopWhen = schemaOptions.stopWhen;
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = resolveRunCommitMessage(commitMessagePath, schemaPath);
   writeSchemaFile(schemaPath, {
     ...schemaOptions,
+    commitMessage,
+    commitFields: getCommitMessageSchemaFields(commitMessage),
     includeStopField: schemaOptions.includeStopField || stopWhen !== undefined,
   });
 
@@ -187,6 +268,8 @@ export function resumeRun(
     baseCommitPath,
     stopWhenPath,
     stopWhen,
+    commitMessagePath,
+    commitMessage,
   };
 }
 

@@ -38,6 +38,8 @@ const stubRunInfo: RunInfo = {
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
   stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
   stopWhen: undefined,
+  commitMessagePath: "/repo/.gnhf/runs/run-abc/commit-message",
+  commitMessage: undefined,
 };
 
 interface CliMockOverrides {
@@ -415,6 +417,10 @@ async function importCliExpectError(timeoutMs = 250): Promise<unknown> {
 async function runCliResumeWithActualRun(
   args: string[],
   storedStopWhen?: string,
+  opts: {
+    liveCommitMessage?: typeof CONVENTIONAL_COMMIT_MESSAGE;
+    storedCommitMessage?: "default" | "conventional";
+  } = {},
 ) {
   const originalArgv = [...process.argv];
   const originalCwd = process.cwd();
@@ -435,12 +441,16 @@ async function runCliResumeWithActualRun(
   const promptPath = join(runDir, "prompt.md");
   const baseCommitPath = join(runDir, "base-commit");
   const stopWhenPath = join(runDir, "stop-when");
+  const commitMessagePath = join(runDir, "commit-message");
   const schemaPath = join(runDir, "output-schema.json");
   mkdirSync(runDir, { recursive: true });
   writeFileSync(promptPath, "existing prompt", "utf-8");
   writeFileSync(baseCommitPath, "abc123\n", "utf-8");
   if (storedStopWhen !== undefined) {
     writeFileSync(stopWhenPath, `${storedStopWhen}\n`, "utf-8");
+  }
+  if (opts.storedCommitMessage !== undefined) {
+    writeFileSync(commitMessagePath, `${opts.storedCommitMessage}\n`, "utf-8");
   }
 
   const appendDebugLog = vi.fn();
@@ -455,6 +465,9 @@ async function runCliResumeWithActualRun(
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      ...(opts.liveCommitMessage === undefined
+        ? {}
+        : { commitMessage: opts.liveCommitMessage }),
       maxConsecutiveFailures: 3,
       preventSleep: false,
     })),
@@ -518,6 +531,8 @@ async function runCliResumeWithActualRun(
     schema: Record<string, unknown>;
     stopWhenExists: boolean;
     stopWhenContent?: string;
+    commitMessageExists: boolean;
+    commitMessageContent?: string;
   };
 
   try {
@@ -531,6 +546,7 @@ async function runCliResumeWithActualRun(
     await import("./cli.js");
 
     const stopWhenExists = existsSync(stopWhenPath);
+    const commitMessageExists = existsSync(commitMessagePath);
     result = {
       appendDebugLog,
       createAgent,
@@ -542,6 +558,10 @@ async function runCliResumeWithActualRun(
       stopWhenExists,
       stopWhenContent: stopWhenExists
         ? readFileSync(stopWhenPath, "utf-8")
+        : undefined,
+      commitMessageExists,
+      commitMessageContent: commitMessageExists
+        ? readFileSync(commitMessagePath, "utf-8")
         : undefined,
     };
   } finally {
@@ -776,6 +796,7 @@ describe("cli", () => {
 
     const expectedSchemaOptions = {
       includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
       commitFields: [
         {
           name: "type",
@@ -826,6 +847,7 @@ describe("cli", () => {
     const expectedSchemaOptions = {
       includeStopField: true,
       stopWhen: "all checks pass",
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
       commitFields: [
         {
           name: "type",
@@ -939,6 +961,55 @@ describe("cli", () => {
     expect(
       (schema.properties as Record<string, unknown>).should_fully_stop,
     ).toBe(undefined);
+  });
+
+  it("keeps a resumed default commit message run on the default convention when live config changes", async () => {
+    const { createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], undefined, {
+        liveCommitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        storedCommitMessage: "default",
+      });
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ commitMessage: undefined }),
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[0]).toMatchObject({
+      commitMessage: undefined,
+    });
+    expect((schema.properties as Record<string, unknown>).type).toBeUndefined();
+    expect(
+      (schema.properties as Record<string, unknown>).scope,
+    ).toBeUndefined();
+  });
+
+  it("keeps a resumed conventional commit message run conventional when live config changes", async () => {
+    const { createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], undefined, {
+        storedCommitMessage: "conventional",
+      });
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ commitMessage: CONVENTIONAL_COMMIT_MESSAGE }),
+      undefined,
+      undefined,
+      expect.objectContaining({
+        includeStopField: false,
+        commitFields: expect.arrayContaining([
+          expect.objectContaining({ name: "type" }),
+          expect.objectContaining({ name: "scope" }),
+        ]),
+      }),
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[0]).toMatchObject({
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+    });
+    expect((schema.properties as Record<string, unknown>).type).toBeDefined();
+    expect((schema.properties as Record<string, unknown>).scope).toBeDefined();
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {
@@ -3005,6 +3076,60 @@ describe("cli", () => {
       );
       expect(createWorktree).not.toHaveBeenCalled();
       expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the persisted commit message convention when resuming a preserved worktree", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const branch = `gnhf/${runId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const worktreePath = join(worktreeRoot, runId);
+    mkdirSync(join(worktreePath, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+      runDir: join(worktreePath, ".gnhf", "runs", runId),
+      commitMessage: undefined,
+    }));
+
+    try {
+      const { createAgent, orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+          commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        },
+        {
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === worktreePath ? branch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([worktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(createAgent.mock.calls[0]?.[4]).toEqual({
+        includeStopField: false,
+      });
+      expect(orchestratorCtor.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ commitMessage: undefined }),
+      );
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

@@ -330,11 +330,7 @@ describe("gnhf e2e", () => {
       const worktreeParent = `${cwd}-gnhf-worktrees`;
       tempDirs.push(worktreeParent);
 
-      const env = {
-        ...process.env,
-        PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-        GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-      };
+      const env = createTestEnv(mockLogPath, tempDirs);
 
       const first = await runCli(
         cwd,
@@ -398,11 +394,7 @@ describe("gnhf e2e", () => {
       const worktreeParent = `${cwd}-gnhf-worktrees`;
       tempDirs.push(worktreeParent);
 
-      const env = {
-        ...process.env,
-        PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
-        GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
-      };
+      const env = createTestEnv(mockLogPath, tempDirs);
 
       const first = await runCli(
         cwd,

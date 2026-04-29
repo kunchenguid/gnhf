@@ -41,7 +41,10 @@ import {
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
-import { getCommitMessageSchemaFields } from "./core/commit-message.js";
+import {
+  getCommitMessageSchemaFields,
+  type CommitMessageConfig,
+} from "./core/commit-message.js";
 import { Orchestrator } from "./core/orchestrator.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
@@ -101,27 +104,31 @@ function isAgentName(name: string): name is AgentName {
 
 function buildSchemaOptions(
   stopWhen: string | undefined,
-  commitFields: NonNullable<RunSchemaOptions["commitFields"]> = [],
+  commitMessage: CommitMessageConfig | undefined,
 ): RunSchemaOptions {
+  const commitFields = getCommitMessageSchemaFields(commitMessage);
   return {
     includeStopField: stopWhen !== undefined,
     ...(stopWhen === undefined ? {} : { stopWhen }),
+    ...(commitMessage === undefined ? {} : { commitMessage }),
     ...(commitFields.length === 0 ? {} : { commitFields }),
   };
 }
 
 function buildResumeSchemaOptions(
   stopWhen: string | undefined,
-  commitFields: NonNullable<RunSchemaOptions["commitFields"]> = [],
+  commitMessage: CommitMessageConfig | undefined,
 ): RunSchemaOptions {
+  const commitFields = getCommitMessageSchemaFields(commitMessage);
   if (stopWhen === "") {
     return {
       includeStopField: false,
       clearStopWhen: true,
+      ...(commitMessage === undefined ? {} : { commitMessage }),
       ...(commitFields.length === 0 ? {} : { commitFields }),
     };
   }
-  return buildSchemaOptions(stopWhen, commitFields);
+  return buildSchemaOptions(stopWhen, commitMessage);
 }
 
 function initializeNewBranch(
@@ -542,11 +549,14 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
-      const commitFields = getCommitMessageSchemaFields(config.commitMessage);
       const cliStopWhen =
         options.stopWhen === "" ? undefined : options.stopWhen;
       let effectiveStopWhen = cliStopWhen;
-      let schemaOptions = buildSchemaOptions(effectiveStopWhen, commitFields);
+      let effectiveCommitMessage = config.commitMessage;
+      let schemaOptions = buildSchemaOptions(
+        effectiveStopWhen,
+        effectiveCommitMessage,
+      );
 
       let runInfo;
       let startIteration = 0;
@@ -572,6 +582,12 @@ program
         if (wt.resumed) {
           // Preserved worktree is always kept on exit regardless of this
           // invocation's commit count; previous commits are already there.
+          effectiveStopWhen = runInfo.stopWhen;
+          effectiveCommitMessage = runInfo.commitMessage;
+          schemaOptions = buildSchemaOptions(
+            effectiveStopWhen,
+            effectiveCommitMessage,
+          );
           startIteration = getLastIterationNumber(runInfo);
           console.error(
             `\n  gnhf: resuming preserved worktree at ${worktreePath}` +
@@ -601,22 +617,24 @@ program
         let existing = resumeRun(existingRunId, cwd, {
           includeStopField: false,
         });
+        effectiveCommitMessage = existing.commitMessage;
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
 
         if (!prompt || prompt === existingPrompt) {
           existing = resumeRun(
             existingRunId,
             cwd,
-            buildResumeSchemaOptions(options.stopWhen, commitFields),
+            buildResumeSchemaOptions(options.stopWhen, existing.commitMessage),
           );
           const resumeStopWhen = existing.stopWhen;
           const resumeSchemaOptions = buildSchemaOptions(
             resumeStopWhen,
-            commitFields,
+            existing.commitMessage,
           );
           prompt = existingPrompt;
           runInfo = existing;
           effectiveStopWhen = resumeStopWhen;
+          effectiveCommitMessage = existing.commitMessage;
           schemaOptions = resumeSchemaOptions;
           startIteration = getLastIterationNumber(existing);
         } else {
@@ -635,12 +653,15 @@ program
             existing = resumeRun(
               existingRunId,
               cwd,
-              buildResumeSchemaOptions(options.stopWhen, commitFields),
+              buildResumeSchemaOptions(
+                options.stopWhen,
+                existing.commitMessage,
+              ),
             );
             const resumeStopWhen = existing.stopWhen;
             const resumeSchemaOptions = buildSchemaOptions(
               resumeStopWhen,
-              commitFields,
+              existing.commitMessage,
             );
             runInfo = setupRun(
               existingRunId,
@@ -650,11 +671,16 @@ program
               resumeSchemaOptions,
             );
             effectiveStopWhen = resumeStopWhen;
+            effectiveCommitMessage = existing.commitMessage;
             schemaOptions = resumeSchemaOptions;
             startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
             effectiveStopWhen = cliStopWhen;
-            schemaOptions = buildSchemaOptions(effectiveStopWhen, commitFields);
+            effectiveCommitMessage = config.commitMessage;
+            schemaOptions = buildSchemaOptions(
+              effectiveStopWhen,
+              effectiveCommitMessage,
+            );
             runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);
@@ -712,6 +738,7 @@ program
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
         stopWhen: effectiveStopWhen,
+        commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
         agentArgsOverride: config.agentArgsOverride?.[config.agent],
         worktree: options.worktree,
@@ -729,7 +756,7 @@ program
         schemaOptions,
       );
       const orchestrator = new Orchestrator(
-        config,
+        { ...config, commitMessage: effectiveCommitMessage },
         agent,
         runInfo,
         prompt,
