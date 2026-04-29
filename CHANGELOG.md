@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.29](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.28...gnhf-v0.1.29) (2026-04-29)
+
+
+### Bug Fixes
+
+* **agents:** extend Rovo Dev startup timeout ([#104](https://github.com/kunchenguid/gnhf/issues/104)) ([0b2bbe5](https://github.com/kunchenguid/gnhf/commit/0b2bbe52f9398fa8028b514252918243b4f7f8f5))
+
 ## [0.1.28](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.27...gnhf-v0.1.28) (2026-04-29)
 
 
