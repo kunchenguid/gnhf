@@ -218,7 +218,7 @@ preventSleep: true
 If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
 
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
-The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
+The iteration and token caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
 
 `agentArgsOverride.<name>` lets you pass through extra CLI flags for any supported agent.
 

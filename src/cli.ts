@@ -326,7 +326,7 @@ program
   )
   .option(
     "--stop-when <condition>",
-    "End the loop when the agent reports this natural-language condition is met",
+    'End when the agent reports this condition; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
   .option(
     "--prevent-sleep <mode>",

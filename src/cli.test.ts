@@ -2230,6 +2230,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2506,6 +2507,7 @@ describe("cli", () => {
 
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
+      AGENT_NAMES: TEST_AGENT_NAMES,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
