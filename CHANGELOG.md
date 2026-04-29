@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.27](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.26...gnhf-v0.1.27) (2026-04-29)
+
+
+### Features
+
+* Add support for Pi coding agent ([#97](https://github.com/kunchenguid/gnhf/issues/97)) ([380de4e](https://github.com/kunchenguid/gnhf/commit/380de4e97ea4d08517cf8fa0352b3db035c6517b))
+* graceful shutdown on first ctrl+c ([#88](https://github.com/kunchenguid/gnhf/issues/88)) ([385211d](https://github.com/kunchenguid/gnhf/commit/385211d7e460d8a3abd273f40b69b01eb368b690))
+* **worktree:** resume into a preserved worktree on re-invocation ([#76](https://github.com/kunchenguid/gnhf/issues/76)) ([f0e05f3](https://github.com/kunchenguid/gnhf/commit/f0e05f3a819b396367415942715b755a2ac62b33))
+
+
+### Bug Fixes
+
+* **cli:** persist stop-when on resume ([#100](https://github.com/kunchenguid/gnhf/issues/100)) ([0051228](https://github.com/kunchenguid/gnhf/commit/00512284b8bd7d71e421a0bd408d7ed7bb418172))
+
 ## [0.1.26](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.25...gnhf-v0.1.26) (2026-04-24)
 
 
