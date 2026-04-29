@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.30](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.29...gnhf-v0.1.30) (2026-04-29)
+
+
+### Bug Fixes
+
+* **cli:** handle generated branch and worktree slug collisions ([#106](https://github.com/kunchenguid/gnhf/issues/106)) ([df81f78](https://github.com/kunchenguid/gnhf/commit/df81f7804e6ed12c7c34e4a920938bd1f83702bf))
+
 ## [0.1.29](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.28...gnhf-v0.1.29) (2026-04-29)
 
 
