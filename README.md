@@ -45,7 +45,7 @@ gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.co
 You wake up to a branch full of clean work and a log of everything that happened.
 
 - **Dead simple** — one command starts an autonomous loop that runs until you request stop or a configured runtime cap is reached
-- **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; hard agent errors back off exponentially while agent-reported failures continue immediately
+- **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; retryable hard agent errors back off exponentially while agent-reported failures continue immediately
 - **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
 - **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, or Pi out of the box
 
@@ -129,14 +129,16 @@ npm link
                    ▼   ▼                                   │
               ┌────────────┐    yes   ┌──────────┐         │
               │ 3 consec.  ├─────────►│  abort   │         │
-              │ failures?  │          └──────────┘         │
+              │ failures   │          └────▲─────┘         │
+              │ or perm.   ├───────────────┘               │
+              │ error?     │                               │
               └─────┬──────┘                               │
                  no │                                      │
                     └──────────────────────────────────────┘
 ```
 
 - **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
-- **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, while hard agent errors use exponential backoff
+- **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, retryable hard agent errors use exponential backoff, and permanent agent errors such as Claude low credit balance abort immediately and print the run log path
 - **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met; resumed runs reuse the saved stop condition unless you pass a new value, or `--stop-when ""` to clear it; uncommitted work is rolled back in either case, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
