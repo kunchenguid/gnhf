@@ -84,6 +84,33 @@ describe("renderAgentMessage", () => {
     expect(plain).toContain("waiting");
   });
 
+  it("shows the last agent error while waiting during backoff", () => {
+    const plain = renderAgentMessage(
+      "previous agent output",
+      "waiting",
+      "claude exited with code 1: Credit balance is too low",
+    )
+      .map(stripAnsi)
+      .join("\n");
+
+    expect(plain).toContain("waiting");
+    expect(plain).toContain("Credit balance is too low");
+    expect(plain).not.toContain("previous agent output");
+  });
+
+  it("shows the abort reason and last agent error after abort", () => {
+    const plain = renderAgentMessage(
+      "3 consecutive failures",
+      "aborted",
+      "claude exited with code 1: Credit balance is too low",
+    )
+      .map(stripAnsi)
+      .join("\n");
+
+    expect(plain).toContain("3 consecutive failures");
+    expect(plain).toContain("Credit balance is too low");
+  });
+
   it("renders a short message on one line", () => {
     const plain = renderAgentMessage("Reading file...", "running")
       .map(stripAnsi)

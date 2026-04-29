@@ -33,7 +33,11 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { Orchestrator } from "./orchestrator.js";
-import type { Agent, AgentResult } from "./agents/types.js";
+import {
+  PermanentAgentError,
+  type Agent,
+  type AgentResult,
+} from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 
@@ -910,6 +914,7 @@ describe("Orchestrator backoff behavior", () => {
     await vi.waitFor(() => {
       expect(vi.getTimerCount()).toBeGreaterThan(0);
     });
+    expect(orchestrator.getState().lastAgentError).toBe("transient error");
     // And iteration 2 must not have started yet.
     expect(agent.run).toHaveBeenCalledTimes(1);
 
@@ -921,6 +926,46 @@ describe("Orchestrator backoff behavior", () => {
     });
 
     await startPromise;
+  });
+
+  it("aborts immediately for permanent agent errors without backoff", async () => {
+    vi.useFakeTimers();
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        throw new PermanentAgentError(
+          "claude credit balance too low - see gnhf.log",
+          "claude exited with code 1: Credit balance is too low",
+        );
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(mockAppendNotes).not.toHaveBeenCalled();
+    expect(mockResetHard).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledWith(
+      "claude credit balance too low - see gnhf.log",
+    );
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      consecutiveErrors: 0,
+      lastMessage: "claude credit balance too low - see gnhf.log",
+      lastAgentError: "claude exited with code 1: Credit balance is too low",
+    });
   });
 
   it("resets the error streak after a reported failure so a later error backs off from 60s again", async () => {

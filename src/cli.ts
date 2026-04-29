@@ -766,6 +766,10 @@ program
           worktreePath,
         });
 
+        if (finalState.status === "aborted") {
+          console.error(`\n  gnhf: Run log: ${runInfo.logPath}\n`);
+        }
+
         if (worktreePath) {
           if (finalState.commitCount > 0) {
             worktreeCleanup = null;

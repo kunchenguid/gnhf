@@ -66,6 +66,7 @@ async function runCliWithMocks(
   const stdoutWrite = vi
     .spyOn(process.stdout, "write")
     .mockImplementation(() => true);
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
     code?: string | number | null,
   ) => {
@@ -84,6 +85,7 @@ async function runCliWithMocks(
   const startSleepPrevention =
     overrides.startSleepPrevention ??
     vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
+  let consoleErrorCalls: unknown[][] = [];
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -204,11 +206,15 @@ async function runCliWithMocks(
       }
     }
     stdoutWrite.mockRestore();
+    consoleErrorCalls = [...consoleError.mock.calls];
+    consoleError.mockRestore();
     exitSpy.mockRestore();
   }
 
   return {
     appendDebugLog,
+    consoleError,
+    consoleErrorCalls,
     loadConfig,
     createAgent,
     orchestratorCtor,
@@ -227,6 +233,7 @@ async function runSigintCliTest({
   initialStatus?: "running" | "aborted" | "stopped";
 }): Promise<{
   exitSpy: ReturnType<typeof vi.spyOn>;
+  consoleError: ReturnType<typeof vi.spyOn>;
   orchestratorStop: ReturnType<typeof vi.fn>;
   orchestratorRequestGracefulStop: ReturnType<typeof vi.fn>;
   rendererStop: ReturnType<typeof vi.fn>;
@@ -368,6 +375,7 @@ async function runSigintCliTest({
 
     return {
       exitSpy,
+      consoleError,
       orchestratorStop,
       orchestratorRequestGracefulStop,
       rendererStop,
@@ -2331,6 +2339,9 @@ describe("cli", () => {
       await cliPromise;
 
       expect(exitSpy).toHaveBeenCalledWith(130);
+      expect(consoleError).toHaveBeenCalledWith(
+        `\n  gnhf: Run log: ${stubRunInfo.logPath}\n`,
+      );
     } finally {
       process.argv = originalArgv;
       stdoutWrite.mockRestore();
@@ -2355,6 +2366,44 @@ describe("cli", () => {
     expect(orchestratorStop).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledWith(130);
     exitSpy.mockRestore();
+  });
+
+  it("prints the run log path after an abort", async () => {
+    const { consoleErrorCalls } = await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      {
+        orchestratorGetState: vi.fn(() => ({
+          status: "aborted" as const,
+          gracefulStopRequested: false,
+          interruptHint: "exit" as const,
+          currentIteration: 1,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 1,
+          consecutiveFailures: 1,
+          consecutiveErrors: 0,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: "claude credit balance too low - see gnhf.log",
+          lastAgentError:
+            "claude exited with code 1: Credit balance is too low",
+        })),
+      },
+    );
+
+    expect(consoleErrorCalls).toContainEqual([
+      `\n  gnhf: Run log: ${stubRunInfo.logPath}\n`,
+    ]);
   });
 
   it("forces shutdown on SIGINT when the completed run screen is already showing", async () => {

@@ -8,6 +8,7 @@ import {
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
+  PermanentAgentError,
 } from "./types.js";
 import { shutdownChildProcess } from "./managed-process.js";
 import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
@@ -189,6 +190,10 @@ function extendsUsage(next: TokenUsage, previous: TokenUsage): boolean {
     next.cacheCreationTokens >= previous.cacheCreationTokens &&
     !isSameUsage(next, previous)
   );
+}
+
+function isPermanentClaudeError(stderr: string): boolean {
+  return /credit balance/i.test(stderr);
 }
 
 export class ClaudeAgent implements Agent {
@@ -386,7 +391,15 @@ export class ClaudeAgent implements Agent {
         }
         logStream?.end();
         if (code !== 0 && !closedAfterFinalCleanup) {
-          reject(new Error(`claude exited with code ${code}: ${stderr}`));
+          const detail = `claude exited with code ${code}: ${stderr}`;
+          reject(
+            isPermanentClaudeError(stderr)
+              ? new PermanentAgentError(
+                  "claude credit balance too low - see gnhf.log",
+                  detail,
+                )
+              : new Error(detail),
+          );
           return;
         }
 

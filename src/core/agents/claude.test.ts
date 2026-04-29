@@ -8,7 +8,7 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { ClaudeAgent } from "./claude.js";
-import { buildAgentOutputSchema } from "./types.js";
+import { PermanentAgentError, buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -933,6 +933,28 @@ describe("ClaudeAgent", () => {
     await expect(promise).rejects.toThrow(
       "claude exited with code 1: something broke",
     );
+  });
+
+  it("marks low credit balance exits as permanent", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    proc.stderr.emit(
+      "data",
+      Buffer.from("Credit balance is too low to access Claude Code"),
+    );
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toBeInstanceOf(PermanentAgentError);
+    await expect(promise).rejects.toMatchObject({
+      message: "claude credit balance too low - see gnhf.log",
+      detail:
+        "claude exited with code 1: Credit balance is too low to access Claude Code",
+      cause:
+        "claude exited with code 1: Credit balance is too low to access Claude Code",
+    });
   });
 
   it("rejects when process fails to spawn", async () => {

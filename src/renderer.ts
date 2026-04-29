@@ -137,10 +137,23 @@ export function renderStatsCells(
 export function renderAgentMessageCells(
   message: string | null,
   status: string,
+  lastAgentError?: string | null,
 ): Cell[][] {
   const lines: string[] = [];
   if (status === "waiting") {
     lines.push("waiting (backoff)...");
+    if (lastAgentError) {
+      lines.push(...wordWrap(lastAgentError, MAX_MSG_LINE_LEN, 2));
+    }
+  } else if (status === "aborted" && lastAgentError) {
+    lines.push(
+      ...wordWrap(
+        message ?? "max consecutive failures reached",
+        MAX_MSG_LINE_LEN,
+        1,
+      ),
+    );
+    lines.push(...wordWrap(lastAgentError, MAX_MSG_LINE_LEN, 2));
   } else if (status === "aborted" && !message) {
     lines.push("max consecutive failures reached");
   } else if (!message) {
@@ -199,8 +212,11 @@ export function renderStats(
 export function renderAgentMessage(
   message: string | null,
   status: string,
+  lastAgentError?: string | null,
 ): string[] {
-  return renderAgentMessageCells(message, status).map(rowToString);
+  return renderAgentMessageCells(message, status, lastAgentError).map(
+    rowToString,
+  );
 }
 
 export function renderMoonStrip(
@@ -376,7 +392,11 @@ export function buildContentCells(
     agent: [
       [],
       [],
-      ...renderAgentMessageCells(state.lastMessage, state.status),
+      ...renderAgentMessageCells(
+        state.lastMessage,
+        state.status,
+        state.lastAgentError,
+      ),
     ],
     moon: [[], [], ...moonRows] as Cell[][],
   };

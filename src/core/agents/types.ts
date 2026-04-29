@@ -50,6 +50,16 @@ export interface AgentResult {
   usage: TokenUsage;
 }
 
+export class PermanentAgentError extends Error {
+  detail: string;
+
+  constructor(message: string, detail: string) {
+    super(message, { cause: detail });
+    this.name = "PermanentAgentError";
+    this.detail = detail;
+  }
+}
+
 export type OnUsage = (usage: TokenUsage) => void;
 
 export type OnMessage = (text: string) => void;

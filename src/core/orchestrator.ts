@@ -1,6 +1,11 @@
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
-import type { Agent, AgentOutput, TokenUsage } from "./agents/types.js";
+import {
+  PermanentAgentError,
+  type Agent,
+  type AgentOutput,
+  type TokenUsage,
+} from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 import { appendNotes, toStringArray } from "./run.js";
@@ -47,6 +52,7 @@ export interface OrchestratorState {
   startTime: Date;
   waitingUntil: Date | null;
   lastMessage: string | null;
+  lastAgentError?: string | null;
 }
 
 export interface OrchestratorEvents {
@@ -100,6 +106,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     startTime: new Date(),
     waitingUntil: null,
     lastMessage: null,
+    lastAgentError: null,
   };
 
   constructor(
@@ -497,6 +504,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         error: serializeError(err),
       });
 
+      if (err instanceof PermanentAgentError) {
+        resetHard(this.cwd);
+        this.state.lastAgentError = err.detail;
+        return { type: "aborted", reason: err.message };
+      }
+
       const summary = err instanceof Error ? err.message : String(err);
       return {
         type: "completed",
@@ -528,6 +541,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.state.successCount++;
     this.state.consecutiveFailures = 0;
     this.state.consecutiveErrors = 0;
+    this.state.lastAgentError = null;
     return {
       number: this.state.currentIteration,
       success: true,
@@ -560,8 +574,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     // iteration.
     if (kind === "error") {
       this.state.consecutiveErrors++;
+      this.state.lastAgentError = recordSummary;
     } else {
       this.state.consecutiveErrors = 0;
+      this.state.lastAgentError = null;
     }
     return {
       number: this.state.currentIteration,
