@@ -311,6 +311,50 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("waits 90 seconds for the server to become healthy before timing out", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    try {
+      const proc = createMockProcess();
+      const server = {
+        baseUrl: "http://127.0.0.1:8765",
+        child: proc,
+        cwd: "/repo",
+        detached: true,
+        port: 8765,
+        readyPromise: Promise.resolve(),
+        closed: false,
+        stdout: "",
+        stderr: "",
+      };
+      fetchMock.mockResolvedValue(new Response("not ready", { status: 503 }));
+      let settled = false;
+
+      const promise = agent["waitForHealthy"](server);
+      const expectation = expect(promise).rejects.toThrow(
+        "Timed out waiting for rovodev serve to become ready on port 8765",
+      );
+      promise.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await Promise.resolve();
+
+      await vi.advanceTimersByTimeAsync(89_999);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reuses the existing server process across runs", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
