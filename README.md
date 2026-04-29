@@ -174,15 +174,15 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ### Flags
 
-| Flag                     | Description                                                                | Default                |
-| ------------------------ | -------------------------------------------------------------------------- | ---------------------- |
+| Flag                     | Description                                                                 | Default                |
+| ------------------------ | --------------------------------------------------------------------------- | ---------------------- |
 | `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, or `pi`) | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                           | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                  | unlimited              |
-| `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)         | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)      | `false`                |
-| `--version`              | Show version                                                               |                        |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                            | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                   | unlimited              |
+| `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume  | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)          | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)       | `false`                |
+| `--version`              | Show version                                                                |                        |
 
 ## Configuration
 
@@ -265,8 +265,8 @@ Including a snippet of `gnhf.log` is the single most useful thing you can attach
 | ------------------ | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code        | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period. |
 | Codex              | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                |
-| GitHub Copilot CLI | `--agent copilot`  | Install GitHub Copilot CLI and sign in first.                              | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.             |
-| Pi                 | `--agent pi`       | Install the `pi` CLI and configure a usable provider/model first.          | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                          |
+| GitHub Copilot CLI | `--agent copilot`  | Install GitHub Copilot CLI and sign in first.                              | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.            |
+| Pi                 | `--agent pi`       | Install the `pi` CLI and configure a usable provider/model first.          | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                           |
 | Rovo Dev           | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                       |
 | OpenCode           | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.             |
 
