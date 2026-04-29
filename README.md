@@ -137,7 +137,7 @@ npm link
 
 - **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
 - **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, while hard agent errors use exponential backoff
-- **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met; uncommitted work is rolled back in either case, and aborted interactive runs keep the final TUI state visible until you press Ctrl+C to exit
+- **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met; resumed runs reuse the saved stop condition unless you pass a new value, or `--stop-when ""` to clear it; uncommitted work is rolled back in either case, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
@@ -177,7 +177,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, or `copilot`)      | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                           | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                  | unlimited              |
-| `--stop-when <cond>`     | End the loop when the agent reports this natural-language condition is met | unlimited              |
+| `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)         | config file (`on`)     |
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)      | `false`                |
 | `--version`              | Show version                                                               |                        |

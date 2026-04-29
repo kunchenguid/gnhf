@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -26,6 +27,8 @@ const stubRunInfo: RunInfo = {
   logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
   baseCommit: "abc123",
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
+  stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
+  stopWhen: undefined,
 };
 
 interface CliMockOverrides {
@@ -282,6 +285,7 @@ async function runSigintCliTest({
 
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
     loadConfig: vi.fn(() => ({
       agent: "claude",
       agentPathOverride: {},
@@ -381,6 +385,152 @@ async function importCliExpectError(timeoutMs = 250): Promise<unknown> {
       setTimeout(() => reject(new Error("cli import timed out")), timeoutMs);
     }),
   ]);
+}
+
+async function runCliResumeWithActualRun(
+  args: string[],
+  storedStopWhen?: string,
+) {
+  const originalArgv = [...process.argv];
+  const originalCwd = process.cwd();
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+  const stdoutWrite = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation(() => true);
+  const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+    code?: string | number | null,
+  ) => {
+    throw new Error(
+      `process.exit unexpectedly called with ${JSON.stringify(code)}`,
+    );
+  }) as typeof process.exit);
+
+  const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-resume-test-"));
+  const runDir = join(tempDir, ".gnhf", "runs", "existing-run");
+  const promptPath = join(runDir, "prompt.md");
+  const baseCommitPath = join(runDir, "base-commit");
+  const stopWhenPath = join(runDir, "stop-when");
+  const schemaPath = join(runDir, "output-schema.json");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(promptPath, "existing prompt", "utf-8");
+  writeFileSync(baseCommitPath, "abc123\n", "utf-8");
+  if (storedStopWhen !== undefined) {
+    writeFileSync(stopWhenPath, `${storedStopWhen}\n`, "utf-8");
+  }
+
+  const appendDebugLog = vi.fn();
+  const createAgent = vi.fn(() => ({ name: "claude" }));
+  const orchestratorCtor = vi.fn();
+
+  vi.resetModules();
+  vi.doUnmock("./core/run.js");
+  vi.doMock("./core/config.js", () => ({
+    AGENT_NAMES: TEST_AGENT_NAMES,
+    loadConfig: vi.fn(() => ({
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    })),
+  }));
+  vi.doMock("./core/debug-log.js", () => ({
+    appendDebugLog,
+    initDebugLog: vi.fn(),
+    serializeError: vi.fn(),
+  }));
+  vi.doMock("./core/git.js", () => ({
+    ensureCleanWorkingTree: vi.fn(),
+    createBranch: vi.fn(),
+    getHeadCommit: vi.fn(() => "abc123"),
+    getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
+    getRepoRootDir: vi.fn(() => tempDir),
+    createWorktree: vi.fn(),
+    removeWorktree: vi.fn(),
+  }));
+  vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
+  vi.doMock("./core/sleep.js", () => ({
+    startSleepPrevention: vi.fn(() =>
+      Promise.resolve({ type: "skipped", reason: "unsupported" }),
+    ),
+  }));
+  vi.doMock("./core/orchestrator.js", () => ({
+    Orchestrator: class MockOrchestrator {
+      constructor(...ctorArgs: unknown[]) {
+        orchestratorCtor(...ctorArgs);
+      }
+      start = vi.fn(() => Promise.resolve());
+      stop = vi.fn();
+      on = vi.fn();
+      getState = vi.fn(() => ({
+        status: "completed" as const,
+        currentIteration: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        commitCount: 0,
+        iterations: [],
+        successCount: 0,
+        failCount: 0,
+        consecutiveFailures: 0,
+        startTime: new Date("2026-01-01T00:00:00Z"),
+        waitingUntil: null,
+        lastMessage: null,
+      }));
+    },
+  }));
+  vi.doMock("./renderer.js", () => ({
+    Renderer: class MockRenderer {
+      start = vi.fn();
+      stop = vi.fn();
+      waitUntilExit = vi.fn(() => Promise.resolve());
+    },
+  }));
+
+  let result!: {
+    appendDebugLog: typeof appendDebugLog;
+    createAgent: typeof createAgent;
+    orchestratorCtor: typeof orchestratorCtor;
+    schema: Record<string, unknown>;
+    stopWhenExists: boolean;
+    stopWhenContent?: string;
+  };
+
+  try {
+    process.chdir(tempDir);
+    process.argv = ["node", "gnhf", ...args];
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    await import("./cli.js");
+
+    const stopWhenExists = existsSync(stopWhenPath);
+    result = {
+      appendDebugLog,
+      createAgent,
+      orchestratorCtor,
+      schema: JSON.parse(readFileSync(schemaPath, "utf-8")) as Record<
+        string,
+        unknown
+      >,
+      stopWhenExists,
+      stopWhenContent: stopWhenExists
+        ? readFileSync(stopWhenPath, "utf-8")
+        : undefined,
+    };
+  } finally {
+    process.argv = originalArgv;
+    process.chdir(originalCwd);
+    if (originalIsTTY) {
+      Object.defineProperty(process.stdin, "isTTY", originalIsTTY);
+    }
+    stdoutWrite.mockRestore();
+    exitSpy.mockRestore();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  return result;
 }
 
 describe("cli", () => {
@@ -563,8 +713,89 @@ describe("cli", () => {
       stubRunInfo,
       undefined,
       undefined,
-      { includeStopField: true },
+      { includeStopField: true, stopWhen: "all tests pass" },
     );
+  });
+
+  it("reuses the persisted stop-when condition when resuming without --stop-when", async () => {
+    const { appendDebugLog, createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], "all tests pass");
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ stopWhen: "all tests pass" }),
+      undefined,
+      undefined,
+      { includeStopField: true, stopWhen: "all tests pass" },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toMatchObject({
+      stopWhen: "all tests pass",
+    });
+    expect(schema).toMatchObject({
+      properties: expect.objectContaining({
+        should_fully_stop: { type: "boolean" },
+      }),
+    });
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:start",
+      expect.objectContaining({ stopWhen: "all tests pass" }),
+    );
+  });
+
+  it("overwrites the persisted stop-when condition when resuming with a new value", async () => {
+    const { orchestratorCtor, schema, stopWhenContent } =
+      await runCliResumeWithActualRun(
+        ["--stop-when", "all checks pass"],
+        "old condition",
+      );
+
+    expect(stopWhenContent).toBe("all checks pass\n");
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toMatchObject({
+      stopWhen: "all checks pass",
+    });
+    expect(schema).toMatchObject({
+      properties: expect.objectContaining({
+        should_fully_stop: { type: "boolean" },
+      }),
+    });
+  });
+
+  it("clears the persisted stop-when condition when resuming with an empty value", async () => {
+    const { orchestratorCtor, schema, stopWhenExists } =
+      await runCliResumeWithActualRun(["--stop-when", ""], "old condition");
+
+    expect(stopWhenExists).toBe(false);
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+    });
+    expect(
+      (schema.properties as Record<string, unknown>).should_fully_stop,
+    ).toBe(undefined);
+    expect(schema.required).not.toContain("should_fully_stop");
+  });
+
+  it("keeps resume behavior unchanged when no stop-when condition exists", async () => {
+    const { createAgent, orchestratorCtor, schema, stopWhenExists } =
+      await runCliResumeWithActualRun([]);
+
+    expect(stopWhenExists).toBe(false);
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ stopWhen: undefined }),
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+    });
+    expect(
+      (schema.properties as Record<string, unknown>).should_fully_stop,
+    ).toBe(undefined);
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {

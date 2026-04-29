@@ -31,6 +31,7 @@ import {
 } from "./core/git.js";
 import {
   type RunInfo,
+  type RunSchemaOptions,
   setupRun,
   resumeRun,
   getLastIterationNumber,
@@ -95,10 +96,25 @@ function isAgentName(name: string): name is AgentName {
   return AGENT_NAME_SET.has(name);
 }
 
+function buildSchemaOptions(stopWhen: string | undefined): RunSchemaOptions {
+  return stopWhen === undefined
+    ? { includeStopField: false }
+    : { includeStopField: true, stopWhen };
+}
+
+function buildResumeSchemaOptions(
+  stopWhen: string | undefined,
+): RunSchemaOptions {
+  if (stopWhen === "") {
+    return { includeStopField: false, clearStopWhen: true };
+  }
+  return buildSchemaOptions(stopWhen);
+}
+
 function initializeNewBranch(
   prompt: string,
   cwd: string,
-  schemaOptions: { includeStopField: boolean },
+  schemaOptions: RunSchemaOptions,
 ): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
@@ -117,7 +133,7 @@ interface WorktreeRunResult {
 function initializeWorktreeRun(
   prompt: string,
   cwd: string,
-  schemaOptions: { includeStopField: boolean },
+  schemaOptions: RunSchemaOptions,
 ): WorktreeRunResult {
   // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
@@ -408,9 +424,10 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
-      const schemaOptions = {
-        includeStopField: options.stopWhen !== undefined,
-      };
+      const cliStopWhen =
+        options.stopWhen === "" ? undefined : options.stopWhen;
+      let effectiveStopWhen = cliStopWhen;
+      let schemaOptions = buildSchemaOptions(effectiveStopWhen);
 
       let runInfo;
       let startIteration = 0;
@@ -451,12 +468,23 @@ program
         });
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
-        const existing = resumeRun(existingRunId, cwd, schemaOptions);
+        let existing = resumeRun(existingRunId, cwd, {
+          includeStopField: false,
+        });
         const existingPrompt = readFileSync(existing.promptPath, "utf-8");
 
         if (!prompt || prompt === existingPrompt) {
+          existing = resumeRun(
+            existingRunId,
+            cwd,
+            buildResumeSchemaOptions(options.stopWhen),
+          );
+          const resumeStopWhen = existing.stopWhen;
+          const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
           prompt = existingPrompt;
           runInfo = existing;
+          effectiveStopWhen = resumeStopWhen;
+          schemaOptions = resumeSchemaOptions;
           startIteration = getLastIterationNumber(existing);
         } else {
           const answer = await ask(
@@ -471,15 +499,26 @@ program
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
+            existing = resumeRun(
+              existingRunId,
+              cwd,
+              buildResumeSchemaOptions(options.stopWhen),
+            );
+            const resumeStopWhen = existing.stopWhen;
+            const resumeSchemaOptions = buildSchemaOptions(resumeStopWhen);
             runInfo = setupRun(
               existingRunId,
               prompt,
               existing.baseCommit,
               cwd,
-              schemaOptions,
+              resumeSchemaOptions,
             );
+            effectiveStopWhen = resumeStopWhen;
+            schemaOptions = resumeSchemaOptions;
             startIteration = getLastIterationNumber(existing);
           } else if (answer === "n") {
+            effectiveStopWhen = cliStopWhen;
+            schemaOptions = buildSchemaOptions(effectiveStopWhen);
             runInfo = initializeNewBranch(prompt, cwd, schemaOptions);
           } else {
             process.exit(0);
@@ -536,7 +575,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
-        stopWhen: options.stopWhen,
+        stopWhen: effectiveStopWhen,
         preventSleep: config.preventSleep,
         agentArgsOverride: config.agentArgsOverride?.[config.agent],
         worktree: options.worktree,
@@ -563,7 +602,7 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
-          stopWhen: options.stopWhen,
+          stopWhen: effectiveStopWhen,
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;

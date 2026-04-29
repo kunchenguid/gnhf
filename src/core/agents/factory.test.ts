@@ -74,6 +74,8 @@ const stubRunInfo: RunInfo = {
   logPath: "/repo/.gnhf/runs/test-run/gnhf.log",
   baseCommit: "abc123",
   baseCommitPath: "/repo/.gnhf/runs/test-run/base-commit",
+  stopWhenPath: "/repo/.gnhf/runs/test-run/stop-when",
+  stopWhen: undefined,
 };
 
 const noStopSchema = {
