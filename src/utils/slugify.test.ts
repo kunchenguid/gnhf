@@ -26,10 +26,10 @@ describe("slugifyPrompt", () => {
     expect(slug).not.toMatch(/-$/);
   });
 
-  it("produces deterministic output (same prompt -> same result)", () => {
-    const a = slugifyPrompt("deterministic test");
-    const b = slugifyPrompt("deterministic test");
-    expect(a).toBe(b);
+  it("produces a fresh hash each call so repeated prompts don't collide", () => {
+    const a = slugifyPrompt("repeat me");
+    const b = slugifyPrompt("repeat me");
+    expect(a).not.toBe(b);
   });
 
   it("produces different hashes for different prompts", () => {

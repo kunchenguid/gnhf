@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 export function slugifyPrompt(prompt: string): string {
   const slug = prompt
@@ -8,7 +8,7 @@ export function slugifyPrompt(prompt: string): string {
     .slice(0, 20)
     .replace(/-+$/, "");
 
-  const hash = createHash("sha256").update(prompt).digest("hex").slice(0, 6);
+  const hash = randomBytes(3).toString("hex");
 
   return `gnhf/${slug}-${hash}`;
 }
