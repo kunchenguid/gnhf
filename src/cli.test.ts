@@ -45,6 +45,7 @@ interface CliMockOverrides {
   env?: Record<string, string | undefined>;
   getCurrentBranch?: ReturnType<typeof vi.fn>;
   getRepoRootDir?: ReturnType<typeof vi.fn>;
+  createBranch?: ReturnType<typeof vi.fn>;
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
@@ -134,7 +135,7 @@ async function runCliWithMocks(
   }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
-    createBranch: vi.fn(),
+    createBranch: overrides.createBranch ?? vi.fn(),
     getHeadCommit: vi.fn(() => "abc123"),
     getCurrentBranch: overrides.getCurrentBranch ?? vi.fn(() => "main"),
     getRepoRootDir: overrides.getRepoRootDir ?? vi.fn(() => "/repo"),
@@ -2715,6 +2716,58 @@ describe("cli", () => {
       "run:start",
       expect.objectContaining({ worktree: true }),
     );
+  });
+
+  it("suffixes new branch names when the generated branch already exists", async () => {
+    const createBranch = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("fatal: a branch named already exists");
+      })
+      .mockImplementationOnce(() => {});
+
+    await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createBranch },
+    );
+
+    const firstBranch = createBranch.mock.calls[0]?.[0] as string;
+    expect(createBranch).toHaveBeenCalledTimes(2);
+    expect(createBranch.mock.calls[1]?.[0]).toBe(`${firstBranch}-1`);
+  });
+
+  it("suffixes worktree branch and path when the generated worktree collides", async () => {
+    const createWorktree = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("fatal: already exists");
+      })
+      .mockImplementationOnce(() => {});
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createWorktree },
+    );
+
+    const firstPath = createWorktree.mock.calls[0]?.[1] as string;
+    const firstBranch = createWorktree.mock.calls[0]?.[2] as string;
+    expect(createWorktree).toHaveBeenCalledTimes(2);
+    expect(createWorktree.mock.calls[1]?.[1]).toBe(`${firstPath}-1`);
+    expect(createWorktree.mock.calls[1]?.[2]).toBe(`${firstBranch}-1`);
   });
 
   it("exits with error when --worktree is used from a gnhf branch", async () => {
