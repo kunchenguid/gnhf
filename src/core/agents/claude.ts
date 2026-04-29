@@ -193,7 +193,7 @@ function extendsUsage(next: TokenUsage, previous: TokenUsage): boolean {
 }
 
 function isPermanentClaudeError(stderr: string): boolean {
-  return /credit balance/i.test(stderr);
+  return /credit balance\s+is\s+too\s+low/i.test(stderr);
 }
 
 export class ClaudeAgent implements Agent {

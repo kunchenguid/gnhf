@@ -957,6 +957,24 @@ describe("ClaudeAgent", () => {
     });
   });
 
+  it("treats other credit balance failures as retryable", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    proc.stderr.emit(
+      "data",
+      Buffer.from("Failed to fetch credit balance: temporary network failure"),
+    );
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.not.toBeInstanceOf(PermanentAgentError);
+    await expect(promise).rejects.toThrow(
+      "claude exited with code 1: Failed to fetch credit balance: temporary network failure",
+    );
+  });
+
   it("rejects when process fails to spawn", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
