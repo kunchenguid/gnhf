@@ -144,6 +144,22 @@ export function removeWorktree(baseCwd: string, worktreePath: string): void {
   git(["worktree", "remove", "--force", worktreePath], baseCwd);
 }
 
+export function listWorktreePaths(baseCwd: string): Set<string> {
+  let output: string;
+  try {
+    output = git(["worktree", "list", "--porcelain"], baseCwd);
+  } catch {
+    return new Set();
+  }
+  const paths = new Set<string>();
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      paths.add(resolvePath(line.slice(9)));
+    }
+  }
+  return paths;
+}
+
 // Returns true when the given path is registered as a worktree of baseCwd's
 // repository. Used to decide whether to reuse a preserved worktree on a
 // subsequent invocation instead of failing on "branch already exists".
@@ -152,17 +168,5 @@ export function removeWorktree(baseCwd: string, worktreePath: string): void {
 // can emit forward-slash paths on Windows while `path.join` uses platform
 // separators; plain string equality would then miss a real match.
 export function worktreeExists(baseCwd: string, worktreePath: string): boolean {
-  let output: string;
-  try {
-    output = git(["worktree", "list", "--porcelain"], baseCwd);
-  } catch {
-    return false;
-  }
-  const target = resolvePath(worktreePath);
-  for (const line of output.split("\n")) {
-    if (line.startsWith("worktree ") && resolvePath(line.slice(9)) === target) {
-      return true;
-    }
-  }
-  return false;
+  return listWorktreePaths(baseCwd).has(resolvePath(worktreePath));
 }

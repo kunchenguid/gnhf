@@ -144,7 +144,7 @@ npm link
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
 - **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
-- **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit
+- **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
 
 ### Worktree Mode
 
@@ -158,6 +158,7 @@ Pass `--worktree` to run each agent in an isolated [git worktree](https://git-sc
 ```
 
 - Worktrees with commits are **preserved** after the run so you can review, merge, or cherry-pick the work. gnhf prints the path and cleanup command.
+- Re-running the same prompt with `--worktree` resumes a preserved matching worktree when possible; otherwise gnhf creates a suffixed worktree such as `<run-slug>-1` if the original name is unavailable.
 - Worktrees with **no commits** are automatically removed on exit.
 - `--worktree` must be run from a non-gnhf branch (typically `main`).
 

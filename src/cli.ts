@@ -29,7 +29,7 @@ import {
   getRepoRootDir,
   createWorktree,
   removeWorktree,
-  worktreeExists,
+  listWorktreePaths,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -120,10 +120,31 @@ function initializeNewBranch(
 ): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
-  const branchName = slugifyPrompt(prompt);
-  createBranch(branchName, cwd);
+  const branchName = createBranchWithSuffix(slugifyPrompt(prompt), cwd);
   const runId = branchName.split("/")[1]!;
   return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
+}
+
+function branchNameWithSuffix(branchName: string, suffix: number): string {
+  return suffix === 0 ? branchName : `${branchName}-${suffix}`;
+}
+
+function isCollisionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already exists|exists already|would be overwritten/i.test(message);
+}
+
+function createBranchWithSuffix(branchName: string, cwd: string): string {
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const candidate = branchNameWithSuffix(branchName, suffix);
+    try {
+      createBranch(candidate, cwd);
+      return candidate;
+    } catch (error) {
+      if (!isCollisionError(error)) throw error;
+    }
+  }
+  throw new Error(`Unable to create a unique branch name for ${branchName}`);
 }
 
 interface WorktreeRunResult {
@@ -144,62 +165,104 @@ function initializeWorktreeRun(
   const repoRoot = getRepoRootDir(cwd);
   const baseCommit = getHeadCommit(cwd);
   const branchName = slugifyPrompt(prompt);
+  const makeWorktreePath = (runId: string) =>
+    join(dirname(repoRoot), `${basename(repoRoot)}-gnhf-worktrees`, runId);
   const runId = branchName.split("/")[1]!;
-  const worktreePath = join(
-    dirname(repoRoot),
-    `${basename(repoRoot)}-gnhf-worktrees`,
-    runId,
-  );
+  const worktreePath = makeWorktreePath(runId);
+  const registeredWorktreePaths = listWorktreePaths(repoRoot);
 
-  // If a prior invocation with the same prompt preserved its worktree,
-  // reuse it instead of failing on "branch already exists". The preserved
-  // worktree already carries its own .gnhf/runs/<runId>/ state, so resuming
-  // picks up the iteration counter from there. Verify the worktree is still
-  // on its own gnhf/<runId> branch before resuming so a user who manually
-  // switched branches or detached HEAD in the preserved worktree gets a
-  // clear error instead of silently writing new commits to the wrong ref.
-  if (
-    worktreeExists(repoRoot, worktreePath) &&
-    existsSync(join(worktreePath, ".gnhf", "runs", runId))
-  ) {
+  const resumePreservedWorktree = (
+    candidateBranchName: string,
+    candidateRunId: string,
+    candidateWorktreePath: string,
+  ): WorktreeRunResult | null => {
+    if (
+      !registeredWorktreePaths.has(resolve(candidateWorktreePath)) ||
+      !existsSync(join(candidateWorktreePath, ".gnhf", "runs", candidateRunId))
+    ) {
+      return null;
+    }
+
     let worktreeBranch: string;
     try {
-      worktreeBranch = getCurrentBranch(worktreePath);
+      worktreeBranch = getCurrentBranch(candidateWorktreePath);
     } catch (error) {
       throw new Error(
-        `Preserved worktree at ${worktreePath} is in an unexpected state ` +
+        `Preserved worktree at ${candidateWorktreePath} is in an unexpected state ` +
           `(${error instanceof Error ? error.message : String(error)}). ` +
           `Fix the worktree manually or remove it with ` +
-          `"git worktree remove ${worktreePath}" before re-running.`,
+          `"git worktree remove ${candidateWorktreePath}" before re-running.`,
       );
     }
-    if (worktreeBranch !== branchName) {
+    if (worktreeBranch !== candidateBranchName) {
       throw new Error(
-        `Preserved worktree at ${worktreePath} is on branch ` +
-          `"${worktreeBranch}" rather than "${branchName}". ` +
-          `Restore it to "${branchName}" with "git -C ${worktreePath} ` +
-          `checkout ${branchName}", or remove the worktree with ` +
-          `"git worktree remove ${worktreePath}" to start fresh.`,
+        `Preserved worktree at ${candidateWorktreePath} is on branch ` +
+          `"${worktreeBranch}" rather than "${candidateBranchName}". ` +
+          `Restore it to "${candidateBranchName}" with "git -C ${candidateWorktreePath} ` +
+          `checkout ${candidateBranchName}", or remove the worktree with ` +
+          `"git worktree remove ${candidateWorktreePath}" to start fresh.`,
       );
     }
-    const runInfo = resumeRun(runId, worktreePath, schemaOptions);
+    const runInfo = resumeRun(
+      candidateRunId,
+      candidateWorktreePath,
+      schemaOptions,
+    );
     return {
       runInfo,
-      worktreePath,
-      effectiveCwd: worktreePath,
+      worktreePath: candidateWorktreePath,
+      effectiveCwd: candidateWorktreePath,
       resumed: true,
     };
-  }
+  };
 
-  createWorktree(repoRoot, worktreePath, branchName);
+  let createdBranchName = branchName;
+  let createdRunId = runId;
+  let createdWorktreePath = worktreePath;
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const candidateBranchName = branchNameWithSuffix(branchName, suffix);
+    const candidateRunId = candidateBranchName.split("/")[1]!;
+    const candidateWorktreePath = makeWorktreePath(candidateRunId);
+    const resumed = resumePreservedWorktree(
+      candidateBranchName,
+      candidateRunId,
+      candidateWorktreePath,
+    );
+    if (resumed) return resumed;
+  }
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    createdBranchName = branchNameWithSuffix(branchName, suffix);
+    createdRunId = createdBranchName.split("/")[1]!;
+    createdWorktreePath = makeWorktreePath(createdRunId);
+    const resumed = resumePreservedWorktree(
+      createdBranchName,
+      createdRunId,
+      createdWorktreePath,
+    );
+    if (resumed) return resumed;
+    try {
+      createWorktree(repoRoot, createdWorktreePath, createdBranchName);
+      break;
+    } catch (error) {
+      if (!isCollisionError(error)) throw error;
+      if (suffix === 99) {
+        throw new Error(`Unable to create a unique worktree for ${branchName}`);
+      }
+    }
+  }
   const runInfo = setupRun(
-    runId,
+    createdRunId,
     prompt,
     baseCommit,
-    worktreePath,
+    createdWorktreePath,
     schemaOptions,
   );
-  return { runInfo, worktreePath, effectiveCwd: worktreePath, resumed: false };
+  return {
+    runInfo,
+    worktreePath: createdWorktreePath,
+    effectiveCwd: createdWorktreePath,
+    resumed: false,
+  };
 }
 
 function openPromptTerminal(): {

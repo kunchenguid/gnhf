@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -45,9 +46,12 @@ interface CliMockOverrides {
   env?: Record<string, string | undefined>;
   getCurrentBranch?: ReturnType<typeof vi.fn>;
   getRepoRootDir?: ReturnType<typeof vi.fn>;
+  createBranch?: ReturnType<typeof vi.fn>;
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
+  listWorktreePaths?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
+  resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
@@ -134,17 +138,18 @@ async function runCliWithMocks(
   }));
   vi.doMock("./core/git.js", () => ({
     ensureCleanWorkingTree: vi.fn(),
-    createBranch: vi.fn(),
+    createBranch: overrides.createBranch ?? vi.fn(),
     getHeadCommit: vi.fn(() => "abc123"),
     getCurrentBranch: overrides.getCurrentBranch ?? vi.fn(() => "main"),
     getRepoRootDir: overrides.getRepoRootDir ?? vi.fn(() => "/repo"),
     createWorktree: overrides.createWorktree ?? vi.fn(),
     removeWorktree: overrides.removeWorktree ?? vi.fn(),
+    listWorktreePaths: overrides.listWorktreePaths ?? vi.fn(() => new Set()),
     worktreeExists: overrides.worktreeExists ?? vi.fn(() => false),
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),
-    resumeRun: vi.fn(),
+    resumeRun: overrides.resumeRun ?? vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
@@ -2715,6 +2720,195 @@ describe("cli", () => {
       "run:start",
       expect.objectContaining({ worktree: true }),
     );
+  });
+
+  it("suffixes new branch names when the generated branch already exists", async () => {
+    const createBranch = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("fatal: a branch named already exists");
+      })
+      .mockImplementationOnce(() => {});
+
+    await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createBranch },
+    );
+
+    const firstBranch = createBranch.mock.calls[0]?.[0] as string;
+    expect(createBranch).toHaveBeenCalledTimes(2);
+    expect(createBranch.mock.calls[1]?.[0]).toBe(`${firstBranch}-1`);
+  });
+
+  it("suffixes worktree branch and path when the generated worktree collides", async () => {
+    const createWorktree = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("fatal: already exists");
+      })
+      .mockImplementationOnce(() => {});
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createWorktree },
+    );
+
+    const firstPath = createWorktree.mock.calls[0]?.[1] as string;
+    const firstBranch = createWorktree.mock.calls[0]?.[2] as string;
+    expect(createWorktree).toHaveBeenCalledTimes(2);
+    expect(createWorktree.mock.calls[1]?.[1]).toBe(`${firstPath}-1`);
+    expect(createWorktree.mock.calls[1]?.[2]).toBe(`${firstBranch}-1`);
+  });
+
+  it("queries git worktrees once when no preserved worktree exists", async () => {
+    const listWorktreePaths = vi.fn(() => new Set());
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { listWorktreePaths },
+    );
+
+    expect(listWorktreePaths).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes a preserved suffixed worktree instead of creating another one", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const suffixedRunId = `${runId}-1`;
+    const suffixedBranch = `gnhf/${suffixedRunId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const suffixedWorktreePath = join(worktreeRoot, suffixedRunId);
+    mkdirSync(join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId), {
+      recursive: true,
+    });
+
+    const createWorktree = vi.fn((_repo, path) => {
+      if (path === join(worktreeRoot, runId)) {
+        throw new Error("fatal: already exists");
+      }
+      throw new Error("should resume preserved suffixed worktree");
+    });
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: suffixedRunId,
+      runDir: join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId),
+    }));
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          createWorktree,
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === suffixedWorktreePath ? suffixedBranch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([suffixedWorktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(
+        suffixedRunId,
+        suffixedWorktreePath,
+        { includeStopField: false },
+      );
+      expect(createWorktree).not.toHaveBeenCalled();
+      expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes a preserved suffixed worktree before creating an available unsuffixed one", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const suffixedRunId = `${runId}-1`;
+    const suffixedBranch = `gnhf/${suffixedRunId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const suffixedWorktreePath = join(worktreeRoot, suffixedRunId);
+    mkdirSync(join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId), {
+      recursive: true,
+    });
+
+    const createWorktree = vi.fn(() => {
+      throw new Error("should resume preserved suffixed worktree");
+    });
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: suffixedRunId,
+      runDir: join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId),
+    }));
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          createWorktree,
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === suffixedWorktreePath ? suffixedBranch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([suffixedWorktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(
+        suffixedRunId,
+        suffixedWorktreePath,
+        { includeStopField: false },
+      );
+      expect(createWorktree).not.toHaveBeenCalled();
+      expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("exits with error when --worktree is used from a gnhf branch", async () => {
