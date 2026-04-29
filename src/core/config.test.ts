@@ -22,7 +22,7 @@ const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
-  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n#   copilot: /path/to/custom-copilot\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n#   copilot:\n#     - --model\n#     - gpt-5.4\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
+  `# Agent to use by default\nagent: ${agent}\n\n# Custom paths to agent binaries (optional)\n# Paths may be absolute, bare executable names on PATH,\n# ~-prefixed, or relative to this config directory.\n# Note: rovodev overrides must point to an acli-compatible binary.\n# agentPathOverride:\n#   claude: /path/to/custom-claude\n#   codex: /path/to/custom-codex\n#   copilot: /path/to/custom-copilot\n#   pi: /path/to/custom-pi\n\n# Per-agent CLI arg overrides (optional)\n# agentArgsOverride:\n#   codex:\n#     - -m\n#     - gpt-5.4\n#     - -c\n#     - model_reasoning_effort="high"\n#     - --full-auto\n#   copilot:\n#     - --model\n#     - gpt-5.4\n#   pi:\n#     - --provider\n#     - openai-codex\n#     - --model\n#     - gpt-5.5\n#     - --thinking\n#     - high\n\n# Abort after this many consecutive failures\nmaxConsecutiveFailures: 3\n\n# Prevent the machine from sleeping during a run\npreventSleep: true\n`;
 
 describe("loadConfig", () => {
   beforeEach(() => {
@@ -205,6 +205,29 @@ describe("loadConfig", () => {
     });
   });
 
+  it("supports bootstrapping pi as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "pi" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      BOOTSTRAP_CONFIG_TEMPLATE("pi"),
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "pi",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
+  });
+
   it("reads config from ~/.gnhf/config.yml", () => {
     mockReadFileSync.mockReturnValue("agent: codex\n");
 
@@ -313,6 +336,13 @@ describe("loadConfig", () => {
         "  copilot:",
         "    - --model",
         "    - gpt-5.4",
+        "  pi:",
+        "    - --provider",
+        "    - openai-codex",
+        "    - --model",
+        "    - gpt-5.5",
+        "    - --thinking",
+        "    - high",
         "",
       ].join("\n"),
     );
@@ -325,6 +355,14 @@ describe("loadConfig", () => {
       rovodev: ["--profile", "work"],
       opencode: ["--model", "gpt-5"],
       copilot: ["--model", "gpt-5.4"],
+      pi: [
+        "--provider",
+        "openai-codex",
+        "--model",
+        "gpt-5.5",
+        "--thinking",
+        "high",
+      ],
     });
   });
 
@@ -492,6 +530,43 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig()).toThrow(
       /agentArgsOverride\.copilot\[0\].*managed by gnhf/,
+    );
+  });
+
+  it("allows safe agentArgsOverride.pi flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  pi:\n    - --provider\n    - openai-codex\n    - --model\n    - gpt-5.5\n    - --thinking\n    - high\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      pi: [
+        "--provider",
+        "openai-codex",
+        "--model",
+        "gpt-5.5",
+        "--thinking",
+        "high",
+      ],
+    });
+  });
+
+  it.each([
+    "--mode",
+    "--mode=json",
+    "-p",
+    "--session",
+    "--no-session",
+    "--api-key",
+    "--api-key=secret",
+  ])("throws when agentArgsOverride.pi contains reserved flag %s", (flag) => {
+    mockReadFileSync.mockReturnValue(
+      `agentArgsOverride:\n  pi:\n    - ${flag}\n`,
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /agentArgsOverride\.pi\[0\].*managed by gnhf/,
     );
   });
 });
