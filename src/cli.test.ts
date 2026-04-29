@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -49,6 +50,7 @@ interface CliMockOverrides {
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
+  resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
@@ -145,7 +147,7 @@ async function runCliWithMocks(
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),
-    resumeRun: vi.fn(),
+    resumeRun: overrides.resumeRun ?? vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
@@ -2768,6 +2770,67 @@ describe("cli", () => {
     expect(createWorktree).toHaveBeenCalledTimes(2);
     expect(createWorktree.mock.calls[1]?.[1]).toBe(`${firstPath}-1`);
     expect(createWorktree.mock.calls[1]?.[2]).toBe(`${firstBranch}-1`);
+  });
+
+  it("resumes a preserved suffixed worktree instead of creating another one", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const suffixedRunId = `${runId}-1`;
+    const suffixedBranch = `gnhf/${suffixedRunId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const suffixedWorktreePath = join(worktreeRoot, suffixedRunId);
+    mkdirSync(join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId), {
+      recursive: true,
+    });
+
+    const createWorktree = vi.fn((_repo, path) => {
+      if (path === join(worktreeRoot, runId)) {
+        throw new Error("fatal: already exists");
+      }
+      throw new Error("should resume preserved suffixed worktree");
+    });
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: suffixedRunId,
+      runDir: join(suffixedWorktreePath, ".gnhf", "runs", suffixedRunId),
+    }));
+
+    try {
+      const { orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          createWorktree,
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === suffixedWorktreePath ? suffixedBranch : "main",
+          ),
+          worktreeExists: vi.fn((_repo, path) => path === suffixedWorktreePath),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(
+        suffixedRunId,
+        suffixedWorktreePath,
+        { includeStopField: false },
+      );
+      expect(createWorktree).toHaveBeenCalledTimes(1);
+      expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(suffixedWorktreePath);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("exits with error when --worktree is used from a gnhf branch", async () => {

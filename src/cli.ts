@@ -170,45 +170,50 @@ function initializeWorktreeRun(
   const runId = branchName.split("/")[1]!;
   const worktreePath = makeWorktreePath(runId);
 
-  // If a prior invocation with the same prompt preserved its worktree,
-  // reuse it instead of failing on "branch already exists". The preserved
-  // worktree already carries its own .gnhf/runs/<runId>/ state, so resuming
-  // picks up the iteration counter from there. Verify the worktree is still
-  // on its own gnhf/<runId> branch before resuming so a user who manually
-  // switched branches or detached HEAD in the preserved worktree gets a
-  // clear error instead of silently writing new commits to the wrong ref.
-  if (
-    worktreeExists(repoRoot, worktreePath) &&
-    existsSync(join(worktreePath, ".gnhf", "runs", runId))
-  ) {
+  const resumePreservedWorktree = (
+    candidateBranchName: string,
+    candidateRunId: string,
+    candidateWorktreePath: string,
+  ): WorktreeRunResult | null => {
+    if (
+      !worktreeExists(repoRoot, candidateWorktreePath) ||
+      !existsSync(join(candidateWorktreePath, ".gnhf", "runs", candidateRunId))
+    ) {
+      return null;
+    }
+
     let worktreeBranch: string;
     try {
-      worktreeBranch = getCurrentBranch(worktreePath);
+      worktreeBranch = getCurrentBranch(candidateWorktreePath);
     } catch (error) {
       throw new Error(
-        `Preserved worktree at ${worktreePath} is in an unexpected state ` +
+        `Preserved worktree at ${candidateWorktreePath} is in an unexpected state ` +
           `(${error instanceof Error ? error.message : String(error)}). ` +
           `Fix the worktree manually or remove it with ` +
-          `"git worktree remove ${worktreePath}" before re-running.`,
+          `"git worktree remove ${candidateWorktreePath}" before re-running.`,
       );
     }
-    if (worktreeBranch !== branchName) {
+    if (worktreeBranch !== candidateBranchName) {
       throw new Error(
-        `Preserved worktree at ${worktreePath} is on branch ` +
-          `"${worktreeBranch}" rather than "${branchName}". ` +
-          `Restore it to "${branchName}" with "git -C ${worktreePath} ` +
-          `checkout ${branchName}", or remove the worktree with ` +
-          `"git worktree remove ${worktreePath}" to start fresh.`,
+        `Preserved worktree at ${candidateWorktreePath} is on branch ` +
+          `"${worktreeBranch}" rather than "${candidateBranchName}". ` +
+          `Restore it to "${candidateBranchName}" with "git -C ${candidateWorktreePath} ` +
+          `checkout ${candidateBranchName}", or remove the worktree with ` +
+          `"git worktree remove ${candidateWorktreePath}" to start fresh.`,
       );
     }
-    const runInfo = resumeRun(runId, worktreePath, schemaOptions);
+    const runInfo = resumeRun(
+      candidateRunId,
+      candidateWorktreePath,
+      schemaOptions,
+    );
     return {
       runInfo,
-      worktreePath,
-      effectiveCwd: worktreePath,
+      worktreePath: candidateWorktreePath,
+      effectiveCwd: candidateWorktreePath,
       resumed: true,
     };
-  }
+  };
 
   let createdBranchName = branchName;
   let createdRunId = runId;
@@ -217,6 +222,12 @@ function initializeWorktreeRun(
     createdBranchName = branchNameWithSuffix(branchName, suffix);
     createdRunId = createdBranchName.split("/")[1]!;
     createdWorktreePath = makeWorktreePath(createdRunId);
+    const resumed = resumePreservedWorktree(
+      createdBranchName,
+      createdRunId,
+      createdWorktreePath,
+    );
+    if (resumed) return resumed;
     try {
       createWorktree(repoRoot, createdWorktreePath, createdBranchName);
       break;
