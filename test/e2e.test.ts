@@ -320,6 +320,131 @@ describe("gnhf e2e", () => {
   );
 
   it.skipIf(process.platform === "win32")(
+    "resumes into a preserved worktree on a second invocation with the same prompt",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-opencode.jsonl");
+      const worktreeParent = `${cwd}-gnhf-worktrees`;
+      tempDirs.push(worktreeParent);
+
+      const env = {
+        ...process.env,
+        PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+        GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+      };
+
+      const first = await runCli(
+        cwd,
+        [
+          "resume probe",
+          "--agent",
+          "opencode",
+          "--max-iterations",
+          "1",
+          "--worktree",
+        ],
+        { env },
+      );
+      expect(first.code).toBe(0);
+      expect(first.stderr).toContain("worktree preserved");
+
+      const worktreeDirs = readdirSync(worktreeParent);
+      expect(worktreeDirs.length).toBe(1);
+      const runId = worktreeDirs[0]!;
+      const worktreePath = join(worktreeParent, runId);
+      const commitsAfterFirst = Number(
+        git(["rev-list", "--count", "HEAD"], worktreePath),
+      );
+
+      const second = await runCli(
+        cwd,
+        [
+          "resume probe",
+          "--agent",
+          "opencode",
+          "--max-iterations",
+          "2",
+          "--worktree",
+        ],
+        { env },
+      );
+      expect(second.code).toBe(0);
+      expect(second.stderr).toContain("resuming preserved worktree");
+      expect(second.stderr).not.toContain("already exists");
+
+      expect(readdirSync(worktreeParent)).toEqual([runId]);
+      const commitsAfterSecond = Number(
+        git(["rev-list", "--count", "HEAD"], worktreePath),
+      );
+      expect(commitsAfterSecond).toBe(commitsAfterFirst + 1);
+      expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain(
+        "gnhf #2:",
+      );
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "refuses to resume when the preserved worktree is on a different branch",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-opencode.jsonl");
+      const worktreeParent = `${cwd}-gnhf-worktrees`;
+      tempDirs.push(worktreeParent);
+
+      const env = {
+        ...process.env,
+        PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+        GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+      };
+
+      const first = await runCli(
+        cwd,
+        [
+          "branch guard probe",
+          "--agent",
+          "opencode",
+          "--max-iterations",
+          "1",
+          "--worktree",
+        ],
+        { env },
+      );
+      expect(first.code).toBe(0);
+
+      const worktreeDirs = readdirSync(worktreeParent);
+      expect(worktreeDirs.length).toBe(1);
+      const worktreePath = join(worktreeParent, worktreeDirs[0]!);
+
+      git(["checkout", "-b", "sideways"], worktreePath);
+
+      const second = await runCli(
+        cwd,
+        [
+          "branch guard probe",
+          "--agent",
+          "opencode",
+          "--max-iterations",
+          "2",
+          "--worktree",
+        ],
+        { env },
+      );
+      expect(second.code).not.toBe(0);
+      expect(second.stderr).toContain("rather than");
+      expect(second.stderr).toMatch(/gnhf\//);
+      expect(second.stderr).toContain("sideways");
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
     "cleans up the worktree when no changes are made in --worktree mode",
     async () => {
       const cwd = createRepo();

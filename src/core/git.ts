@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { resolve as resolvePath } from "node:path";
 
 const NOT_GIT_REPOSITORY_MESSAGE =
   'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
@@ -141,4 +142,27 @@ export function createWorktree(
 
 export function removeWorktree(baseCwd: string, worktreePath: string): void {
   git(["worktree", "remove", "--force", worktreePath], baseCwd);
+}
+
+// Returns true when the given path is registered as a worktree of baseCwd's
+// repository. Used to decide whether to reuse a preserved worktree on a
+// subsequent invocation instead of failing on "branch already exists".
+//
+// Compares resolved absolute paths because `git worktree list --porcelain`
+// can emit forward-slash paths on Windows while `path.join` uses platform
+// separators; plain string equality would then miss a real match.
+export function worktreeExists(baseCwd: string, worktreePath: string): boolean {
+  let output: string;
+  try {
+    output = git(["worktree", "list", "--porcelain"], baseCwd);
+  } catch {
+    return false;
+  }
+  const target = resolvePath(worktreePath);
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ") && resolvePath(line.slice(9)) === target) {
+      return true;
+    }
+  }
+  return false;
 }

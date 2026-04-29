@@ -16,6 +16,7 @@ import {
   getRepoRootDir,
   createWorktree,
   removeWorktree,
+  worktreeExists,
 } from "./git.js";
 
 const mockExecFileSync = vi.mocked(execFileSync);
@@ -265,6 +266,61 @@ describe("git utilities", () => {
         "--force",
         "/tmp/wt",
       ]);
+    });
+  });
+
+  describe("worktreeExists", () => {
+    it("returns true when the path is registered as a worktree", () => {
+      mockExecFileSync.mockReturnValue(
+        [
+          "worktree /tmp/repo",
+          "HEAD abc123",
+          "branch refs/heads/main",
+          "",
+          "worktree /tmp/repo-gnhf-worktrees/xyz",
+          "HEAD def456",
+          "branch refs/heads/gnhf/xyz",
+          "",
+        ].join("\n"),
+      );
+      expect(worktreeExists("/tmp/repo", "/tmp/repo-gnhf-worktrees/xyz")).toBe(
+        true,
+      );
+    });
+
+    it("returns false when the path is not registered", () => {
+      mockExecFileSync.mockReturnValue(
+        [
+          "worktree /tmp/repo",
+          "HEAD abc123",
+          "branch refs/heads/main",
+          "",
+        ].join("\n"),
+      );
+      expect(worktreeExists("/tmp/repo", "/tmp/repo-gnhf-worktrees/xyz")).toBe(
+        false,
+      );
+    });
+
+    it("normalizes paths before comparing so trailing slashes and traversal segments still match", () => {
+      mockExecFileSync.mockReturnValue(
+        [
+          "worktree /tmp/repo-gnhf-worktrees/xyz",
+          "HEAD def456",
+          "branch refs/heads/gnhf/xyz",
+          "",
+        ].join("\n"),
+      );
+      expect(
+        worktreeExists("/tmp/repo", "/tmp/repo-gnhf-worktrees/other/../xyz/"),
+      ).toBe(true);
+    });
+
+    it("returns false when git worktree list fails", () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("not a git repo");
+      });
+      expect(worktreeExists("/tmp/repo", "/tmp/wt")).toBe(false);
     });
   });
 });
