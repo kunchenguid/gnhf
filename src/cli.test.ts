@@ -49,6 +49,7 @@ interface CliMockOverrides {
   createBranch?: ReturnType<typeof vi.fn>;
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
+  listWorktreePaths?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
@@ -143,6 +144,7 @@ async function runCliWithMocks(
     getRepoRootDir: overrides.getRepoRootDir ?? vi.fn(() => "/repo"),
     createWorktree: overrides.createWorktree ?? vi.fn(),
     removeWorktree: overrides.removeWorktree ?? vi.fn(),
+    listWorktreePaths: overrides.listWorktreePaths ?? vi.fn(() => new Set()),
     worktreeExists: overrides.worktreeExists ?? vi.fn(() => false),
   }));
   vi.doMock("./core/run.js", () => ({
@@ -2772,6 +2774,24 @@ describe("cli", () => {
     expect(createWorktree.mock.calls[1]?.[2]).toBe(`${firstBranch}-1`);
   });
 
+  it("queries git worktrees once when no preserved worktree exists", async () => {
+    const listWorktreePaths = vi.fn(() => new Set());
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { listWorktreePaths },
+    );
+
+    expect(listWorktreePaths).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes a preserved suffixed worktree instead of creating another one", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
     const repoRoot = join(tempDir, "repo");
@@ -2816,7 +2836,7 @@ describe("cli", () => {
           getCurrentBranch: vi.fn((cwd: string) =>
             cwd === suffixedWorktreePath ? suffixedBranch : "main",
           ),
-          worktreeExists: vi.fn((_repo, path) => path === suffixedWorktreePath),
+          listWorktreePaths: vi.fn(() => new Set([suffixedWorktreePath])),
           resumeRun,
         },
       );
@@ -2874,7 +2894,7 @@ describe("cli", () => {
           getCurrentBranch: vi.fn((cwd: string) =>
             cwd === suffixedWorktreePath ? suffixedBranch : "main",
           ),
-          worktreeExists: vi.fn((_repo, path) => path === suffixedWorktreePath),
+          listWorktreePaths: vi.fn(() => new Set([suffixedWorktreePath])),
           resumeRun,
         },
       );

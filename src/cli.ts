@@ -29,7 +29,7 @@ import {
   getRepoRootDir,
   createWorktree,
   removeWorktree,
-  worktreeExists,
+  listWorktreePaths,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -169,6 +169,7 @@ function initializeWorktreeRun(
     join(dirname(repoRoot), `${basename(repoRoot)}-gnhf-worktrees`, runId);
   const runId = branchName.split("/")[1]!;
   const worktreePath = makeWorktreePath(runId);
+  const registeredWorktreePaths = listWorktreePaths(repoRoot);
 
   const resumePreservedWorktree = (
     candidateBranchName: string,
@@ -176,7 +177,7 @@ function initializeWorktreeRun(
     candidateWorktreePath: string,
   ): WorktreeRunResult | null => {
     if (
-      !worktreeExists(repoRoot, candidateWorktreePath) ||
+      !registeredWorktreePaths.has(resolve(candidateWorktreePath)) ||
       !existsSync(join(candidateWorktreePath, ".gnhf", "runs", candidateRunId))
     ) {
       return null;
