@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const skillPath = "skills/gnhf/SKILL.md";
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 describe("gnhf skill package artifact", () => {
   it("defines skill metadata in frontmatter", () => {
@@ -26,7 +27,7 @@ describe("gnhf skill package artifact", () => {
   });
 
   it("includes the skill in the npm package", () => {
-    const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    const output = execFileSync(npmCommand, ["pack", "--dry-run", "--json"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
