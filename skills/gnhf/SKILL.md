@@ -1,6 +1,6 @@
 ---
 name: gnhf
-description: Use when the user asks an agent to run, supervise, steer, iterate on, or review a long-running GNHF job; says they are going to sleep or leaving and wants work done by Claude Code, Codex, Rovo Dev, OpenCode, or GitHub Copilot CLI; asks to use a specific agent/model through GNHF; or gives review findings from a GNHF result.
+description: Use when the user asks to run GNHF, says they are going to sleep or leaving and wants an agent-managed coding run, asks to supervise, steer, or review an active GNHF run, or gives feedback on GNHF results.
 ---
 
 # GNHF
