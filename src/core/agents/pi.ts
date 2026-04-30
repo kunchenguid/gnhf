@@ -2,8 +2,8 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
+  validateAgentOutput,
   type Agent,
-  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
@@ -187,50 +187,6 @@ function compactJson(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-function validatePiOutput(
-  value: unknown,
-  schema: AgentOutputSchema,
-): AgentOutput {
-  if (!isRecord(value)) {
-    throw new Error("expected an object");
-  }
-
-  if (typeof value.success !== "boolean") {
-    throw new Error("success must be a boolean");
-  }
-  if (typeof value.summary !== "string") {
-    throw new Error("summary must be a string");
-  }
-  if (
-    !Array.isArray(value.key_changes_made) ||
-    !value.key_changes_made.every((item) => typeof item === "string")
-  ) {
-    throw new Error("key_changes_made must be an array of strings");
-  }
-  if (
-    !Array.isArray(value.key_learnings) ||
-    !value.key_learnings.every((item) => typeof item === "string")
-  ) {
-    throw new Error("key_learnings must be an array of strings");
-  }
-  if (
-    schema.required.includes("should_fully_stop") &&
-    typeof value.should_fully_stop !== "boolean"
-  ) {
-    throw new Error("should_fully_stop must be a boolean");
-  }
-
-  if (schema.additionalProperties === false) {
-    const allowed = new Set(Object.keys(schema.properties));
-    const extraKey = Object.keys(value).find((key) => !allowed.has(key));
-    if (extraKey) {
-      throw new Error(`unexpected property ${extraKey}`);
-    }
-  }
-
-  return value as unknown as AgentOutput;
 }
 
 function textByIndexToString(textByIndex: Map<number, string>): string {
@@ -439,7 +395,7 @@ export class PiAgent implements Agent {
         }
 
         try {
-          const output = validatePiOutput(parsed, this.schema);
+          const output = validateAgentOutput(parsed, this.schema);
           resolve({ output, usage: lastEmittedUsage });
         } catch (err) {
           reject(

@@ -316,6 +316,49 @@ describe("PiAgent", () => {
     });
   });
 
+  it("requires commit fields when the schema includes them", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new PiAgent({
+      schema: buildAgentOutputSchema({
+        includeStopField: false,
+        commitFields: [{ name: "commit_type", allowed: ["feat", "fix"] }],
+      }),
+    });
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "message_end",
+      message: { role: "assistant", content: finalOutput() },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("Invalid pi output");
+  });
+
+  it("rejects commit fields that do not match the schema enum", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new PiAgent({
+      schema: buildAgentOutputSchema({
+        includeStopField: false,
+        commitFields: [{ name: "commit_type", allowed: ["feat", "fix"] }],
+      }),
+    });
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: finalOutput({ commit_type: "chore" }),
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("Invalid pi output");
+  });
+
   it("rejects empty final text", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

@@ -17,6 +17,68 @@ export interface AgentOutputSchema {
   required: string[];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function describeSchemaType(name: string, type: string): string {
+  const article = /^[aeiou]/.test(type) ? "an" : "a";
+  return `${name} must be ${article} ${type}`;
+}
+
+export function validateAgentOutput(
+  value: unknown,
+  schema: AgentOutputSchema,
+): AgentOutput {
+  if (!isRecord(value)) {
+    throw new Error("expected an object");
+  }
+
+  if (schema.additionalProperties === false) {
+    const allowed = new Set(Object.keys(schema.properties));
+    const extraKey = Object.keys(value).find((key) => !allowed.has(key));
+    if (extraKey) {
+      throw new Error(`unexpected property ${extraKey}`);
+    }
+  }
+
+  for (const name of schema.required) {
+    if (!(name in value)) {
+      throw new Error(`${name} is required`);
+    }
+  }
+
+  for (const [name, property] of Object.entries(schema.properties)) {
+    if (!(name in value)) {
+      continue;
+    }
+    const propertyValue = value[name];
+
+    if (property.type === "array") {
+      if (
+        !Array.isArray(propertyValue) ||
+        property.items?.type !== "string" ||
+        !propertyValue.every((item) => typeof item === "string")
+      ) {
+        throw new Error(`${name} must be an array of strings`);
+      }
+      continue;
+    }
+
+    if (typeof propertyValue !== property.type) {
+      throw new Error(describeSchemaType(name, property.type));
+    }
+
+    if (property.enum && !property.enum.includes(propertyValue as string)) {
+      throw new Error(
+        `${name} must be one of ${property.enum.map((item) => JSON.stringify(item)).join(", ")}`,
+      );
+    }
+  }
+
+  return value as unknown as AgentOutput;
+}
+
 export interface AgentOutputCommitField {
   name: string;
   allowed?: string[];

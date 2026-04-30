@@ -243,4 +243,47 @@ describe("CopilotAgent", () => {
 
     await expect(promise).rejects.toThrow("Failed to parse copilot output");
   });
+
+  it("rejects when the final assistant message misses required fields", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "assistant.message",
+      data: { content: '{"success":true,"summary":"ok"}' },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("Failed to parse copilot output");
+  });
+
+  it("rejects commit fields that do not match the schema enum", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent({
+      schema: buildAgentOutputSchema({
+        includeStopField: false,
+        commitFields: [{ name: "commit_type", allowed: ["feat", "fix"] }],
+      }),
+    });
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "assistant.message",
+      data: {
+        content: JSON.stringify({
+          success: true,
+          summary: "ok",
+          key_changes_made: [],
+          key_learnings: [],
+          commit_type: "chore",
+        }),
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("Failed to parse copilot output");
+  });
 });

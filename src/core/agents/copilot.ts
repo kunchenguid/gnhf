@@ -2,8 +2,8 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
+  validateAgentOutput,
   type Agent,
-  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
@@ -285,9 +285,10 @@ export class CopilotAgent implements Agent {
         }
 
         try {
-          const output = JSON.parse(
-            stripJsonFence(lastAgentMessage),
-          ) as AgentOutput;
+          const output = validateAgentOutput(
+            JSON.parse(stripJsonFence(lastAgentMessage)),
+            this.schema,
+          );
           resolve({ output, usage: cumulative });
         } catch (err) {
           reject(
