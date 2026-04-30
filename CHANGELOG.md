@@ -2,75 +2,65 @@
 
 ## [0.1.30](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.29...gnhf-v0.1.30) (2026-04-29)
 
-
 ### Bug Fixes
 
-* **cli:** handle generated branch and worktree slug collisions ([#106](https://github.com/kunchenguid/gnhf/issues/106)) ([df81f78](https://github.com/kunchenguid/gnhf/commit/df81f7804e6ed12c7c34e4a920938bd1f83702bf))
+- **cli:** handle generated branch and worktree slug collisions ([#106](https://github.com/kunchenguid/gnhf/issues/106)) ([df81f78](https://github.com/kunchenguid/gnhf/commit/df81f7804e6ed12c7c34e4a920938bd1f83702bf))
 
 ## [0.1.29](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.28...gnhf-v0.1.29) (2026-04-29)
 
-
 ### Bug Fixes
 
-* **agents:** extend Rovo Dev startup timeout ([#104](https://github.com/kunchenguid/gnhf/issues/104)) ([0b2bbe5](https://github.com/kunchenguid/gnhf/commit/0b2bbe52f9398fa8028b514252918243b4f7f8f5))
+- **agents:** extend Rovo Dev startup timeout ([#104](https://github.com/kunchenguid/gnhf/issues/104)) ([0b2bbe5](https://github.com/kunchenguid/gnhf/commit/0b2bbe52f9398fa8028b514252918243b4f7f8f5))
 
 ## [0.1.28](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.27...gnhf-v0.1.28) (2026-04-29)
 
-
 ### Bug Fixes
 
-* **core:** abort immediately on Claude low credit ([#102](https://github.com/kunchenguid/gnhf/issues/102)) ([28f54bb](https://github.com/kunchenguid/gnhf/commit/28f54bb939a098e463c40cefb0683da897b999e6))
+- **core:** abort immediately on Claude low credit ([#102](https://github.com/kunchenguid/gnhf/issues/102)) ([28f54bb](https://github.com/kunchenguid/gnhf/commit/28f54bb939a098e463c40cefb0683da897b999e6))
 
 ## [0.1.27](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.26...gnhf-v0.1.27) (2026-04-29)
 
-
 ### Features
 
-* Add support for Pi coding agent ([#97](https://github.com/kunchenguid/gnhf/issues/97)) ([380de4e](https://github.com/kunchenguid/gnhf/commit/380de4e97ea4d08517cf8fa0352b3db035c6517b))
-* graceful shutdown on first ctrl+c ([#88](https://github.com/kunchenguid/gnhf/issues/88)) ([385211d](https://github.com/kunchenguid/gnhf/commit/385211d7e460d8a3abd273f40b69b01eb368b690))
-* **worktree:** resume into a preserved worktree on re-invocation ([#76](https://github.com/kunchenguid/gnhf/issues/76)) ([f0e05f3](https://github.com/kunchenguid/gnhf/commit/f0e05f3a819b396367415942715b755a2ac62b33))
-
+- Add support for Pi coding agent ([#97](https://github.com/kunchenguid/gnhf/issues/97)) ([380de4e](https://github.com/kunchenguid/gnhf/commit/380de4e97ea4d08517cf8fa0352b3db035c6517b))
+- graceful shutdown on first ctrl+c ([#88](https://github.com/kunchenguid/gnhf/issues/88)) ([385211d](https://github.com/kunchenguid/gnhf/commit/385211d7e460d8a3abd273f40b69b01eb368b690))
+- **worktree:** resume into a preserved worktree on re-invocation ([#76](https://github.com/kunchenguid/gnhf/issues/76)) ([f0e05f3](https://github.com/kunchenguid/gnhf/commit/f0e05f3a819b396367415942715b755a2ac62b33))
 
 ### Bug Fixes
 
-* **cli:** persist stop-when on resume ([#100](https://github.com/kunchenguid/gnhf/issues/100)) ([0051228](https://github.com/kunchenguid/gnhf/commit/00512284b8bd7d71e421a0bd408d7ed7bb418172))
+- **cli:** persist stop-when on resume ([#100](https://github.com/kunchenguid/gnhf/issues/100)) ([0051228](https://github.com/kunchenguid/gnhf/commit/00512284b8bd7d71e421a0bd408d7ed7bb418172))
 
 ## [0.1.26](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.25...gnhf-v0.1.26) (2026-04-24)
 
-
 ### Bug Fixes
 
-* **agents:** preserve final Claude output before forced shutdown ([#93](https://github.com/kunchenguid/gnhf/issues/93)) ([61e37a8](https://github.com/kunchenguid/gnhf/commit/61e37a87ea3811e16f1e04ba7dd38db8ce94a011))
+- **agents:** preserve final Claude output before forced shutdown ([#93](https://github.com/kunchenguid/gnhf/issues/93)) ([61e37a8](https://github.com/kunchenguid/gnhf/commit/61e37a87ea3811e16f1e04ba7dd38db8ce94a011))
 
 ## [0.1.25](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.24...gnhf-v0.1.25) (2026-04-23)
 
-
 ### Bug Fixes
 
-* **cli:** preserve run history when updating a resumed prompt ([#91](https://github.com/kunchenguid/gnhf/issues/91)) ([61306e9](https://github.com/kunchenguid/gnhf/commit/61306e9a2a29f8ebd6885f1fe02bdf1fd3b8917b))
-* **core:** preserve agent output and back off only on hard errors ([#89](https://github.com/kunchenguid/gnhf/issues/89)) ([b369ae8](https://github.com/kunchenguid/gnhf/commit/b369ae80fd752d11729046d971a5ab09be18c394))
+- **cli:** preserve run history when updating a resumed prompt ([#91](https://github.com/kunchenguid/gnhf/issues/91)) ([61306e9](https://github.com/kunchenguid/gnhf/commit/61306e9a2a29f8ebd6885f1fe02bdf1fd3b8917b))
+- **core:** preserve agent output and back off only on hard errors ([#89](https://github.com/kunchenguid/gnhf/issues/89)) ([b369ae8](https://github.com/kunchenguid/gnhf/commit/b369ae80fd752d11729046d971a5ab09be18c394))
 
 ## [0.1.24](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.23...gnhf-v0.1.24) (2026-04-23)
 
-
 ### Bug Fixes
 
-* **agents:** make stop output schema conditional on --stop-when ([#82](https://github.com/kunchenguid/gnhf/issues/82)) ([36f69e8](https://github.com/kunchenguid/gnhf/commit/36f69e8d480f259b0142eb5aa9e1b25ad69f09cc))
-* **cli:** handle resume prompt overwrite from the controlling terminal ([#77](https://github.com/kunchenguid/gnhf/issues/77)) ([cc18215](https://github.com/kunchenguid/gnhf/commit/cc1821531af107adfd31253feabdd24077867110))
+- **agents:** make stop output schema conditional on --stop-when ([#82](https://github.com/kunchenguid/gnhf/issues/82)) ([36f69e8](https://github.com/kunchenguid/gnhf/commit/36f69e8d480f259b0142eb5aa9e1b25ad69f09cc))
+- **cli:** handle resume prompt overwrite from the controlling terminal ([#77](https://github.com/kunchenguid/gnhf/issues/77)) ([cc18215](https://github.com/kunchenguid/gnhf/commit/cc1821531af107adfd31253feabdd24077867110))
 
 ## [0.1.23](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.22...gnhf-v0.1.23) (2026-04-18)
 
-
 ### Features
 
-* **orchestrator:** add --stop-when condition to end loop ([#74](https://github.com/kunchenguid/gnhf/issues/74)) ([3ad2c86](https://github.com/kunchenguid/gnhf/commit/3ad2c861afcc47d46037e076e9646b29a167448d))
+- **orchestrator:** add --stop-when condition to end loop ([#74](https://github.com/kunchenguid/gnhf/issues/74)) ([3ad2c86](https://github.com/kunchenguid/gnhf/commit/3ad2c861afcc47d46037e076e9646b29a167448d))
 
 ## [0.1.22](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.21...gnhf-v0.1.22) (2026-04-17)
 
-
 ### Bug Fixes
 
-* **agents:** dedupe Claude usage across repeated assistant snapshots ([#72](https://github.com/kunchenguid/gnhf/issues/72)) ([22a4728](https://github.com/kunchenguid/gnhf/commit/22a472831471b66051c27018ac8a033e3c06299d))
+- **agents:** dedupe Claude usage across repeated assistant snapshots ([#72](https://github.com/kunchenguid/gnhf/issues/72)) ([22a4728](https://github.com/kunchenguid/gnhf/commit/22a472831471b66051c27018ac8a033e3c06299d))
 
 ## [0.1.21](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.20...gnhf-v0.1.21) (2026-04-17)
 
