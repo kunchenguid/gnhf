@@ -58,6 +58,7 @@ body:
         - codex
         - rovodev
         - opencode
+        - copilot
         - pi
         - other / not sure
     validations:
@@ -67,7 +68,7 @@ body:
     id: model
     attributes:
       label: Model / provider (if relevant)
-      description: For opencode or pi this is especially useful — which provider and model were you using?
+      description: For opencode, copilot, or pi this is especially useful - which provider and model were you using?
       placeholder: "minimax / MiniMax-M2.7-highspeed"
 
   - type: input
