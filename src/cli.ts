@@ -176,6 +176,7 @@ function initializeWorktreeRun(
   prompt: string,
   cwd: string,
   schemaOptions: RunSchemaOptions,
+  resumeSchemaOptions: RunSchemaOptions,
 ): WorktreeRunResult {
   // Intentionally skip ensureCleanWorkingTree() — git worktree add creates
   // an independent working directory from HEAD; uncommitted changes in the
@@ -224,7 +225,7 @@ function initializeWorktreeRun(
     const runInfo = resumeRun(
       candidateRunId,
       candidateWorktreePath,
-      schemaOptions,
+      resumeSchemaOptions,
     );
     return {
       runInfo,
@@ -574,7 +575,12 @@ program
           process.exit(1);
         }
 
-        const wt = initializeWorktreeRun(prompt, cwd, schemaOptions);
+        const wt = initializeWorktreeRun(
+          prompt,
+          cwd,
+          schemaOptions,
+          buildResumeSchemaOptions(options.stopWhen, effectiveCommitMessage),
+        );
         runInfo = wt.runInfo;
         effectiveCwd = wt.effectiveCwd;
         worktreePath = wt.worktreePath;

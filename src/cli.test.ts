@@ -3023,6 +3023,65 @@ describe("cli", () => {
     }
   });
 
+  it("clears stop-when when resuming a preserved worktree with an empty value", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const branch = `gnhf/${runId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const worktreePath = join(worktreeRoot, runId);
+    mkdirSync(join(worktreePath, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+      runDir: join(worktreePath, ".gnhf", "runs", runId),
+      stopWhen: undefined,
+    }));
+
+    try {
+      const { createAgent, orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree", "--stop-when", ""],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === worktreePath ? branch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([worktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(runId, worktreePath, {
+        includeStopField: false,
+        clearStopWhen: true,
+      });
+      expect(createAgent.mock.calls[0]?.[4]).toEqual({
+        includeStopField: false,
+      });
+      expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+        maxIterations: undefined,
+        maxTokens: undefined,
+        stopWhen: undefined,
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("resumes a preserved suffixed worktree before creating an available unsuffixed one", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
     const repoRoot = join(tempDir, "repo");
