@@ -97,6 +97,12 @@ npm run build
 npm link
 ```
 
+## Agent Skill
+
+The npm package includes an agent-facing skill at `skills/gnhf/SKILL.md`. Agents that support local skills can copy or reference this file to learn how to run GNHF in Hands-Off mode for bounded overnight work, or Companion mode when the outer agent should steer and review a long-running GNHF run.
+
+After installing from npm, the skill is available under the installed package directory. From a source checkout, use `skills/gnhf/SKILL.md` directly.
+
 ## How It Works
 
 ```
