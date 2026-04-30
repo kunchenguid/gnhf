@@ -4,7 +4,6 @@ export interface AgentOutput {
   key_changes_made: unknown;
   key_learnings: unknown;
   should_fully_stop?: boolean;
-  [key: string]: unknown;
 }
 
 export interface AgentOutputSchema {

@@ -35,6 +35,15 @@ export interface RunInfo {
   commitMessage: CommitMessageConfig | undefined;
 }
 
+export interface RunMetadata {
+  runId: string;
+  runDir: string;
+  promptPath: string;
+  schemaPath: string;
+  commitMessagePath: string;
+  commitMessage: CommitMessageConfig | undefined;
+}
+
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
 const COMMIT_MESSAGE_FILENAME = "commit-message";
@@ -121,6 +130,17 @@ function resolveRunCommitMessage(
     "utf-8",
   );
   return commitMessage;
+}
+
+function peekRunCommitMessage(
+  commitMessagePath: string,
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (existsSync(commitMessagePath)) {
+    return readCommitMessageMetadata(commitMessagePath);
+  }
+
+  return inferCommitMessageFromSchema(schemaPath);
 }
 
 function writeCommitMessageMetadata(
@@ -268,6 +288,27 @@ export function resumeRun(
     baseCommitPath,
     stopWhenPath,
     stopWhen,
+    commitMessagePath,
+    commitMessage,
+  };
+}
+
+export function peekRunMetadata(runId: string, cwd: string): RunMetadata {
+  const runDir = join(cwd, ".gnhf", "runs", runId);
+  if (!existsSync(runDir)) {
+    throw new Error(`Run directory not found: ${runDir}`);
+  }
+
+  const promptPath = join(runDir, "prompt.md");
+  const schemaPath = join(runDir, "output-schema.json");
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = peekRunCommitMessage(commitMessagePath, schemaPath);
+
+  return {
+    runId,
+    runDir,
+    promptPath,
+    schemaPath,
     commitMessagePath,
     commitMessage,
   };

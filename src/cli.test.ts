@@ -54,6 +54,7 @@ interface CliMockOverrides {
   removeWorktree?: ReturnType<typeof vi.fn>;
   listWorktreePaths?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
+  peekRunMetadata?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
@@ -94,6 +95,7 @@ async function runCliWithMocks(
     vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
   let consoleErrorCalls: unknown[][] = [];
   const setupRun = vi.fn(() => stubRunInfo);
+  const peekRunMetadata = overrides.peekRunMetadata ?? vi.fn(() => stubRunInfo);
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -153,6 +155,7 @@ async function runCliWithMocks(
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun,
+    peekRunMetadata,
     resumeRun: overrides.resumeRun ?? vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
@@ -227,6 +230,7 @@ async function runCliWithMocks(
     loadConfig,
     createAgent,
     setupRun,
+    peekRunMetadata,
     orchestratorCtor,
     orchestratorGetState,
     orchestratorRequestGracefulStop,
@@ -328,6 +332,7 @@ async function runSigintCliTest({
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),
+    peekRunMetadata: vi.fn(() => stubRunInfo),
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
@@ -1315,6 +1320,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -1460,6 +1466,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1589,6 +1600,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1714,6 +1730,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1834,6 +1855,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1951,6 +1977,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -2019,6 +2050,16 @@ describe("cli", () => {
     const promptPath = join(tempDir, "PROMPT.md");
     const orchestratorCtor = vi.fn();
     const setupRun = vi.fn(() => stubRunInfo);
+    const peekRunMetadata = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: "existing-run",
+      promptPath,
+    }));
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: "existing-run",
+      promptPath,
+    }));
 
     writeFileSync(promptPath, "existing prompt", "utf-8");
 
@@ -2059,11 +2100,8 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun,
-      resumeRun: vi.fn(() => ({
-        ...stubRunInfo,
-        runId: "existing-run",
-        promptPath,
-      })),
+      peekRunMetadata,
+      resumeRun,
       getLastIterationNumber: vi.fn(() => 3),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2117,6 +2155,14 @@ describe("cli", () => {
     try {
       await import("./cli.js");
 
+      expect(peekRunMetadata).toHaveBeenCalledWith(
+        "existing-run",
+        process.cwd(),
+      );
+      expect(resumeRun).toHaveBeenCalledTimes(1);
+      expect(resumeRun).toHaveBeenCalledWith("existing-run", process.cwd(), {
+        includeStopField: false,
+      });
       expect(setupRun).toHaveBeenCalledWith(
         "existing-run",
         "new prompt",
@@ -2318,6 +2364,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2461,6 +2508,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2630,6 +2678,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2779,6 +2828,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -3237,6 +3287,10 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",

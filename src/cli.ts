@@ -36,6 +36,7 @@ import {
   type RunSchemaOptions,
   setupRun,
   resumeRun,
+  peekRunMetadata,
   getLastIterationNumber,
 } from "./core/run.js";
 import { readStdinText } from "./core/stdin.js";
@@ -620,17 +621,21 @@ program
         }
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
-        let existing = resumeRun(existingRunId, cwd, {
-          includeStopField: false,
-        });
-        effectiveCommitMessage = existing.commitMessage;
-        const existingPrompt = readFileSync(existing.promptPath, "utf-8");
+        const existingMetadata = peekRunMetadata(existingRunId, cwd);
+        effectiveCommitMessage = existingMetadata.commitMessage;
+        const existingPrompt = readFileSync(
+          existingMetadata.promptPath,
+          "utf-8",
+        );
 
         if (!prompt || prompt === existingPrompt) {
-          existing = resumeRun(
+          const existing = resumeRun(
             existingRunId,
             cwd,
-            buildResumeSchemaOptions(options.stopWhen, existing.commitMessage),
+            buildResumeSchemaOptions(
+              options.stopWhen,
+              existingMetadata.commitMessage,
+            ),
           );
           const resumeStopWhen = existing.stopWhen;
           const resumeSchemaOptions = buildSchemaOptions(
@@ -656,12 +661,12 @@ program
 
           if (answer === "o") {
             ensureCleanWorkingTree(cwd);
-            existing = resumeRun(
+            const existing = resumeRun(
               existingRunId,
               cwd,
               buildResumeSchemaOptions(
                 options.stopWhen,
-                existing.commitMessage,
+                existingMetadata.commitMessage,
               ),
             );
             const resumeStopWhen = existing.stopWhen;

@@ -17,6 +17,11 @@ export interface CommitMessagePromptField {
   default: string;
 }
 
+type AgentOutputWithCommitMessageFields = AgentOutput & {
+  type?: unknown;
+  scope?: unknown;
+};
+
 export const CONVENTIONAL_COMMIT_MESSAGE: CommitMessageConfig = {
   preset: "conventional",
 };
@@ -94,7 +99,8 @@ export function buildCommitMessage(
     return collapseHeader(`gnhf #${context.iteration}: ${output.summary}`);
   }
 
-  const type = resolveConventionalType(output.type);
-  const scope = resolveConventionalScope(output.scope);
+  const commitOutput = output as AgentOutputWithCommitMessageFields;
+  const type = resolveConventionalType(commitOutput.type);
+  const scope = resolveConventionalScope(commitOutput.scope);
   return collapseHeader(`${type}${scope}: ${output.summary}`);
 }

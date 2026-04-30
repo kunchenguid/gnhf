@@ -29,7 +29,13 @@ import {
   readFileSync,
 } from "node:fs";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
-import { setupRun, appendNotes, resumeRun, toStringArray } from "./run.js";
+import {
+  setupRun,
+  appendNotes,
+  resumeRun,
+  peekRunMetadata,
+  toStringArray,
+} from "./run.js";
 import { CONVENTIONAL_COMMIT_MESSAGE } from "./commit-message.js";
 
 const P = "/project";
@@ -469,6 +475,63 @@ describe("resumeRun", () => {
 
     expect(mockGetHeadCommit).toHaveBeenCalledWith(P);
     expect(info.baseCommit).toBe("head456");
+  });
+});
+
+describe("peekRunMetadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads stored commit message metadata without writing files", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "conventional\n" : "",
+    );
+
+    const metadata = peekRunMetadata("run-abc", P);
+
+    expect(metadata.promptPath).toBe(join(runDir, "prompt.md"));
+    expect(metadata.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it("infers legacy conventional metadata from the schema without backfilling", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const schemaPath = join(runDir, "output-schema.json");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === schemaPath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === schemaPath
+        ? JSON.stringify({
+            properties: {
+              type: { type: "string" },
+              scope: { type: "string" },
+            },
+          })
+        : "",
+    );
+
+    const metadata = peekRunMetadata("run-abc", P);
+
+    expect(metadata.commitMessagePath).toBe(commitMessagePath);
+    expect(metadata.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it("throws when the run directory is missing", () => {
+    mockExistsSync.mockReturnValue(false);
+
+    expect(() => peekRunMetadata("run-abc", P)).toThrow(
+      "Run directory not found",
+    );
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
   });
 });
 
