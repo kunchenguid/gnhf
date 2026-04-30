@@ -68,6 +68,17 @@ vi.mock("./opencode.js", () => {
   return { OpenCodeAgent };
 });
 
+vi.mock("./swival.js", () => {
+  const SwivalAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "swival";
+    this.deps = deps;
+  });
+  return { SwivalAgent };
+});
+
 import { createAgent } from "./factory.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
@@ -75,6 +86,7 @@ import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
+import { SwivalAgent } from "./swival.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -346,6 +358,46 @@ describe("createAgent", () => {
       includeStopField: true,
     });
     expect(OpenCodeAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
+  });
+
+  it("creates a SwivalAgent when name is 'swival'", () => {
+    const agent = createAgent("swival", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(SwivalAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("swival");
+  });
+
+  it("passes path override and extra args through to the SwivalAgent", () => {
+    const agent = createAgent(
+      "swival",
+      stubRunInfo,
+      "/custom/swival",
+      ["--provider", "openrouter", "--model", "z-ai/glm-5.1"],
+      { includeStopField: false },
+    );
+
+    expect(SwivalAgent).toHaveBeenCalledWith({
+      bin: "/custom/swival",
+      extraArgs: ["--provider", "openrouter", "--model", "z-ai/glm-5.1"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("swival");
+  });
+
+  it("hands SwivalAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("swival", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(SwivalAgent).toHaveBeenCalledWith({
       bin: undefined,
       extraArgs: undefined,
       schema: withStopSchema,

@@ -13,6 +13,7 @@ export const AGENT_NAMES = [
   "opencode",
   "copilot",
   "pi",
+  "swival",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
@@ -130,6 +131,24 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-h" ||
         arg === "--version" ||
         arg === "-v" ||
+        arg === "--api-key" ||
+        arg.startsWith("--api-key=")
+      );
+    case "swival":
+      return (
+        arg === "-q" ||
+        arg === "--quiet" ||
+        arg === "--no-color" ||
+        arg === "--color" ||
+        arg === "--repl" ||
+        arg === "--serve" ||
+        arg === "--reviewer-mode" ||
+        arg === "--init-config" ||
+        arg === "--logout" ||
+        arg === "--list-profiles" ||
+        arg === "--version" ||
+        arg === "--help" ||
+        arg === "-h" ||
         arg === "--api-key" ||
         arg.startsWith("--api-key=")
       );
@@ -410,6 +429,7 @@ function serializeConfig(config: Config): string {
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
+    "#   swival: /path/to/custom-swival",
     "",
     "# Per-agent CLI arg overrides (optional)",
     "# agentArgsOverride:",
@@ -429,6 +449,11 @@ function serializeConfig(config: Config): string {
     "#     - gpt-5.5",
     "#     - --thinking",
     "#     - high",
+    "#   swival:",
+    "#     - --provider",
+    "#     - openrouter",
+    "#     - --model",
+    "#     - z-ai/glm-5.1",
     "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",

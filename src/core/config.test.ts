@@ -35,6 +35,7 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
+    "#   swival: /path/to/custom-swival",
     "",
     "# Per-agent CLI arg overrides (optional)",
     "# agentArgsOverride:",
@@ -54,6 +55,11 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#     - gpt-5.5",
     "#     - --thinking",
     "#     - high",
+    "#   swival:",
+    "#     - --provider",
+    "#     - openrouter",
+    "#     - --model",
+    "#     - z-ai/glm-5.1",
     "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",
@@ -267,6 +273,29 @@ describe("loadConfig", () => {
     );
     expect(config).toEqual({
       agent: "pi",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: true,
+    });
+  });
+
+  it("supports bootstrapping swival as the configured agent", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const config = loadConfig({ agent: "swival" });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      CONFIG_PATH,
+      BOOTSTRAP_CONFIG_TEMPLATE("swival"),
+      "utf-8",
+    );
+    expect(config).toEqual({
+      agent: "swival",
       agentPathOverride: {},
       agentArgsOverride: {},
       maxConsecutiveFailures: 3,
@@ -682,4 +711,39 @@ describe("loadConfig", () => {
       /agentArgsOverride\.pi\[0\].*managed by gnhf/,
     );
   });
+
+  it("allows safe agentArgsOverride.swival flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  swival:\n    - --provider\n    - openrouter\n    - --model\n    - z-ai/glm-5.1\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      swival: ["--provider", "openrouter", "--model", "z-ai/glm-5.1"],
+    });
+  });
+
+  it.each([
+    "-q",
+    "--quiet",
+    "--no-color",
+    "--repl",
+    "--serve",
+    "--reviewer-mode",
+    "--init-config",
+    "--api-key",
+    "--api-key=secret",
+  ])(
+    "throws when agentArgsOverride.swival contains reserved flag %s",
+    (flag) => {
+      mockReadFileSync.mockReturnValue(
+        `agentArgsOverride:\n  swival:\n    - ${flag}\n`,
+      );
+
+      expect(() => loadConfig()).toThrow(
+        /agentArgsOverride\.swival\[0\].*managed by gnhf/,
+      );
+    },
+  );
 });

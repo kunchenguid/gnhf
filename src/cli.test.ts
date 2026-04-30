@@ -25,6 +25,7 @@ const TEST_AGENT_NAMES = [
   "opencode",
   "copilot",
   "pi",
+  "swival",
 ];
 
 const stubRunInfo: RunInfo = {
