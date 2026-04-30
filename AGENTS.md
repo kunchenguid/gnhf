@@ -4,7 +4,7 @@ This file provides guidance to agents1 when working with code in this repository
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, or Pi) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, retryable hard agent errors trigger exponential backoff, and permanent agent errors abort immediately. Target: Node 20+, published to npm as a single-file ESM bundle.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, or Pi) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, retryable hard agent errors trigger exponential backoff, and permanent agent errors abort immediately. Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
 
 ## Commands
 
