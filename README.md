@@ -271,6 +271,12 @@ Every run writes a JSONL debug log to `.gnhf/runs/<runId>/gnhf.log` alongside `n
 
 Including a snippet of `gnhf.log` is the single most useful thing you can attach when filing an issue.
 
+## Telemetry
+
+`gnhf` sends one anonymous run summary per invocation to my self-hosted analytics so I can see what's actually getting used.
+No prompts, repo paths, or branch names are sent.
+Set `GNHF_TELEMETRY=0` to turn it off.
+
 ## Agents
 
 `gnhf` supports six native agents plus ACP targets:

@@ -48,6 +48,7 @@ import {
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
+import { getDefaultTelemetry, initDefaultTelemetry } from "./core/telemetry.js";
 import {
   getCommitMessageSchemaFields,
   type CommitMessageConfig,
@@ -549,6 +550,15 @@ program
         process.exit(1);
       }
 
+      initDefaultTelemetry({
+        app: "gnhf",
+        version: packageVersion,
+        platform: process.platform,
+        arch: process.arch,
+      });
+      const telemetry = getDefaultTelemetry();
+      const runStartedAt = Date.now();
+
       if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
         prompt = readReexecStdinPrompt(process.env);
       }
@@ -751,6 +761,17 @@ program
         }
       }
 
+      const runMode: "new" | "resume" | "worktree" = options.worktree
+        ? "worktree"
+        : startIteration > 0
+          ? "resume"
+          : "new";
+
+      telemetry.pageview("/run", {
+        agent: config.agent,
+        mode: runMode,
+      });
+
       initDebugLog(runInfo.logPath);
       appendDebugLog("run:start", {
         args: process.argv.slice(2),
@@ -901,6 +922,24 @@ program
           commitCount: finalState.commitCount,
           worktreePath,
         });
+
+        telemetry.track("run", {
+          agent: config.agent,
+          mode: runMode,
+          status: finalState.status,
+          signal: shutdownSignal ?? undefined,
+          iterations: finalState.currentIteration,
+          success_count: finalState.successCount,
+          fail_count: finalState.failCount,
+          commit_count: finalState.commitCount,
+          total_input_tokens: finalState.totalInputTokens,
+          total_output_tokens: finalState.totalOutputTokens,
+          duration_ms: Date.now() - runStartedAt,
+          prevent_sleep: config.preventSleep === true,
+          commit_message_preset: effectiveCommitMessage?.preset ?? "default",
+          stop_when_set: effectiveStopWhen !== undefined,
+        });
+        await telemetry.close(1_000);
 
         if (finalState.status === "aborted") {
           console.error(`\n  gnhf: Run log: ${runInfo.logPath}\n`);

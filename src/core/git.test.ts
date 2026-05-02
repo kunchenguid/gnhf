@@ -27,6 +27,18 @@ function argsOfCall(index: number): string[] {
   return call[1] as string[];
 }
 
+function optionsOfCall(index: number): {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+} {
+  const call = mockExecFileSync.mock.calls[index];
+  if (!call) throw new Error(`no call at index ${index}`);
+  return (call[2] ?? {}) as {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  };
+}
+
 describe("git utilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,11 +64,11 @@ describe("git utilities", () => {
       expect(mockExecFileSync).toHaveBeenCalledWith(
         "git",
         ["status", "--porcelain"],
-        {
+        expect.objectContaining({
           cwd: "/my/repo",
           encoding: "utf-8",
           stdio: "pipe",
-        },
+        }),
       );
     });
   });
@@ -67,11 +79,11 @@ describe("git utilities", () => {
       expect(mockExecFileSync).toHaveBeenCalledWith(
         "git",
         ["checkout", "-b", "feature/test"],
-        {
+        expect.objectContaining({
           cwd: "/repo",
           encoding: "utf-8",
           stdio: "pipe",
-        },
+        }),
       );
     });
   });
@@ -136,19 +148,67 @@ describe("git utilities", () => {
     it("stages all files and passes the message as its own argv entry", () => {
       commitAll("initial commit", "/repo");
       expect(argsOfCall(0)).toEqual(["add", "-A"]);
-      expect(argsOfCall(1)).toEqual(["commit", "-m", "initial commit"]);
+      expect(argsOfCall(1)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "initial commit",
+      ]);
+    });
+
+    it("disables GPG signing on the commit so a configured signing key cannot prompt", () => {
+      commitAll("anything", "/repo");
+      const args = argsOfCall(1);
+      expect(args).toContain("commit.gpgsign=false");
+      expect(args).toContain("tag.gpgsign=false");
+      expect(args.indexOf("commit.gpgsign=false")).toBeLessThan(
+        args.indexOf("commit"),
+      );
+    });
+
+    it("preserves shell metacharacters in the message without any escaping", () => {
+      const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
+      commitAll(injection, "/repo");
+      expect(argsOfCall(1)).toContain(injection);
     });
 
     it("does not throw when there is nothing to commit", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
-        if (argv[0] === "commit") {
+        if (argv.includes("commit")) {
           throw new Error("nothing to commit");
         }
         return "";
       });
 
       expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
+  });
+
+  describe("prompt-blocking env vars", () => {
+    it("sets GIT_TERMINAL_PROMPT=0 on every git invocation so HTTPS auth prompts cannot block", () => {
+      ensureCleanWorkingTree("/repo");
+      expect(optionsOfCall(0).env?.GIT_TERMINAL_PROMPT).toBe("0");
+    });
+
+    it("preserves existing process.env keys alongside GIT_TERMINAL_PROMPT", () => {
+      ensureCleanWorkingTree("/repo");
+      const env = optionsOfCall(0).env ?? {};
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.GIT_TERMINAL_PROMPT).toBe("0");
+    });
+
+    it("keeps GIT_TERMINAL_PROMPT=0 when the caller passes its own env (e.g. LC_ALL)", () => {
+      // getCurrentBranch -> isGitRepository sets LC_ALL=C internally; the
+      // helper must still inject GIT_TERMINAL_PROMPT into that custom env.
+      getCurrentBranch("/repo");
+      // First call is the rev-parse --git-dir probe with LC_ALL=C.
+      const probe = optionsOfCall(0);
+      expect(probe.env?.LC_ALL).toBe("C");
+      expect(probe.env?.GIT_TERMINAL_PROMPT).toBe("0");
     });
   });
 

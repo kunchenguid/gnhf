@@ -57,6 +57,13 @@ All git invocations go through `execFileSync` with explicit argv. `git.injection
 
 When `preventSleep` is on and the process wasn't already re-exec'd under a sleep-inhibitor, gnhf re-execs itself under `caffeinate` (macOS), `systemd-inhibit` (Linux), or a PowerShell `SetThreadExecutionState` helper (Windows). The re-exec uses `GNHF_SLEEP_INHIBITED=1` as the loop-breaker and `GNHF_REEXEC_STDIN_PROMPT_FILE` to pass piped stdin across the re-exec (the original process writes a 0600 temp file, the child reads and unlinks it).
 
+### Telemetry (`src/core/telemetry.ts`)
+
+Anonymous run summaries POSTed to a self-hosted Umami instance.
+One pageview at run start and one `track("run", ...)` event at the end - never per-iteration, and never with `cwd`, branch slug, prompt content, or anything else that could identify a user or repo.
+Build-time defaults are injected via `tsdown.config.ts`'s `define` from `GNHF_UMAMI_HOST` / `GNHF_UMAMI_WEBSITE_ID`; runtime env vars of the same name override, and `GNHF_TELEMETRY=0|false|off` disables.
+**User-facing docs about telemetry must stay minimal: cover only the opt-out env var (`GNHF_TELEMETRY=0`) and that the data is anonymous. Do not document fields, endpoint, or build-time injection in the README.**
+
 ## Conventions
 
 - ESM-only, `.js` import extensions in TypeScript source (`import { foo } from "./foo.js"`). tsdown bundles it all into `dist/cli.mjs`.

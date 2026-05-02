@@ -14,17 +14,25 @@ function translateGitError(error: unknown): Error {
 // characters like `, $, ", ', and ; are harmless data rather than executable
 // syntax. Do not add a code path that builds a shell command string from
 // user- or agent-provided input.
+//
+// Always inject GIT_TERMINAL_PROMPT=0 so a misconfigured credential helper
+// or an HTTPS auth challenge can't hang a long-running gnhf loop on a
+// terminal prompt. GPG signing is a separate prompt pathway (pinentry) and
+// is disabled where it matters via `-c commit.gpgsign=false` at the call
+// site (see commitAll), since GIT_TERMINAL_PROMPT does not cover it.
 function git(
   args: string[],
   cwd: string,
   options: { env?: NodeJS.ProcessEnv } = {},
 ): string {
+  const baseEnv = options.env ?? process.env;
+  const env: NodeJS.ProcessEnv = { ...baseEnv, GIT_TERMINAL_PROMPT: "0" };
   try {
     return execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       stdio: "pipe",
-      ...(options.env ? { env: options.env } : {}),
+      env,
     }).trim();
   } catch (error) {
     throw translateGitError(error);
@@ -117,7 +125,22 @@ export function getBranchCommitCount(baseCommit: string, cwd: string): number {
 export function commitAll(message: string, cwd: string): void {
   git(["add", "-A"], cwd);
   try {
-    git(["commit", "-m", message], cwd);
+    // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
+    // signing enabled would otherwise have every gnhf iteration spawn gpg
+    // and (for a locked agent) wait on a pinentry passphrase prompt that
+    // never arrives in the alt-screen TUI.
+    git(
+      [
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        message,
+      ],
+      cwd,
+    );
   } catch {
     // Nothing to commit (no changes) -- that's fine
   }
