@@ -19,7 +19,7 @@ export type AgentName = (typeof AGENT_NAMES)[number];
 
 // Agents reached via the bundled acpx runtime: built-in target names,
 // configured registry names, or raw custom ACP server commands. Always
-// written as "acp:<target>" so the prefix routes to AcpAgent in the factory.
+// written as "acp:<target-or-command>" so the prefix routes to AcpAgent.
 export type AcpAgentSpec = `acp:${string}`;
 
 export type AgentSpec = AgentName | AcpAgentSpec;

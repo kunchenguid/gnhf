@@ -256,6 +256,39 @@ describe("gnhf acp e2e", () => {
   );
 
   it.skipIf(process.platform === "win32")(
+    "runs one iteration against a raw ACP command spec",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const { home } = setupAcpHome(tempDirs);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const rawAgentSpec = `acp:${process.execPath} ${mockAcpTargetPath}`;
+
+      const result = await runCli(
+        cwd,
+        ["ship it", "--agent", rawAgentSpec, "--max-iterations", "1"],
+        { env: buildEnv(home, mockLogPath) },
+      );
+
+      expect(result.code).toBe(0);
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+
+      const mockEvents = readJsonLines(mockLogPath).map((e) => e.event);
+      expect(mockEvents).toContain("agent:initialize");
+      expect(mockEvents).toContain("agent:prompt:done");
+
+      const debugLog = readFileSync(findRunLogPath(cwd), "utf-8");
+      expect(debugLog).toContain('"agent":"acp:custom"');
+      expect(debugLog).toContain('"target":"custom"');
+      expect(debugLog).not.toContain(rawAgentSpec);
+      expect(debugLog).not.toContain(mockAcpTargetPath);
+    },
+    30_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
     "reuses the persistent ACP session across multiple iterations and reports per-iteration usage deltas",
     async () => {
       const cwd = createRepo();
