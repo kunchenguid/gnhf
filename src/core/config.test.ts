@@ -23,10 +23,10 @@ const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
   [
-    "# Agent to use by default",
+    "# Agent to use by default: native agent name or acp:<target>",
     `agent: ${agent}`,
     "",
-    "# Custom paths to agent binaries (optional)",
+    "# Custom paths to native agent binaries (optional)",
     "# Paths may be absolute, bare executable names on PATH,",
     "# ~-prefixed, or relative to this config directory.",
     "# Note: rovodev overrides must point to an acli-compatible binary.",
@@ -36,7 +36,8 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
     "",
-    "# Per-agent CLI arg overrides (optional)",
+    "# Native agent CLI arg overrides (optional)",
+    "# ACP targets do not support path or arg overrides.",
     "# agentArgsOverride:",
     "#   codex:",
     "#     - -m",
