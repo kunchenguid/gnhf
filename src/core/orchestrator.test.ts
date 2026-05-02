@@ -50,6 +50,7 @@ const config: Config = {
   agent: "claude",
   agentPathOverride: {},
   agentArgsOverride: {},
+  acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };

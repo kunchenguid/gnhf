@@ -802,7 +802,10 @@ program
         runInfo,
         nativeAgent ? config.agentPathOverride[nativeAgent] : undefined,
         nativeAgent ? config.agentArgsOverride?.[nativeAgent] : undefined,
-        schemaOptions,
+        {
+          ...schemaOptions,
+          acpRegistryOverrides: config.acpRegistryOverrides,
+        },
       );
       const orchestrator = new Orchestrator(
         { ...config, commitMessage: effectiveCommitMessage },

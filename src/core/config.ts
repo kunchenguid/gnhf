@@ -46,6 +46,7 @@ export interface Config {
   agent: AgentSpec;
   agentPathOverride: Partial<Record<AgentName, string>>;
   agentArgsOverride: Partial<Record<AgentName, string[]>>;
+  acpRegistryOverrides: Record<string, string>;
   commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
@@ -55,9 +56,12 @@ const DEFAULT_CONFIG: Config = {
   agent: "claude",
   agentPathOverride: {},
   agentArgsOverride: {},
+  acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
+
+const ACP_TARGET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
 function formatAgentNameList(): string {
   const quoted = AGENT_NAMES.map((name) => `"${name}"`);
@@ -295,6 +299,39 @@ function normalizeAgentArgsOverride(
   return Object.keys(result).length === 0 ? undefined : result;
 }
 
+function normalizeAcpRegistryOverrides(
+  value: unknown,
+): Record<string, string> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for acpRegistryOverrides: expected an object mapping ACP target names to commands`,
+    );
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!ACP_TARGET_NAME_PATTERN.test(key)) {
+      throw new InvalidConfigError(
+        `Invalid target name in acpRegistryOverrides: "${key}". Target names must start with a letter or digit and contain only letters, digits, dots, underscores, colons, or hyphens.`,
+      );
+    }
+    if (typeof val !== "string") {
+      throw new InvalidConfigError(
+        `Invalid command for acpRegistryOverrides.${key}: expected a string`,
+      );
+    }
+    if (val.trim() === "") {
+      throw new InvalidConfigError(
+        `Invalid command for acpRegistryOverrides.${key}: expected a non-empty string`,
+      );
+    }
+    result[key] = val.trim();
+  }
+
+  return result;
+}
+
 function normalizeConfig(
   config: Partial<Config>,
   configDir?: string,
@@ -351,6 +388,23 @@ function normalizeConfig(
     }
   } else {
     delete normalized.agentArgsOverride;
+  }
+
+  const hasAcpRegistryOverrides = Object.prototype.hasOwnProperty.call(
+    config,
+    "acpRegistryOverrides",
+  );
+  if (hasAcpRegistryOverrides) {
+    const acpRegistryOverrides = normalizeAcpRegistryOverrides(
+      config.acpRegistryOverrides,
+    );
+    if (acpRegistryOverrides === undefined) {
+      delete normalized.acpRegistryOverrides;
+    } else {
+      normalized.acpRegistryOverrides = acpRegistryOverrides;
+    }
+  } else {
+    delete normalized.acpRegistryOverrides;
   }
 
   const hasCommitMessage = Object.prototype.hasOwnProperty.call(
@@ -455,6 +509,13 @@ function serializeConfig(config: Config): string {
     "#     - gpt-5.5",
     "#     - --thinking",
     "#     - high",
+    "",
+    "# Custom ACP target commands (optional)",
+    "# Maps acp:<target> names to spawn commands. Useful for pinning a",
+    "# local or beta build of an ACP agent.",
+    "# acpRegistryOverrides:",
+    '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
+    '#   staging: "node /opt/staging/agent.mjs"',
     "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",

@@ -4,7 +4,6 @@ import {
   createAcpRuntime,
   createAgentRegistry,
   createFileSessionStore,
-  type AcpRuntimeEvent,
   type AcpRuntimeHandle,
   type AcpRuntimeOptions,
   type AcpRuntimeTurnResult,
@@ -35,6 +34,7 @@ export interface AcpAgentDeps {
   schema: AgentOutputSchema;
   runId: string;
   sessionStateDir: string;
+  registryOverrides?: Record<string, string>;
   runtimeFactory?: (options: AcpRuntimeOptions) => AcpxRuntimeLike;
 }
 
@@ -56,6 +56,80 @@ function stripJsonFences(text: string): string {
   return withoutOpen.replace(/\n?```\s*$/, "").trim();
 }
 
+/**
+ * Walk forward from `start` (which must be `{`) and return the substring of
+ * the first balanced JSON object, or null if no balanced object is found.
+ * Tracks string state and escape sequences so braces inside strings don't
+ * affect depth.
+ */
+function tryExtractBalancedObject(text: string, start: number): string | null {
+  if (text[start] !== "{") return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const candidate = text.slice(start, i + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Look for a balanced JSON object inside `text`, preferring the rightmost one
+ * (since the agent is supposed to end the message with the structured answer).
+ */
+function extractLastJsonObject(text: string): string | null {
+  let cursor = text.lastIndexOf("{");
+  while (cursor >= 0) {
+    const candidate = tryExtractBalancedObject(text, cursor);
+    if (candidate !== null) return candidate;
+    cursor = text.lastIndexOf("{", cursor - 1);
+  }
+  return null;
+}
+
+function parseAgentJson(text: string): unknown | null {
+  const cleaned = stripJsonFences(text);
+  if (!cleaned) return null;
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // fall through to extraction
+  }
+  const extracted = extractLastJsonObject(cleaned);
+  if (!extracted) return null;
+  try {
+    return JSON.parse(extracted);
+  } catch {
+    return null;
+  }
+}
+
 function isAbortError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -67,6 +141,15 @@ function createAbortError(): Error {
   return new Error("Agent was aborted");
 }
 
+// Rough character-to-token heuristic. ACP's runtime only surfaces a cumulative
+// `used` context size via usage_update status events, and many adapters never
+// emit those. Estimating from text length gives the user a non-zero, vaguely
+// proportional number for both inputs and outputs regardless of adapter.
+function estimateTokens(charCount: number): number {
+  if (charCount <= 0) return 0;
+  return Math.ceil(charCount / 4);
+}
+
 export class AcpAgent implements Agent {
   readonly name: string;
 
@@ -74,6 +157,7 @@ export class AcpAgent implements Agent {
   private readonly schema: AgentOutputSchema;
   private readonly runId: string;
   private readonly sessionStateDir: string;
+  private readonly registryOverrides: Record<string, string> | undefined;
   private readonly runtimeFactory: (
     options: AcpRuntimeOptions,
   ) => AcpxRuntimeLike;
@@ -92,6 +176,7 @@ export class AcpAgent implements Agent {
     this.schema = deps.schema;
     this.runId = deps.runId;
     this.sessionStateDir = deps.sessionStateDir;
+    this.registryOverrides = deps.registryOverrides;
     this.runtimeFactory =
       deps.runtimeFactory ?? ((options) => createAcpRuntime(options));
     this.name = `acp:${deps.target}`;
@@ -128,42 +213,113 @@ export class AcpAgent implements Agent {
       cwd,
     });
 
+    const acpPrompt = buildAcpPrompt(prompt, this.schema);
+    const promptTokenEstimate = estimateTokens(acpPrompt.length);
+
     const turn = runtime.startTurn({
       handle,
-      text: buildAcpPrompt(prompt, this.schema),
+      text: acpPrompt,
       mode: "prompt",
       requestId,
       signal,
     });
 
     const startedAt = Date.now();
-    let outputBuf = "";
     const iterationStartUsed = this.lastReportedUsed;
     let latestUsed = iterationStartUsed;
+    let agentOutputChars = 0;
+    // Buffer for the in-flight assistant message. ACP adapters stream
+    // `agent_message_chunk` notifications as many tiny `text_delta` events
+    // (often a few characters each). We accumulate them and only surface the
+    // message via `onMessage` when the message is complete - on a tool_call
+    // boundary, a stream change, or end of turn.
+    let pendingMessage = "";
+    let pendingStream: "output" | "thought" | null = null;
+    // The most recently completed output-stream message. The agent's final
+    // structured JSON answer is supposed to be the last assistant message of
+    // the turn, so this is the primary candidate to JSON.parse - separating
+    // it from intermediate prose like "Let me examine the code...".
+    let lastOutputMessage = "";
+    // Concatenation of every output-stream chunk in the turn, used as a
+    // fallback when `lastOutputMessage` doesn't parse (e.g. when the agent
+    // streams the entire response as one continuous message without any
+    // tool_call to break it up).
+    let outputBuf = "";
     const logStream = logPath ? createWriteStream(logPath) : null;
-    const computeUsage = (): TokenUsage => ({
-      inputTokens: Math.max(0, latestUsed - iterationStartUsed),
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    });
+
+    const computeUsage = (): TokenUsage => {
+      const usedDelta = Math.max(0, latestUsed - iterationStartUsed);
+      return {
+        // Prefer the adapter's reported context delta when available, since
+        // that is the authoritative number. Fall back to a prompt-length
+        // estimate so the renderer is never stuck at 0 for adapters that
+        // don't emit usage_update.
+        inputTokens: usedDelta > 0 ? usedDelta : promptTokenEstimate,
+        outputTokens: estimateTokens(agentOutputChars),
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      };
+    };
+
+    const flushPendingMessage = () => {
+      if (pendingMessage.length > 0) {
+        if (pendingStream === "output") {
+          lastOutputMessage = pendingMessage;
+        }
+        onMessage?.(pendingMessage);
+        pendingMessage = "";
+      }
+      pendingStream = null;
+    };
 
     try {
+      // Surface an initial input-token estimate immediately so the renderer
+      // shows non-zero numbers as soon as the iteration starts.
+      onUsage?.(computeUsage());
+
       try {
         for await (const event of turn.events) {
           logStream?.write(`${JSON.stringify(event)}\n`);
-          const outputChunk = this.routeEvent(event, onMessage);
-          if (outputChunk) outputBuf += outputChunk;
-          if (
-            event.type === "status" &&
-            typeof event.used === "number" &&
-            event.used !== latestUsed
-          ) {
-            latestUsed = event.used;
-            this.lastReportedUsed = latestUsed;
-            onUsage?.(computeUsage());
+
+          if (event.type === "text_delta") {
+            const stream = event.stream ?? "output";
+            const text = event.text;
+            if (!text) continue;
+            if (pendingStream !== null && pendingStream !== stream) {
+              flushPendingMessage();
+            }
+            pendingStream = stream;
+            pendingMessage += text;
+            if (stream === "output") {
+              outputBuf += text;
+              agentOutputChars += text.length;
+              onUsage?.(computeUsage());
+            }
+            continue;
+          }
+
+          if (event.type === "tool_call") {
+            // A tool_call ends the in-flight message - flush whatever the
+            // assistant has said so far, then surface the tool_call summary.
+            flushPendingMessage();
+            if (event.text && event.text.length > 0) onMessage?.(event.text);
+            continue;
+          }
+
+          if (event.type === "status") {
+            // Status events are metadata (usage_update, mode change, etc.)
+            // and fire frequently mid-stream. Don't surface their text via
+            // onMessage - it would flicker over the actual assistant message
+            // the user is reading.
+            if (typeof event.used === "number" && event.used !== latestUsed) {
+              latestUsed = event.used;
+              this.lastReportedUsed = latestUsed;
+              onUsage?.(computeUsage());
+            }
+            continue;
           }
         }
+        flushPendingMessage();
       } catch (error) {
         if (signal?.aborted || isAbortError(error)) {
           await turn.cancel({ reason: "gnhf-aborted" }).catch(() => undefined);
@@ -213,19 +369,23 @@ export class AcpAgent implements Agent {
         throw new Error(message);
       }
 
-      const cleanedText = stripJsonFences(outputBuf);
-      if (cleanedText.length === 0) {
+      if (lastOutputMessage.length === 0 && outputBuf.length === 0) {
         throw new Error("ACP agent returned no output text");
       }
 
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(cleanedText);
-      } catch (error) {
+      // Try the most recent assistant message first - that's where the
+      // structured answer is supposed to live. Fall back to extracting a
+      // JSON object out of the full output stream if the last message
+      // alone doesn't parse (e.g. the agent streamed prose and JSON in
+      // one uninterrupted message, so we have to dig the JSON out).
+      let parsed = parseAgentJson(lastOutputMessage);
+      if (parsed === null && outputBuf !== lastOutputMessage) {
+        parsed = parseAgentJson(outputBuf);
+      }
+      if (parsed === null) {
+        const preview = (lastOutputMessage || outputBuf).slice(0, 200);
         throw new Error(
-          `Failed to parse ACP agent output as JSON: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Failed to parse ACP agent output as JSON. Last assistant message started with: ${JSON.stringify(preview)}`,
         );
       }
 
@@ -274,7 +434,11 @@ export class AcpAgent implements Agent {
     const runtime = this.runtimeFactory({
       cwd,
       sessionStore: createFileSessionStore({ stateDir: this.sessionStateDir }),
-      agentRegistry: createAgentRegistry(),
+      agentRegistry: createAgentRegistry(
+        this.registryOverrides
+          ? { overrides: this.registryOverrides }
+          : undefined,
+      ),
       permissionMode: "approve-all",
       nonInteractivePermissions: "deny",
     });
@@ -285,31 +449,5 @@ export class AcpAgent implements Agent {
       cwd,
     });
     return runtime;
-  }
-
-  /**
-   * Surface live progress to the renderer via onMessage and report the
-   * portion (if any) that should be accumulated as the final JSON answer.
-   *
-   * We only include `text_delta` with `stream: "output"` in the buffer that
-   * we later JSON.parse. Thoughts, tool calls, and status updates flow to
-   * onMessage so the user sees progress, but never into the answer buffer.
-   */
-  private routeEvent(
-    event: AcpRuntimeEvent,
-    onMessage?: (text: string) => void,
-  ): string | undefined {
-    if (event.type === "text_delta") {
-      const stream = event.stream ?? "output";
-      const text = event.text;
-      if (text && text.length > 0) onMessage?.(text);
-      return stream === "output" ? text : undefined;
-    }
-
-    if (event.type === "tool_call" || event.type === "status") {
-      const text = event.text;
-      if (text && text.length > 0) onMessage?.(text);
-    }
-    return undefined;
   }
 }

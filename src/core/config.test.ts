@@ -56,6 +56,13 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#     - --thinking",
     "#     - high",
     "",
+    "# Custom ACP target commands (optional)",
+    "# Maps acp:<target> names to spawn commands. Useful for pinning a",
+    "# local or beta build of an ACP agent.",
+    "# acpRegistryOverrides:",
+    '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
+    '#   staging: "node /opt/staging/agent.mjs"',
+    "",
     "# Commit message convention (optional)",
     "# Defaults to: gnhf #<iteration>: <summary>",
     "# Use Conventional Commits semantic-release headers:",
@@ -94,6 +101,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -116,6 +124,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -139,6 +148,7 @@ describe("loadConfig", () => {
       agent: "codex",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -178,6 +188,7 @@ describe("loadConfig", () => {
         codex: resolvedCodex,
       },
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -212,6 +223,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -226,6 +238,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -240,6 +253,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -254,6 +268,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -261,6 +276,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -323,6 +339,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -338,6 +355,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -433,5 +451,67 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(
       /agentArgsOverride\.pi\[0\].*managed by gnhf/,
     );
+  });
+
+  it("reads acpRegistryOverrides from config", () => {
+    mockReadFileSync.mockReturnValue(
+      [
+        "acpRegistryOverrides:",
+        '  my-fork: "node /opt/my-acp-agent.mjs"',
+        '  staging-claude: "claude-code-beta --acp"',
+        "",
+      ].join("\n"),
+    );
+
+    const config = loadConfig();
+
+    expect(config.acpRegistryOverrides).toEqual({
+      "my-fork": "node /opt/my-acp-agent.mjs",
+      "staging-claude": "claude-code-beta --acp",
+    });
+  });
+
+  it("defaults acpRegistryOverrides to an empty object", () => {
+    mockReadFileSync.mockReturnValue("");
+
+    const config = loadConfig();
+
+    expect(config.acpRegistryOverrides).toEqual({});
+  });
+
+  it.each([
+    {
+      label: "non-object value",
+      yaml: 'acpRegistryOverrides: "not-an-object"\n',
+      expected: "Invalid config value for acpRegistryOverrides",
+    },
+    {
+      label: "array value",
+      yaml: "acpRegistryOverrides:\n  - foo\n",
+      expected: "Invalid config value for acpRegistryOverrides",
+    },
+    {
+      label: "non-string command",
+      yaml: "acpRegistryOverrides:\n  foo: 42\n",
+      expected: "Invalid command for acpRegistryOverrides.foo",
+    },
+    {
+      label: "blank command",
+      yaml: 'acpRegistryOverrides:\n  foo: "   "\n',
+      expected: "Invalid command for acpRegistryOverrides.foo",
+    },
+    {
+      label: "blank target name",
+      yaml: 'acpRegistryOverrides:\n  "": "node x.mjs"\n',
+      expected: "Invalid target name in acpRegistryOverrides",
+    },
+    {
+      label: "target name with space",
+      yaml: 'acpRegistryOverrides:\n  "bad name": "node x.mjs"\n',
+      expected: "Invalid target name in acpRegistryOverrides",
+    },
+  ])("rejects invalid acpRegistryOverrides: $label", ({ yaml, expected }) => {
+    mockReadFileSync.mockReturnValue(yaml);
+    expect(() => loadConfig()).toThrow(expected);
   });
 });

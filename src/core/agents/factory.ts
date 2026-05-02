@@ -17,6 +17,7 @@ import { RovoDevAgent } from "./rovodev.js";
 export interface CreateAgentOptions {
   includeStopField: boolean;
   commitFields?: AgentOutputCommitField[];
+  acpRegistryOverrides?: Record<string, string>;
 }
 
 export function createAgent(
@@ -37,6 +38,7 @@ export function createAgent(
       schema,
       runId: runInfo.runId,
       sessionStateDir: join(runInfo.runDir, "acp-sessions"),
+      registryOverrides: options.acpRegistryOverrides,
     });
   }
 
