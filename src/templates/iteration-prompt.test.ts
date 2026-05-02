@@ -99,4 +99,18 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("scope: Optional commit scope");
     expect(result).toContain('default: ""');
   });
+
+  it("warns the agent that complete no-op iterations should report success=false", () => {
+    // Without this guardrail, an agent that converges (no further useful
+    // work) keeps reporting success=true with empty key_changes_made,
+    // which the orchestrator can't distinguish from a productive
+    // iteration and the loop spins forever.
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "test",
+    });
+    expect(result).toContain("complete no-op iteration");
+    expect(result).toContain("success=false");
+  });
 });

@@ -80,17 +80,29 @@ function restoreTerminalTitle(): string {
   return "\x1b[23;0t";
 }
 
+function eyebrowSegments(agentName: string): string[] {
+  // Render "acp:<target>" as two segments separated by the same dot used
+  // between "gnhf" and the agent name: "g n h f \u00b7 a c p \u00b7 claude".
+  if (agentName.startsWith("acp:")) {
+    const target = agentName.slice("acp:".length);
+    if (target.length > 0) return ["acp", target];
+  }
+  return [agentName];
+}
+
 export function renderTitleCells(agentName?: string): Cell[][] {
+  const segments = agentName ? eyebrowSegments(agentName) : [];
+  const separator: Cell[] = [
+    ...textToCells("  ", "normal"),
+    ...textToCells("\u00b7", "dim"),
+    ...textToCells("  ", "normal"),
+  ];
   const eyebrow: Cell[] = [
     ...textToCells(spacedLabel("gnhf"), "dim"),
-    ...(agentName
-      ? [
-          ...textToCells("  ", "normal"),
-          ...textToCells("\u00b7", "dim"),
-          ...textToCells("  ", "normal"),
-          ...textToCells(spacedLabel(agentName), "dim"),
-        ]
-      : []),
+    ...segments.flatMap((segment) => [
+      ...separator,
+      ...textToCells(spacedLabel(segment), "dim"),
+    ]),
   ];
 
   return [

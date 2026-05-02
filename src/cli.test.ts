@@ -26,6 +26,8 @@ const TEST_AGENT_NAMES = [
   "copilot",
   "pi",
 ];
+const TEST_IS_AGENT_SPEC = (name: string) =>
+  TEST_AGENT_NAMES.includes(name) || /^acp:\S+/.test(name);
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -132,6 +134,7 @@ async function runCliWithMocks(
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
+    isAgentSpec: TEST_IS_AGENT_SPEC,
     loadConfig,
   }));
   vi.doMock("./core/debug-log.js", () => ({
@@ -316,6 +319,7 @@ async function runSigintCliTest({
   vi.resetModules();
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
+    isAgentSpec: TEST_IS_AGENT_SPEC,
     loadConfig: vi.fn(() => ({
       agent: "claude",
       agentPathOverride: {},
@@ -466,6 +470,7 @@ async function runCliResumeWithActualRun(
   vi.doUnmock("./core/run.js");
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
+    isAgentSpec: TEST_IS_AGENT_SPEC,
     loadConfig: vi.fn(() => ({
       agent: "claude",
       agentPathOverride: {},
@@ -1301,6 +1306,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig,
     }));
     vi.doMock("./core/debug-log.js", () => ({
@@ -1450,6 +1456,7 @@ describe("cli", () => {
     vi.doMock("node:readline", () => ({ createInterface }));
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1584,6 +1591,7 @@ describe("cli", () => {
     });
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1714,6 +1722,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1839,6 +1848,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1961,6 +1971,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2076,6 +2087,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2271,6 +2283,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2348,6 +2361,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2492,6 +2506,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2662,6 +2677,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2812,6 +2828,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -3263,6 +3280,7 @@ describe("cli", () => {
     vi.resetModules();
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
+      isAgentSpec: TEST_IS_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},

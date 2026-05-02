@@ -17,8 +17,33 @@ export const AGENT_NAMES = [
 
 export type AgentName = (typeof AGENT_NAMES)[number];
 
+// Agents reached via the bundled acpx runtime: any target acpx's agent
+// registry resolves (gemini, cursor, droid, ...). Always written as
+// "acp:<target>" so the prefix routes to AcpAgent in the factory.
+export type AcpAgentSpec = `acp:${string}`;
+
+export type AgentSpec = AgentName | AcpAgentSpec;
+
+const ACP_SPEC_PATTERN = /^acp:[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+
+export function isAgentName(name: string): name is AgentName {
+  return (AGENT_NAMES as readonly string[]).includes(name);
+}
+
+export function isAcpSpec(spec: string): spec is AcpAgentSpec {
+  return ACP_SPEC_PATTERN.test(spec);
+}
+
+export function isAgentSpec(spec: string): spec is AgentSpec {
+  return isAgentName(spec) || isAcpSpec(spec);
+}
+
+export function getAcpTarget(spec: AcpAgentSpec): string {
+  return spec.slice("acp:".length);
+}
+
 export interface Config {
-  agent: AgentName;
+  agent: AgentSpec;
   agentPathOverride: Partial<Record<AgentName, string>>;
   agentArgsOverride: Partial<Record<AgentName, string[]>>;
   commitMessage?: CommitMessageConfig;

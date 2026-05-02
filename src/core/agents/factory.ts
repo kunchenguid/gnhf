@@ -1,10 +1,12 @@
+import { join } from "node:path";
 import {
   buildAgentOutputSchema,
   type Agent,
   type AgentOutputCommitField,
 } from "./types.js";
-import type { AgentName } from "../config.js";
+import { getAcpTarget, isAcpSpec, type AgentSpec } from "../config.js";
 import type { RunInfo } from "../run.js";
+import { AcpAgent } from "./acp.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
@@ -18,7 +20,7 @@ export interface CreateAgentOptions {
 }
 
 export function createAgent(
-  name: AgentName,
+  spec: AgentSpec,
   runInfo: RunInfo,
   pathOverride: string | undefined,
   agentArgsOverride: string[] | undefined,
@@ -28,6 +30,17 @@ export function createAgent(
     includeStopField: options.includeStopField,
     commitFields: options.commitFields,
   });
+
+  if (isAcpSpec(spec)) {
+    return new AcpAgent({
+      target: getAcpTarget(spec),
+      schema,
+      runId: runInfo.runId,
+      sessionStateDir: join(runInfo.runDir, "acp-sessions"),
+    });
+  }
+
+  const name = spec;
   switch (name) {
     case "claude":
       return new ClaudeAgent({

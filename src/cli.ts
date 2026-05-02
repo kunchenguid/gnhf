@@ -15,7 +15,13 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
-import { AGENT_NAMES, loadConfig, type AgentName } from "./core/config.js";
+import {
+  AGENT_NAMES,
+  isAgentSpec,
+  loadConfig,
+  type AgentName,
+  type AgentSpec,
+} from "./core/config.js";
 import {
   appendDebugLog,
   initDebugLog,
@@ -63,6 +69,7 @@ const AGENT_NAME_SET = new Set<string>(AGENT_NAMES);
 const AGENT_NAME_LIST = `"${AGENT_NAMES.slice(0, -1).join('", "')}", or "${
   AGENT_NAMES[AGENT_NAMES.length - 1]
 }"`;
+const AGENT_SPEC_LIST = `${AGENT_NAME_LIST}, or "acp:<target>" (e.g. acp:gemini)`;
 
 class PromptSignalError extends Error {
   constructor(public readonly signal: NodeJS.Signals) {
@@ -101,6 +108,10 @@ function humanizeErrorMessage(message: string): string {
 
 function isAgentName(name: string): name is AgentName {
   return AGENT_NAME_SET.has(name);
+}
+
+function getNativeAgentName(spec: AgentSpec): AgentName | undefined {
+  return isAgentName(spec) ? spec : undefined;
 }
 
 function buildSchemaOptions(
@@ -440,7 +451,10 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option("--agent <agent>", `Agent to use (${AGENT_NAMES.join(", ")})`)
+  .option(
+    "--agent <agent>",
+    `Agent to use (${AGENT_NAMES.join(", ")}, or acp:<target>)`,
+  )
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -508,9 +522,9 @@ program
       let promptFromStdin = false;
 
       const agentName = options.agent;
-      if (agentName !== undefined && !isAgentName(agentName)) {
+      if (agentName !== undefined && !isAgentSpec(agentName)) {
         console.error(
-          `Unknown agent: ${options.agent}. Use ${AGENT_NAME_LIST}.`,
+          `Unknown agent: ${options.agent}. Use ${AGENT_SPEC_LIST}.`,
         );
         process.exit(1);
       }
@@ -528,9 +542,9 @@ program
           ? {}
           : { preventSleep: options.preventSleep }),
       };
-      if (!isAgentName(config.agent)) {
+      if (!isAgentSpec(config.agent)) {
         console.error(
-          `Unknown agent: ${config.agent}. Use ${AGENT_NAME_LIST}.`,
+          `Unknown agent: ${config.agent}. Use ${AGENT_SPEC_LIST}.`,
         );
         process.exit(1);
       }
@@ -751,7 +765,9 @@ program
         stopWhen: effectiveStopWhen,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
-        agentArgsOverride: config.agentArgsOverride?.[config.agent],
+        agentArgsOverride: getNativeAgentName(config.agent)
+          ? config.agentArgsOverride?.[getNativeAgentName(config.agent)!]
+          : undefined,
         worktree: options.worktree,
         worktreePath,
         platform: process.platform,
@@ -759,11 +775,12 @@ program
         gnhfVersion: packageVersion,
       });
 
+      const nativeAgent = getNativeAgentName(config.agent);
       const agent = createAgent(
         config.agent,
         runInfo,
-        config.agentPathOverride[config.agent],
-        config.agentArgsOverride?.[config.agent],
+        nativeAgent ? config.agentPathOverride[nativeAgent] : undefined,
+        nativeAgent ? config.agentArgsOverride?.[nativeAgent] : undefined,
         schemaOptions,
       );
       const orchestrator = new Orchestrator(

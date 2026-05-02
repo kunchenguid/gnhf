@@ -11,7 +11,7 @@ export function buildIterationPrompt(params: {
   commitMessage?: CommitMessageConfig;
 }): string {
   const outputFields = [
-    "- success: whether you were able to make a meaningful contribution that got us closer towards the objective. setting this to false means any code change you made should be discarded",
+    "- success: whether you were able to make a meaningful contribution that got us closer towards the objective. setting this to false means any code change you made should be discarded. A complete no-op iteration (no file changes AND no new meaningful learnings worth recording) is not a success - set success=false so the run can halt rather than spin on no-op iterations",
     "- summary: a concise one-sentence summary of the accomplishment in this iteration",
     "- key_changes_made: an array of descriptions for key changes you made. don't group this by file - group by logical units of work. don't describe activities - describe material outcomes",
     "- key_learnings: an array of new learnings that were surprising, weren't captured by previous notes and would be informative for future iterations",
