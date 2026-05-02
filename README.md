@@ -219,6 +219,11 @@ agent: claude
 #     - --thinking
 #     - high
 
+# Custom ACP target commands (optional)
+# acpRegistryOverrides:
+#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"
+#   staging: "node /opt/staging/agent.mjs"
+
 # Commit message convention (optional)
 # Defaults to: gnhf #<iteration>: <summary>
 # Use the conventional preset for semantic-release compatible headers:
@@ -239,6 +244,7 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 
 `agentArgsOverride.<name>` lets you pass through extra CLI flags for native agents (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, or `pi`).
 ACP targets do not support path or arg overrides in this version.
+Use `acpRegistryOverrides` to map `acp:<target>` names to custom spawn commands for local, forked, or beta ACP agents.
 
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
@@ -289,7 +295,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 | Pi                 | `--agent pi`           | Install the `pi` CLI and configure a usable provider/model first.                                   | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                                                     |
 | Rovo Dev           | `--agent rovodev`      | Install Atlassian's `acli` and authenticate it with Rovo Dev first.                                 | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                                                 |
 | OpenCode           | `--agent opencode`     | Install `opencode` and configure at least one usable model provider first.                          | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.                                       |
-| ACP target         | `--agent acp:<target>` | Install and authenticate the target supported by the bundled `acpx` registry, such as `acp:gemini`. | `gnhf` runs the target through ACP with a persistent per-run session under `.gnhf/runs/<runId>/acp-sessions`; token usage and `--max-tokens` use ACP `used` deltas as input tokens only, and `agentPathOverride` and `agentArgsOverride` do not apply. |
+| ACP target         | `--agent acp:<target>` | Install and authenticate the target supported by the bundled `acpx` registry, such as `acp:gemini`. | `gnhf` runs the target through ACP with a persistent per-run session under `.gnhf/runs/<runId>/acp-sessions`; token usage and `--max-tokens` use ACP `used` deltas when available, with text-length estimates as a fallback, and `agentPathOverride` and `agentArgsOverride` do not apply. |
 
 ## Development
 
