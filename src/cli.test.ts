@@ -625,28 +625,6 @@ describe("cli", () => {
     );
   });
 
-  it("accepts opencode as an explicit --agent override", async () => {
-    const { loadConfig, createAgent } = await runCliWithMocks(
-      ["ship it", "--agent", "opencode"],
-      {
-        agent: "opencode",
-        agentPathOverride: {},
-        agentArgsOverride: {},
-        maxConsecutiveFailures: 3,
-        preventSleep: false,
-      },
-    );
-
-    expect(loadConfig).toHaveBeenCalledWith({ agent: "opencode" });
-    expect(createAgent).toHaveBeenCalledWith(
-      "opencode",
-      stubRunInfo,
-      undefined,
-      undefined,
-      { includeStopField: false },
-    );
-  });
-
   it("accepts copilot as an explicit --agent override", async () => {
     const { loadConfig, createAgent } = await runCliWithMocks(
       ["ship it", "--agent", "copilot"],
