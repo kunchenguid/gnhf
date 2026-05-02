@@ -382,6 +382,27 @@ describe("createAgent", () => {
     expect(agent.name).toBe("acp:gemini");
   });
 
+  it("forwards raw ACP command specs as custom acpx targets", () => {
+    const command = "./bin/dev-acp --profile ci";
+    const agent = createAgent(
+      `acp:${command}`,
+      stubRunInfo,
+      undefined,
+      undefined,
+      {
+        includeStopField: false,
+      },
+    );
+
+    expect(AcpAgent).toHaveBeenCalledWith({
+      target: command,
+      schema: noStopSchema,
+      runId: stubRunInfo.runId,
+      sessionStateDir: acpSessionStateDir,
+    });
+    expect(agent.name).toBe(`acp:${command}`);
+  });
+
   it("hands AcpAgent a schema that requires should_fully_stop when includeStopField is true", () => {
     createAgent("acp:cursor", stubRunInfo, undefined, undefined, {
       includeStopField: true,

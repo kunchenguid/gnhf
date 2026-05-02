@@ -12,7 +12,7 @@ vi.mock("node:os", () => ({
 }));
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { loadConfig } from "./config.js";
+import { isAgentSpec, loadConfig } from "./config.js";
 
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
@@ -23,7 +23,7 @@ const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
   [
-    "# Agent to use by default: native agent name or acp:<target>",
+    "# Agent to use by default: native agent name or acp:<target-or-command>",
     `agent: ${agent}`,
     "",
     "# Custom paths to native agent binaries (optional)",
@@ -57,7 +57,7 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#     - high",
     "",
     "# Custom ACP target commands (optional)",
-    "# Maps acp:<target> names to spawn commands. Useful for pinning a",
+    "# Maps acp:<target> names to spawn commands. Useful for naming a",
     "# local or beta build of an ACP agent.",
     "# acpRegistryOverrides:",
     '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
@@ -513,5 +513,12 @@ describe("loadConfig", () => {
   ])("rejects invalid acpRegistryOverrides: $label", ({ yaml, expected }) => {
     mockReadFileSync.mockReturnValue(yaml);
     expect(() => loadConfig()).toThrow(expected);
+  });
+});
+
+describe("isAgentSpec", () => {
+  it("accepts raw ACP commands after the acp: prefix", () => {
+    expect(isAgentSpec("acp:./bin/dev-acp --profile ci")).toBe(true);
+    expect(isAgentSpec("acp:npx -y @scope/custom-agent acp")).toBe(true);
   });
 });

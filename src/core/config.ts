@@ -17,21 +17,33 @@ export const AGENT_NAMES = [
 
 export type AgentName = (typeof AGENT_NAMES)[number];
 
-// Agents reached via the bundled acpx runtime: any target acpx's agent
-// registry resolves (gemini, cursor, droid, ...). Always written as
-// "acp:<target>" so the prefix routes to AcpAgent in the factory.
+// Agents reached via the bundled acpx runtime: built-in target names,
+// configured registry names, or raw custom ACP server commands. Always
+// written as "acp:<target>" so the prefix routes to AcpAgent in the factory.
 export type AcpAgentSpec = `acp:${string}`;
 
 export type AgentSpec = AgentName | AcpAgentSpec;
-
-const ACP_SPEC_PATTERN = /^acp:[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
 export function isAgentName(name: string): name is AgentName {
   return (AGENT_NAMES as readonly string[]).includes(name);
 }
 
+function hasDisallowedAcpTargetChar(target: string): boolean {
+  for (let i = 0; i < target.length; i += 1) {
+    const code = target.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 export function isAcpSpec(spec: string): spec is AcpAgentSpec {
-  return ACP_SPEC_PATTERN.test(spec);
+  if (!spec.startsWith("acp:")) return false;
+  const target = spec.slice("acp:".length);
+  return (
+    target.length > 0 &&
+    target.trim() === target &&
+    !hasDisallowedAcpTargetChar(target)
+  );
 }
 
 export function isAgentSpec(spec: string): spec is AgentSpec {
@@ -477,7 +489,7 @@ function serializeConfig(config: Config): string {
     config.agentArgsOverride,
   );
   const lines = [
-    "# Agent to use by default: native agent name or acp:<target>",
+    "# Agent to use by default: native agent name or acp:<target-or-command>",
     `agent: ${config.agent}`,
     "",
     "# Custom paths to native agent binaries (optional)",
@@ -511,7 +523,7 @@ function serializeConfig(config: Config): string {
     "#     - high",
     "",
     "# Custom ACP target commands (optional)",
-    "# Maps acp:<target> names to spawn commands. Useful for pinning a",
+    "# Maps acp:<target> names to spawn commands. Useful for naming a",
     "# local or beta build of an ACP agent.",
     "# acpRegistryOverrides:",
     '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',

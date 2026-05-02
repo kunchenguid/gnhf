@@ -70,7 +70,7 @@ const AGENT_NAME_SET = new Set<string>(AGENT_NAMES);
 const AGENT_NAME_LIST = `"${AGENT_NAMES.slice(0, -1).join('", "')}", or "${
   AGENT_NAMES[AGENT_NAMES.length - 1]
 }"`;
-const AGENT_SPEC_LIST = `${AGENT_NAME_LIST}, or "acp:<target>" (e.g. acp:gemini)`;
+const AGENT_SPEC_LIST = `${AGENT_NAME_LIST}, or "acp:<target-or-command>" (e.g. acp:gemini)`;
 
 class PromptSignalError extends Error {
   constructor(public readonly signal: NodeJS.Signals) {
@@ -454,7 +454,7 @@ program
   .argument("[prompt]", "The objective for the coding agent")
   .option(
     "--agent <agent>",
-    `Agent to use (${AGENT_NAMES.join(", ")}, or acp:<target>)`,
+    `Agent to use (${AGENT_NAMES.join(", ")}, or acp:<target-or-command>)`,
   )
   .option(
     "--max-iterations <n>",
