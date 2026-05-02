@@ -4,7 +4,7 @@ This file provides guidance to agents1 when working with code in this repository
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, or Pi) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, retryable hard agent errors trigger exponential backoff, and permanent agent errors abort immediately. Target: Node 20+, published to npm as a single-file ESM bundle.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or an ACP target) in a loop inside a git repo. Each successful iteration is a separate commit on a dedicated `gnhf/<slug>` branch; failures get `git reset --hard`, retryable hard agent errors trigger exponential backoff, and permanent agent errors abort immediately. Target: Node 20+, published to npm as a single-file ESM bundle.
 
 ## Commands
 
@@ -40,13 +40,14 @@ Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(pr
 
 - `claude.ts` / `codex.ts` / `copilot.ts` / `pi.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, raises `PermanentAgentError` for low credit balance exits, and after a short grace period shuts down a lingering Claude process tree if it stays alive. Copilot uses JSONL output plus prompt-level schema instructions, then parses the final `assistant.message` content. Pi runs in JSON mode, appends the final output schema to the prompt, and parses the assistant JSON reply from Pi's streamed events.
 - `rovodev.ts` / `opencode.ts`: long-running local HTTP servers managed via `managed-process.ts` (start once, reuse across iterations, close on shutdown). OpenCode creates a per-run session and applies a blanket allow rule to avoid prompt blocking.
+- `acp.ts`: handles `acp:<target>` specs through the bundled `acpx` runtime and registry. It keeps a persistent per-run session keyed by run ID under `.gnhf/runs/<runId>/acp-sessions`, embeds the output schema in the prompt, parses only output text deltas as final JSON, records ACP lifecycle events in `gnhf.log`, and reports per-iteration token deltas from cumulative ACP usage updates. Path and arg overrides are native-agent-only and are not forwarded to ACP targets.
 - `stream-utils.ts`: shared JSONL parsing, `AbortSignal` wiring, and child-process lifecycle helpers. When touching agent streaming, start here.
 
 Reserved args managed by gnhf are rejected in `config.ts` via `isReservedAgentArg` - if you add a new flag that gnhf controls, add it to that list so user overrides can't shadow it.
 
 ### Config (`src/core/config.ts`)
 
-Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agentPathOverride` and `agentArgsOverride` are per-agent; paths resolve relative to `~/.gnhf/` and support `~` expansion. `commitMessage.preset: conventional` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects; the resolved convention is persisted per run so resume does not silently switch formats after config changes.
+Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agent` accepts native agent names plus `acp:<target>` specs; `agentPathOverride` and `agentArgsOverride` are native-agent-only, and paths resolve relative to `~/.gnhf/` with `~` expansion. `commitMessage.preset: conventional` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects; the resolved convention is persisted per run so resume does not silently switch formats after config changes.
 
 ### Git helpers (`src/core/git.ts`)
 
