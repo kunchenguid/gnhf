@@ -15,11 +15,11 @@ npm run lint           # ESLint on src
 npm run format         # Prettier on src (format:check for CI)
 npm run typecheck      # tsc -p tsconfig.typecheck.json --noEmit
 npm test               # build, then vitest run (all tests)
-npm run test:e2e       # build, then vitest run test/e2e.test.ts
-npm run test:coverage  # vitest with coverage, excludes the e2e test
+npm run test:e2e       # build, then vitest run e2e/
+npm run test:coverage  # vitest with coverage, excludes e2e/
 ```
 
-Run a single test file: `npx vitest run src/core/orchestrator.test.ts`. Filter by name: `npx vitest run -t "name substring"`. Unit tests live next to source as `*.test.ts`; the e2e test under `test/e2e.test.ts` shells out to the built `dist/cli.mjs` against a mock `opencode` server in `test/fixtures/`, so it requires a prior build (`npm test` and `npm run test:e2e` do this automatically).
+Run a single test file: `npx vitest run src/core/orchestrator.test.ts`. Filter by name: `npx vitest run -t "name substring"`. Unit tests live next to source as `*.test.ts`; e2e tests live under `e2e/` and shell out to the built `dist/cli.mjs` against a mock `opencode` server in `e2e/fixtures/`, so they require a prior build (`npm test` and `npm run test:e2e` do this automatically). Add new e2e tests as `e2e/*.test.ts` so they're picked up by the directory glob in both scripts.
 
 CI (`.github/workflows/ci.yml`) runs lint, format:check, typecheck, and test on Ubuntu/macOS/Windows with Node 24 - keep all four green. Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
 
@@ -59,6 +59,6 @@ When `preventSleep` is on and the process wasn't already re-exec'd under a sleep
 ## Conventions
 
 - ESM-only, `.js` import extensions in TypeScript source (`import { foo } from "./foo.js"`). tsdown bundles it all into `dist/cli.mjs`.
-- Tests co-located as `*.test.ts`; use TDD for bugfixes and new features.
+- Unit tests co-located as `*.test.ts`; e2e tests under `e2e/`. Prefer e2e (new or existing) for behavior that crosses a process/IO boundary - CLI flags, config loading, git, agent spawning, stdout - since these match how the product is actually used and have proven less brittle than mock-heavy unit tests in this codebase. Unit-test pure helpers (schema builders, prompt templates, formatters) where speed and failure localization are worth more than realism. Use TDD for bugfixes and new features.
 - Error paths matter - `debug-log.ts` writes JSONL lifecycle events to `.gnhf/runs/<id>/gnhf.log` with full `error.cause` chains. Prefer `appendDebugLog("category:event", {...})` over ad-hoc logging.
 - No em dashes ("-"). No auto-added Claude co-author lines in commits.

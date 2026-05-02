@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
-const fixtureBinDir = join(repoRoot, "test", "fixtures");
+const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
 
 interface RunResult {
   code: number | null;

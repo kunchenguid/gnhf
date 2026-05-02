@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
-const fixtureBinDir = join(repoRoot, "test", "fixtures");
+const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
 const packageVersion = JSON.parse(
   readFileSync(join(repoRoot, "package.json"), "utf-8"),
 ).version as string;
