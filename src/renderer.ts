@@ -648,7 +648,11 @@ export class Renderer {
       process.stdin.removeAllListeners("data");
     }
     if (this.titleSaved) {
-      process.stdout.write(restoreTerminalTitle());
+      // Clear the custom title first, then attempt the xterm stack restore.
+      // Many modern terminals (iTerm2, macOS Terminal, Alacritty, Ghostty)
+      // ignore the title save/restore stack, so without the explicit clear
+      // our "gnhf · ..." title would persist after exit.
+      process.stdout.write(emitTerminalTitle("") + restoreTerminalTitle());
       this.titleSaved = false;
       this.prevTitle = null;
     }

@@ -939,7 +939,10 @@ describe("Renderer terminal title", () => {
       await expect(renderer.waitUntilExit()).resolves.toBe("stopped");
 
       const titles = extractTerminalTitles(stdoutWrite);
-      expect(titles.at(-1)).toBe("gnhf stopped · 12K in · 8K out · 12 commits");
+      const meaningfulTitles = titles.filter((t: string) => t !== "");
+      expect(meaningfulTitles.at(-1)).toBe(
+        "gnhf stopped · 12K in · 8K out · 12 commits",
+      );
     } finally {
       restoreStdoutTty();
       restoreStdinTty();
@@ -994,9 +997,20 @@ describe("Renderer terminal title", () => {
     try {
       const renderer = new Renderer(orchestrator, "ship it", "claude", vi.fn());
       renderer.start();
+      stdoutWrite.mockClear();
       renderer.stop();
 
-      expect(extractTitleStackOps(stdoutWrite)).toEqual(["22", "23"]);
+      expect(extractTitleStackOps(stdoutWrite)).toEqual(["23"]);
+      const titles = extractTerminalTitles(stdoutWrite);
+      expect(titles).toContain("");
+      const output = stdoutWrite.mock.calls
+        .map((args: unknown[]) => String(args[0]))
+        .join("");
+      const emptyTitleIdx = output.indexOf(`${titlePrefix}${bell}`);
+      const restoreIdx = output.indexOf(`${escape}[23${titleStackSuffix}`);
+      expect(emptyTitleIdx).toBeGreaterThanOrEqual(0);
+      expect(restoreIdx).toBeGreaterThanOrEqual(0);
+      expect(emptyTitleIdx).toBeLessThan(restoreIdx);
     } finally {
       restoreStdoutTty();
       restoreStdinTty();
