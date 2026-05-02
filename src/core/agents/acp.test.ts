@@ -288,7 +288,7 @@ describe("AcpAgent", () => {
 
     const result = await agent.run("p", "/w", { onUsage });
 
-    expect(result.usage.inputTokens).toBe(120);
+    expect(result.usage.inputTokens + result.usage.outputTokens).toBe(120);
     const reported = onUsage.mock.calls.map(
       (args) => (args[0] as { inputTokens: number }).inputTokens,
     );
@@ -296,7 +296,36 @@ describe("AcpAgent", () => {
     // overrides the prompt-length estimate that fires at iteration start.
     expect(reported).toContain(50);
     expect(reported).toContain(120);
-    expect(reported[reported.length - 1]).toBe(120);
+    const finalUsage = onUsage.mock.calls.at(-1)?.[0] as {
+      inputTokens: number;
+      outputTokens: number;
+    };
+    expect(finalUsage.inputTokens + finalUsage.outputTokens).toBe(120);
+  });
+
+  it("does not double count output tokens when usage_update is authoritative", async () => {
+    const json = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          {
+            type: "status",
+            text: "usage updated: 120/1000",
+            tag: "usage_update",
+            used: 120,
+            size: 1000,
+          },
+          textDelta(json),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+
+    expect(result.usage.inputTokens + result.usage.outputTokens).toBe(120);
+    expect(result.usage.outputTokens).toBeGreaterThan(0);
   });
 
   it("reports per-iteration deltas of `used` across iterations", async () => {
@@ -336,8 +365,8 @@ describe("AcpAgent", () => {
     const first = await agent.run("p", "/w");
     const second = await agent.run("p", "/w");
 
-    expect(first.usage.inputTokens).toBe(100);
-    expect(second.usage.inputTokens).toBe(150); // 250 - 100
+    expect(first.usage.inputTokens + first.usage.outputTokens).toBe(100);
+    expect(second.usage.inputTokens + second.usage.outputTokens).toBe(150);
   });
 
   it("validates the parsed output against the schema", async () => {

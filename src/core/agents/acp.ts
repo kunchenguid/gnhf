@@ -246,13 +246,21 @@ export class AcpAgent implements Agent {
 
     const computeUsage = (): TokenUsage => {
       const usedDelta = Math.max(0, latestUsed - iterationStartUsed);
+      const estimatedOutputTokens = estimateTokens(agentOutputChars);
+      const outputTokens =
+        usedDelta > 0
+          ? Math.min(estimatedOutputTokens, usedDelta)
+          : estimatedOutputTokens;
       return {
         // Prefer the adapter's reported context delta when available, since
         // that is the authoritative number. Fall back to a prompt-length
         // estimate so the renderer is never stuck at 0 for adapters that
         // don't emit usage_update.
-        inputTokens: usedDelta > 0 ? usedDelta : promptTokenEstimate,
-        outputTokens: estimateTokens(agentOutputChars),
+        inputTokens:
+          usedDelta > 0
+            ? Math.max(0, usedDelta - outputTokens)
+            : promptTokenEstimate,
+        outputTokens,
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       };
