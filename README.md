@@ -46,7 +46,7 @@ You wake up to a branch full of clean work and a log of everything that happened
 
 - **Dead simple** — one command starts an autonomous loop that runs until you request stop or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; retryable hard agent errors back off exponentially while agent-reported failures continue immediately
-- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
+- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then clear or restore it on exit depending on terminal support
 - **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or ACP targets out of the box
 
 ## Quick Start
