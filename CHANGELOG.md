@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.31](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.30...gnhf-v0.1.31) (2026-05-02)
+
+
+### Features
+
+* **agents:** add ACP agent support ([#112](https://github.com/kunchenguid/gnhf/issues/112)) ([5157712](https://github.com/kunchenguid/gnhf/commit/51577120c8005c966f4de0ae70f2d67e9b60784f))
+* **agents:** support ACP registry overrides ([#117](https://github.com/kunchenguid/gnhf/issues/117)) ([8d47386](https://github.com/kunchenguid/gnhf/commit/8d473861d9596dadc5f943923f1b1da810d97690))
+* **core:** add anonymous run telemetry ([#114](https://github.com/kunchenguid/gnhf/issues/114)) ([a2dca97](https://github.com/kunchenguid/gnhf/commit/a2dca9744650c019ba90faa590440f8909057ccc))
+
+
+### Bug Fixes
+
+* **agents:** count ACP thought text as output tokens ([#118](https://github.com/kunchenguid/gnhf/issues/118)) ([f8881e4](https://github.com/kunchenguid/gnhf/commit/f8881e4b8e8c39257023619396ebd73185ef287e))
+* **agents:** mark ACP token estimates consistently ([#119](https://github.com/kunchenguid/gnhf/issues/119)) ([80fc97d](https://github.com/kunchenguid/gnhf/commit/80fc97d12e2535281c1fa0baa2c1f7a7b7f6ca04))
+* **renderer:** clear terminal title on exit ([#115](https://github.com/kunchenguid/gnhf/issues/115)) ([9ed3172](https://github.com/kunchenguid/gnhf/commit/9ed3172b5b7c3a4d517e9a1d4a4cc5fb10a9ecce))
+
 ## [0.1.30](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.29...gnhf-v0.1.30) (2026-04-29)
 
 
