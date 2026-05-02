@@ -295,11 +295,83 @@ describe("gnhf acp e2e", () => {
       );
       expect(usageEvents.map((e) => e.used)).toEqual([100, 200, 300]);
 
-      const debugEvents = readJsonLines(findRunLogPath(cwd)).map(
-        (e) => e.event,
+      const debugEntries = readJsonLines(findRunLogPath(cwd));
+      const turnResults = debugEntries.filter(
+        (e) => e.event === "acp:turn:result",
       );
-      const turnResults = debugEvents.filter((e) => e === "acp:turn:result");
       expect(turnResults.length).toBe(3);
+
+      // When usage_update is reported by the adapter, the totals are
+      // authoritative - tokensEstimated stays false so the renderer omits
+      // the "~" prefix.
+      const iterationEnds = debugEntries.filter(
+        (e) => e.event === "iteration:end",
+      );
+      const lastEnd = iterationEnds[iterationEnds.length - 1]!;
+      expect(lastEnd.tokensEstimated).toBe(false);
+      expect(lastEnd.totalInputTokens).toBe(300);
+    },
+    45_000,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "marks tokens as estimated and scales input with tool-call count when no usage_update fires",
+    async () => {
+      // Regression: ACP adapters that never emit usage_update (Pi, some
+      // others) used to fall back to a prompt-length-only estimate that
+      // ignored tool-call payloads, so a run with hundreds of tool calls per
+      // iteration would still report ~700 input tokens/iteration. The fix:
+      // count distinct tool_call events as input cost, and flag the totals
+      // as estimated so the renderer can show "~". This test exercises both.
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const { home } = setupAcpHome(tempDirs);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-acp.jsonl");
+
+      // No MOCK_ACP_USAGE_USED -> no usage_update events emitted. 5 tool
+      // calls per iteration × 2 iterations = 10 distinct tool calls feeding
+      // the heuristic.
+      const result = await runCli(
+        cwd,
+        ["ship it", "--agent", "acp:mock-target", "--max-iterations", "2"],
+        {
+          env: buildEnv(home, mockLogPath, {
+            MOCK_ACP_TOOL_CALL_COUNT: "5",
+          }),
+        },
+      );
+
+      expect(result.code).toBe(0);
+
+      const mockEntries = readJsonLines(mockLogPath);
+      const usageEvents = mockEntries.filter(
+        (e) => e.event === "agent:prompt:usage",
+      );
+      expect(usageEvents).toHaveLength(0);
+      const toolCallEvents = mockEntries.filter(
+        (e) => e.event === "agent:prompt:tool-calls",
+      );
+      expect(toolCallEvents.map((e) => e.count)).toEqual([5, 5]);
+
+      const debugEntries = readJsonLines(findRunLogPath(cwd));
+      const iterationEnds = debugEntries.filter(
+        (e) => e.event === "iteration:end",
+      );
+      expect(iterationEnds).toHaveLength(2);
+
+      // Without usage_update events, the totals are heuristic and the
+      // orchestrator's sticky tokensEstimated flag must be set so the
+      // renderer can prefix "~".
+      const lastEnd = iterationEnds[iterationEnds.length - 1]!;
+      expect(lastEnd.tokensEstimated).toBe(true);
+
+      // Each tool call adds ~2K to the input estimate. 10 tool calls means
+      // total input must be at least 20K - way above the prompt-only floor
+      // (which would be a few hundred tokens). This is the assertion that
+      // would have caught the original under-counting bug.
+      expect(Number(lastEnd.totalInputTokens)).toBeGreaterThan(20_000);
     },
     45_000,
   );

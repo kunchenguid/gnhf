@@ -145,6 +145,7 @@ export class MockOrchestrator extends EventEmitter<OrchestratorEvents> {
     currentIteration: 14,
     totalInputTokens: 87_300_000,
     totalOutputTokens: 860_000,
+    tokensEstimated: false,
     commitCount: 11,
     iterations: [...MOCK_ITERATIONS],
     successCount: 11,

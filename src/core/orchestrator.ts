@@ -44,6 +44,10 @@ export interface OrchestratorState {
   currentIteration: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  // Sticky flag: true when at least one iteration's usage was reported as
+  // estimated (e.g. an ACP adapter that doesn't emit usage_update). Once set,
+  // it stays set for the rest of the run so totals are presented honestly.
+  tokensEstimated: boolean;
   commitCount: number;
   iterations: IterationRecord[];
   successCount: number;
@@ -98,6 +102,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     currentIteration: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    tokensEstimated: false,
     commitCount: 0,
     iterations: [],
     successCount: 0,
@@ -304,6 +309,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           consecutiveFailures: this.state.consecutiveFailures,
           totalInputTokens: this.state.totalInputTokens,
           totalOutputTokens: this.state.totalOutputTokens,
+          tokensEstimated: this.state.tokensEstimated,
           commitCount: this.state.commitCount,
         });
 
@@ -400,6 +406,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
+      // Don't mirror `estimated` from in-flight progress events here. ACP
+      // emits an initial onUsage with estimated=true before any
+      // usage_update arrives; if the adapter then reports authoritative
+      // usage, the iteration is no longer estimated. The final
+      // result.usage at iteration end is the source of truth - apply the
+      // sticky flag there.
       this.emit("state", this.getState());
 
       const reason = this.getTokenAbortReason();
@@ -438,6 +450,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         logPath,
       });
 
+      if (result.usage.estimated) this.state.tokensEstimated = true;
+
       appendDebugLog("agent:run:end", {
         iteration: this.state.currentIteration,
         elapsedMs: Date.now() - agentStartedAt,
@@ -446,6 +460,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         outputTokens: result.usage.outputTokens,
         cacheReadTokens: result.usage.cacheReadTokens,
         cacheCreationTokens: result.usage.cacheCreationTokens,
+        estimated: result.usage.estimated ?? false,
       });
 
       if (this.stopRequested) {

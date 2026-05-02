@@ -605,6 +605,94 @@ describe("AcpAgent", () => {
     expect(result.usage.inputTokens).toBeGreaterThan(0);
   });
 
+  it("marks usage as estimated when no usage_update events arrive", async () => {
+    const { runtime } = createFakeRuntime([
+      {
+        events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+    // Without authoritative `used` from the adapter, both numbers are
+    // heuristics - the renderer should know to flag them as estimated.
+    expect(result.usage.estimated).toBe(true);
+  });
+
+  it("does not mark usage as estimated once usage_update has been received", async () => {
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          {
+            type: "status",
+            text: "u",
+            tag: "usage_update",
+            used: 100,
+            size: 1000,
+          },
+          textDelta(JSON.stringify(VALID_OUTPUT)),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+    expect(result.usage.estimated).toBeFalsy();
+  });
+
+  it("includes a per-tool-call cost in the input estimate when no usage_update fires", async () => {
+    // Adapters that don't emit usage_update leave us with no view into
+    // tool-result token cost, but each tool call typically dumps a chunk of
+    // input back into the model on the next round (file contents, command
+    // output). Counting tool calls in the heuristic gets us closer to reality
+    // than counting only the literal initial prompt.
+    const onUsage = vi.fn();
+    const { runtime: noToolRuntime } = createFakeRuntime([
+      {
+        events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+        result: { status: "completed" },
+      },
+    ]);
+    const baseline = await makeAgent(noToolRuntime).run("p", "/w");
+
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          {
+            type: "tool_call",
+            text: "read foo",
+            tag: "tool_call",
+            toolCallId: "1",
+          },
+          {
+            type: "tool_call",
+            text: "read foo",
+            tag: "tool_call_update",
+            toolCallId: "1",
+          },
+          {
+            type: "tool_call",
+            text: "edit foo",
+            tag: "tool_call",
+            toolCallId: "2",
+          },
+          textDelta(JSON.stringify(VALID_OUTPUT)),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const result = await makeAgent(runtime).run("p", "/w", { onUsage });
+
+    // Two distinct tool calls (the third event is a tool_call_update on an
+    // existing call and must not be double-counted).
+    expect(result.usage.inputTokens).toBeGreaterThan(
+      baseline.usage.inputTokens,
+    );
+    expect(result.usage.estimated).toBe(true);
+  });
+
   it("reuses the same session across multiple iterations", async () => {
     const { runtime, calls } = createFakeRuntime([
       {
