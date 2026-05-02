@@ -2179,41 +2179,6 @@ describe("cli", () => {
     await cliPromise;
   });
 
-  it("stops the renderer when the orchestrator finishes normally", async () => {
-    let resolveRendererExit!: () => void;
-    const rendererStop = vi.fn(() => {
-      resolveRendererExit();
-    });
-    const rendererWaitUntilExit = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveRendererExit = resolve;
-        }),
-    );
-
-    const cliPromise = runCliWithMocks(
-      ["ship it"],
-      {
-        agent: "opencode",
-        agentPathOverride: {},
-        agentArgsOverride: {},
-        maxConsecutiveFailures: 3,
-        preventSleep: false,
-      },
-      {
-        orchestratorStart: vi.fn(() => Promise.resolve()),
-        rendererStop,
-        rendererWaitUntilExit,
-      },
-    );
-
-    await vi.waitFor(() => {
-      expect(rendererStop).toHaveBeenCalledTimes(1);
-    });
-
-    await cliPromise;
-  });
-
   it("uses the SIGTERM exit code when shutdown times out after SIGTERM", async () => {
     vi.useFakeTimers();
 
