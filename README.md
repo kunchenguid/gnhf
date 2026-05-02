@@ -290,7 +290,7 @@ If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./C
 ```sh
 npm run build          # Build with tsdown
 npm run dev            # Watch mode
-npm test               # Build, then run unit tests (vitest)
+npm test               # Build, then run all tests (vitest)
 npm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
 npm run lint           # ESLint
 npm run format         # Prettier
