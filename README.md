@@ -285,7 +285,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 
 ## Agents
 
-`gnhf` supports six native agents plus ACP targets:
+`gnhf` supports six native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target>` specs.
 
 | Agent              | Flag                   | Requirements                                                                                        | Notes                                                                                                                                                                                                                                                                                                       |
 | ------------------ | ---------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
