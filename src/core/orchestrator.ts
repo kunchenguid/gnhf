@@ -491,6 +491,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
+      if (this.activeIterationTokensEstimated) {
+        this.state.tokensEstimated = true;
+        this.activeIterationTokensEstimated = false;
+      }
 
       if (
         this.pendingAbortReason &&
