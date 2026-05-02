@@ -186,8 +186,17 @@ function redactAcpErrorForThrow(error: unknown, target: string): unknown {
     );
   }
   if (error instanceof Error) {
+    let cause: unknown;
+    try {
+      cause = "cause" in error ? error.cause : undefined;
+    } catch {
+      cause = undefined;
+    }
+    const redactedCause =
+      cause === undefined ? undefined : redactAcpErrorForThrow(cause, target);
     const redactedError = new Error(
       redactRawAcpTargetInString(error.message, target),
+      redactedCause === undefined ? undefined : { cause: redactedCause },
     );
     redactedError.name = error.name;
     if (typeof error.stack === "string") {

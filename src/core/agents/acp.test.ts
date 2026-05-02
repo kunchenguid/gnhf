@@ -3,7 +3,11 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpAgent } from "./acp.js";
-import { initDebugLog, resetDebugLogForTests } from "../debug-log.js";
+import {
+  initDebugLog,
+  resetDebugLogForTests,
+  serializeError,
+} from "../debug-log.js";
 import { PermanentAgentError, type AgentOutputSchema } from "./types.js";
 import type {
   AcpRuntimeEnsureInput,
@@ -255,6 +259,30 @@ describe("AcpAgent", () => {
       resetDebugLogForTests();
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it("preserves redacted ACP ensureSession error causes", async () => {
+    const rawTarget = "./bin/dev-acp --profile ci --token secret";
+    const cause = new Error(`ENOENT while spawning ${rawTarget}`);
+    Object.assign(cause, { code: "ENOENT" });
+    const startupError = new Error(`failed to launch ${rawTarget}`, { cause });
+    startupError.stack = `Error: failed to launch ${rawTarget}\n    at ${rawTarget}:1:1`;
+    const { runtime } = createFakeRuntime([]);
+    runtime.ensureSession.mockRejectedValue(startupError);
+    const agent = makeAgent(runtime, { target: rawTarget });
+
+    const thrown = await agent.run("p", "/w").catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Error);
+    const serialized = serializeError(thrown);
+    expect(serialized.message).toContain("custom");
+    expect(serialized.message).not.toContain(rawTarget);
+    expect(serialized.cause).toMatchObject({
+      message: expect.stringContaining("custom"),
+      code: "ENOENT",
+    });
+    expect(JSON.stringify(serialized)).not.toContain(rawTarget);
+    expect(JSON.stringify(serialized)).not.toContain("secret");
   });
 
   it("ensures a persistent session keyed on runId and target, then submits a prompt turn", async () => {
