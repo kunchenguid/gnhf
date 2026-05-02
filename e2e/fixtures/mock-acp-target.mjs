@@ -243,6 +243,37 @@ class MockAcpAgent {
       appendLog("agent:prompt:usage", { iteration, used: cumulative });
     }
 
+    // Emit synthetic tool_call events so we can exercise the fallback
+    // input-token heuristic (which scales with tool-call count) when the
+    // adapter doesn't emit usage_update.
+    const toolCallCount = readEnvNumber("MOCK_ACP_TOOL_CALL_COUNT");
+    if (toolCallCount !== undefined && toolCallCount > 0) {
+      for (let i = 0; i < toolCallCount; i++) {
+        const toolCallId = `mock-tool-${iteration}-${i}`;
+        await this.connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            kind: "other",
+            title: "read",
+            status: "pending",
+          },
+        });
+        // Each tool_call is followed by an update; the agent should not
+        // double-count these.
+        await this.connection.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: "completed",
+          },
+        });
+      }
+      appendLog("agent:prompt:tool-calls", { iteration, count: toolCallCount });
+    }
+
     const outputOverride = process.env.MOCK_ACP_OUTPUT_OVERRIDE;
     const structured = outputOverride
       ? JSON.parse(outputOverride)

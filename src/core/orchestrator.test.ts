@@ -488,6 +488,108 @@ describe("Orchestrator stop limits", () => {
     });
   });
 
+  it("marks in-flight usage as estimated until authoritative usage arrives", async () => {
+    const observedEstimatedStates: boolean[] = [];
+    const agent: Agent = {
+      name: "acp:test",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onUsage?.({
+          inputTokens: 4,
+          outputTokens: 2,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          estimated: true,
+        });
+        options?.onUsage?.({
+          inputTokens: 5,
+          outputTokens: 3,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+    orchestrator.on("state", (state) => {
+      if (state.totalInputTokens > 0 || state.totalOutputTokens > 0) {
+        observedEstimatedStates.push(state.tokensEstimated);
+      }
+    });
+
+    await orchestrator.start();
+
+    expect(observedEstimatedStates[0]).toBe(true);
+    expect(observedEstimatedStates.slice(1)).toEqual([false, false, false]);
+    expect(orchestrator.getState().tokensEstimated).toBe(false);
+  });
+
+  it("keeps usage estimated when estimated tokens are followed by an agent error", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const agent: Agent = {
+      name: "acp:test",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        callCount++;
+        if (callCount === 1) {
+          options?.onUsage?.({
+            inputTokens: 4,
+            outputTokens: 2,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            estimated: true,
+          });
+          throw new Error("transient error");
+        }
+        options?.onUsage?.({
+          inputTokens: 5,
+          outputTokens: 3,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+    await vi.waitFor(() => {
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      totalInputTokens: 9,
+      totalOutputTokens: 5,
+      tokensEstimated: true,
+    });
+  });
+
   it("closes the agent when stop is requested", async () => {
     const close = vi.fn();
     const agent: Agent = {

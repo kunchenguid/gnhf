@@ -78,6 +78,20 @@ describe("renderStats", () => {
     const line = stripAnsi(renderStats("00:00:00", 0, 0, 0));
     expect(line).not.toContain("iteration");
   });
+
+  it("prefixes token counts with '~' when usage is estimated", () => {
+    const plain = stripAnsi(renderStats("01:23:45", 12400, 8200, 12, true));
+    expect(plain).toContain("~12K in");
+    expect(plain).toContain("~8K out");
+    // The '~' prefix is informational only - commit count is concrete and
+    // should not be prefixed.
+    expect(plain).not.toContain("~12 commits");
+  });
+
+  it("does not prefix tokens when usage is authoritative", () => {
+    const plain = stripAnsi(renderStats("01:23:45", 12400, 8200, 12, false));
+    expect(plain).not.toContain("~");
+  });
 });
 
 describe("renderAgentMessage", () => {
@@ -205,6 +219,7 @@ describe("buildFrame", () => {
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: [],
       successCount: 0,
@@ -237,6 +252,7 @@ describe("buildFrame", () => {
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: [],
       successCount: 0,
@@ -280,6 +296,7 @@ describe("buildFrame", () => {
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: [],
       successCount: 0,
@@ -317,6 +334,7 @@ describe("buildFrame", () => {
       currentIteration: 61,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: Array.from({ length: 61 }, (_, index) =>
         createIteration({ number: index + 1, success: true }),
@@ -367,6 +385,7 @@ describe("buildFrame", () => {
       currentIteration: 1,
       totalInputTokens: 500,
       totalOutputTokens: 300,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: [],
       successCount: 0,
@@ -405,6 +424,7 @@ describe("buildFrame", () => {
       currentIteration: 660,
       totalInputTokens: 1200,
       totalOutputTokens: 800,
+      tokensEstimated: false,
       commitCount: 7,
       iterations: Array.from({ length: 660 }, (_, index) =>
         createIteration({ number: index + 1, success: true }),
@@ -444,6 +464,7 @@ describe("buildFrame", () => {
       currentIteration: 1,
       totalInputTokens: 100,
       totalOutputTokens: 50,
+      tokensEstimated: false,
       commitCount: 1,
       iterations: [createIteration()],
       successCount: 1,
@@ -500,6 +521,7 @@ describe("buildContentCells adaptive height", () => {
     currentIteration: 1,
     totalInputTokens: 100,
     totalOutputTokens: 50,
+    tokensEstimated: false,
     commitCount: 1,
     iterations: [createIteration()],
     successCount: 1,
@@ -771,6 +793,7 @@ describe("Renderer ctrl+c", () => {
       currentIteration: 1,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      tokensEstimated: false,
       commitCount: 0,
       iterations: [],
       successCount: 0,
@@ -846,6 +869,7 @@ describe("Renderer terminal title", () => {
     currentIteration: 1,
     totalInputTokens: 12_400,
     totalOutputTokens: 8_200,
+    tokensEstimated: false,
     commitCount: 12,
     iterations: [createIteration()],
     successCount: 1,

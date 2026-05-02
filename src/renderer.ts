@@ -46,8 +46,13 @@ function spacedLabel(text: string): string {
   return text.split("").join(" ");
 }
 
-function formatTokenCount(tokens: number, direction: "in" | "out"): string {
-  return `${formatTokens(tokens)} ${direction}`;
+function formatTokenCount(
+  tokens: number,
+  direction: "in" | "out",
+  estimated = false,
+): string {
+  const prefix = estimated ? "~" : "";
+  return `${prefix}${formatTokens(tokens)} ${direction}`;
 }
 
 function formatCommitCount(commitCount: number): string {
@@ -62,8 +67,8 @@ function buildTerminalTitle(state: OrchestratorState, now: number): string {
       : state.status;
   return (
     `gnhf ${lead}` +
-    ` · ${formatTokenCount(state.totalInputTokens, "in")}` +
-    ` · ${formatTokenCount(state.totalOutputTokens, "out")}` +
+    ` · ${formatTokenCount(state.totalInputTokens, "in", state.tokensEstimated)}` +
+    ` · ${formatTokenCount(state.totalOutputTokens, "out", state.tokensEstimated)}` +
     ` · ${formatCommitCount(state.commitCount)}`
   );
 }
@@ -128,17 +133,24 @@ export function renderStatsCells(
   inputTokens: number,
   outputTokens: number,
   commitCount: number,
+  tokensEstimated = false,
 ): Cell[] {
   return [
     ...textToCells(elapsed, "bold"),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(formatTokenCount(inputTokens, "in"), "normal"),
+    ...textToCells(
+      formatTokenCount(inputTokens, "in", tokensEstimated),
+      "normal",
+    ),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
-    ...textToCells(formatTokenCount(outputTokens, "out"), "normal"),
+    ...textToCells(
+      formatTokenCount(outputTokens, "out", tokensEstimated),
+      "normal",
+    ),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
@@ -215,9 +227,16 @@ export function renderStats(
   inputTokens: number,
   outputTokens: number,
   commitCount: number,
+  tokensEstimated = false,
 ): string {
   return rowToString(
-    renderStatsCells(elapsed, inputTokens, outputTokens, commitCount),
+    renderStatsCells(
+      elapsed,
+      inputTokens,
+      outputTokens,
+      commitCount,
+      tokensEstimated,
+    ),
   );
 }
 
@@ -399,6 +418,7 @@ export function buildContentCells(
         state.totalInputTokens,
         state.totalOutputTokens,
         state.commitCount,
+        state.tokensEstimated,
       ),
     ] as Cell[][],
     agent: [
