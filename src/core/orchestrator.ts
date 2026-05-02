@@ -93,6 +93,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeIterationPromise: Promise<RunIterationResult> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
+  private activeIterationTokensEstimated = false;
   private loopDone = false;
   private stoppedEventEmitted = false;
 
@@ -139,7 +140,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   }
 
   getState(): OrchestratorState {
-    return { ...this.state, interruptHint: getInterruptHint(this.state) };
+    return {
+      ...this.state,
+      tokensEstimated:
+        this.state.tokensEstimated || this.activeIterationTokensEstimated,
+      interruptHint: getInterruptHint(this.state),
+    };
   }
 
   requestGracefulStop(): void {
@@ -402,16 +408,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
     this.activeAbortController = new AbortController();
     this.pendingAbortReason = null;
+    this.activeIterationTokensEstimated = false;
 
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
-      // Don't mirror `estimated` from in-flight progress events here. ACP
-      // emits an initial onUsage with estimated=true before any
-      // usage_update arrives; if the adapter then reports authoritative
-      // usage, the iteration is no longer estimated. The final
-      // result.usage at iteration end is the source of truth - apply the
-      // sticky flag there.
+      this.activeIterationTokensEstimated = usage.estimated === true;
       this.emit("state", this.getState());
 
       const reason = this.getTokenAbortReason();
@@ -450,6 +452,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         logPath,
       });
 
+      this.activeIterationTokensEstimated = false;
       if (result.usage.estimated) this.state.tokensEstimated = true;
 
       appendDebugLog("agent:run:end", {
