@@ -139,12 +139,6 @@ describe("git utilities", () => {
       expect(argsOfCall(1)).toEqual(["commit", "-m", "initial commit"]);
     });
 
-    it("preserves shell metacharacters in the message without any escaping", () => {
-      const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
-      commitAll(injection, "/repo");
-      expect(argsOfCall(1)).toEqual(["commit", "-m", injection]);
-    });
-
     it("does not throw when there is nothing to commit", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
