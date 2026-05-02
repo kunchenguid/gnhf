@@ -1,9 +1,15 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
@@ -48,25 +54,33 @@ function git(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();
 }
 
-function createTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `gnhf-e2e-cli-${prefix}-`));
-  onTestFinished(() => {
-    try {
-      rmSync(dir, {
-        recursive: true,
-        force: true,
-        maxRetries: 3,
-        retryDelay: 200,
-      });
-    } catch {
-      // Windows: child processes may still hold file locks briefly after exit
+class TempCleanup {
+  private dirs: string[] = [];
+
+  mkdir(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), `gnhf-e2e-cli-${prefix}-`));
+    this.dirs.push(dir);
+    return dir;
+  }
+
+  cleanup(): void {
+    for (const dir of this.dirs.splice(0)) {
+      try {
+        rmSync(dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 200,
+        });
+      } catch {
+        // Windows: child processes may still hold file locks briefly after exit
+      }
     }
-  });
-  return dir;
+  }
 }
 
-function createRepo(): string {
-  const cwd = createTempDir("repo");
+function createRepo(temp: TempCleanup): string {
+  const cwd = temp.mkdir("repo");
   git(["init", "-b", "main"], cwd);
   git(["config", "user.name", "gnhf tests"], cwd);
   git(["config", "user.email", "tests@example.com"], cwd);
@@ -76,39 +90,111 @@ function createRepo(): string {
   return cwd;
 }
 
+function createHomeWithConfig(
+  temp: TempCleanup,
+  configYaml: string,
+): NodeJS.ProcessEnv {
+  const home = temp.mkdir("home");
+  mkdirSync(join(home, ".gnhf"), { recursive: true });
+  writeFileSync(join(home, ".gnhf", "config.yml"), configYaml, "utf-8");
+  return { ...process.env, HOME: home, USERPROFILE: home };
+}
+
+async function withTemp<T>(fn: (temp: TempCleanup) => Promise<T>): Promise<T> {
+  const temp = new TempCleanup();
+  try {
+    return await fn(temp);
+  } finally {
+    temp.cleanup();
+  }
+}
+
 describe.concurrent("gnhf e2e cli", () => {
   it("prints the package version for -V", async () => {
-    const cwd = createTempDir("version");
+    await withTemp(async (temp) => {
+      const cwd = temp.mkdir("version");
 
-    const result = await runCli(cwd, ["-V"]);
+      const result = await runCli(cwd, ["-V"]);
 
-    expect(result.code).toBe(0);
-    expect(result.stdout.trim()).toBe(packageVersion);
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe(packageVersion);
+    });
   }, 15_000);
 
   it("prints a friendly message outside a git repository", async () => {
-    const cwd = createTempDir("no-git");
+    await withTemp(async (temp) => {
+      const cwd = temp.mkdir("no-git");
 
-    const result = await runCli(cwd, ["ship it", "--agent", "claude"]);
+      const result = await runCli(cwd, ["ship it", "--agent", "claude"]);
 
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain(
-      'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
-    );
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
+      );
+    });
   }, 15_000);
 
   it("exits with error when --worktree is used from a gnhf branch", async () => {
-    const cwd = createRepo();
-    git(["checkout", "-b", "gnhf/existing-run"], cwd);
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      git(["checkout", "-b", "gnhf/existing-run"], cwd);
 
-    const result = await runCli(cwd, [
-      "new objective",
-      "--agent",
-      "claude",
-      "--worktree",
-    ]);
+      const result = await runCli(cwd, [
+        "new objective",
+        "--agent",
+        "claude",
+        "--worktree",
+      ]);
 
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("Cannot use --worktree from a gnhf branch");
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        "Cannot use --worktree from a gnhf branch",
+      );
+    });
+  }, 15_000);
+
+  it.each([
+    ["preset: gnhf", "commitMessage:\n  preset: gnhf\n"],
+    ["preset: angular", "commitMessage:\n  preset: angular\n"],
+    ["preset: semantic", "commitMessage:\n  preset: semantic\n"],
+    ["empty object", "commitMessage: {}\n"],
+  ])(
+    "rejects invalid commitMessage config (%s)",
+    async (_label, configYaml) => {
+      await withTemp(async (temp) => {
+        const cwd = createRepo(temp);
+        const env = createHomeWithConfig(temp, configYaml);
+
+        const result = await runCli(cwd, ["ship it", "--agent", "claude"], env);
+
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain(
+          'Invalid config value for commitMessage.preset: expected "conventional"',
+        );
+      });
+    },
+    15_000,
+  );
+
+  it("rejects commitMessage config with template field", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const env = createHomeWithConfig(
+        temp,
+        [
+          "commitMessage:",
+          "  preset: conventional",
+          '  template: "{{type}}: {{summary}}"',
+          "",
+        ].join("\n"),
+      );
+
+      const result = await runCli(cwd, ["ship it", "--agent", "claude"], env);
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        "Unsupported config key for commitMessage.template",
+      );
+    });
   }, 15_000);
 });

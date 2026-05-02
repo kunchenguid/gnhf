@@ -295,58 +295,11 @@ describe("loadConfig", () => {
     });
   });
 
-  it("throws when commitMessage omits a preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage: {}\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
   it("throws when commitMessage is present without a value", () => {
     mockReadFileSync.mockReturnValue("commitMessage:\n");
 
     expect(() => loadConfig()).toThrow(
       /Invalid config value for commitMessage: expected an object/,
-    );
-  });
-
-  it("throws when commitMessage uses the gnhf preset explicitly", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: gnhf\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
-  it("throws when commitMessage uses the old angular preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: angular\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
-  it("throws when commitMessage includes a template", () => {
-    mockReadFileSync.mockReturnValue(
-      [
-        "commitMessage:",
-        "  preset: conventional",
-        '  template: "{{type}}: {{summary}}"',
-        "",
-      ].join("\n"),
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Unsupported config key for commitMessage\.template/,
-    );
-  });
-
-  it("throws when commitMessage has an unknown preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: semantic\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
     );
   });
 
