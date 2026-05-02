@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.32](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.31...gnhf-v0.1.32) (2026-05-02)
+
+
+### Miscellaneous Chores
+
+* rebuild release with telemetry website id baked in ([b6a9920](https://github.com/kunchenguid/gnhf/commit/b6a9920edf008b1d7704f8aee3cbfc84c25793d8))
+
 ## [0.1.31](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.30...gnhf-v0.1.31) (2026-05-02)
 
 
