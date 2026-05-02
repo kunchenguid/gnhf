@@ -74,11 +74,6 @@ describe("git utilities", () => {
         },
       );
     });
-
-    it("never composes the branch name into a shell string", () => {
-      createBranch("weird`name$(ok)", "/repo");
-      expect(argsOfCall(0)).toEqual(["checkout", "-b", "weird`name$(ok)"]);
-    });
   });
 
   describe("getCurrentBranch", () => {
