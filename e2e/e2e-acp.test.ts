@@ -207,6 +207,12 @@ describe("gnhf acp e2e", () => {
       // estimate. Catches the bug where `inputTokens` is hardcoded to the
       // raw `used` delta and stays at 0 for adapters that never emit usage.
       expect(Number(iterationEnd?.totalInputTokens)).toBeGreaterThan(0);
+      // Output tokens are estimated from streamed text_delta chars across
+      // both `output` and `thought` streams. The opencode persona in
+      // particular streams ~70% of its text on the thought stream, so this
+      // catches the regression where only `output`-stream chars were
+      // counted and reasoning-heavy adapters sat at 0.
+      expect(Number(iterationEnd?.totalOutputTokens)).toBeGreaterThan(0);
     },
     45_000,
   );

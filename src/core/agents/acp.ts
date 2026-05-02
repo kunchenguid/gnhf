@@ -290,19 +290,27 @@ export class AcpAgent implements Agent {
             }
             pendingStream = stream;
             pendingMessage += text;
+            // Count both output and thought streams toward output tokens -
+            // reasoning is real generated text that consumes tokens. Without
+            // this, agents that stream reasoning before answering (Gemini,
+            // GPT-5, etc.) leave the renderer at 0 output tokens for the
+            // entire thinking phase. outputBuf stays output-only because it
+            // is used for JSON parsing and reasoning text would corrupt it.
             if (stream === "output") {
               outputBuf += text;
-              agentOutputChars += text.length;
-              onUsage?.(computeUsage());
             }
+            agentOutputChars += text.length;
+            onUsage?.(computeUsage());
             continue;
           }
 
           if (event.type === "tool_call") {
-            // A tool_call ends the in-flight message - flush whatever the
-            // assistant has said so far, then surface the tool_call summary.
+            // A tool_call ends the in-flight assistant message - flush
+            // whatever prose the assistant streamed so far, but don't surface
+            // the tool_call text itself. Tool descriptions like
+            // "tool call (completed)" are noisy and not useful in the TUI;
+            // the user wants to see assistant prose, not mechanics.
             flushPendingMessage();
-            if (event.text && event.text.length > 0) onMessage?.(event.text);
             continue;
           }
 

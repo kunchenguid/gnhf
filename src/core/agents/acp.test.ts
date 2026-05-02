@@ -231,7 +231,7 @@ describe("AcpAgent", () => {
     expect(result.output).toEqual(VALID_OUTPUT);
   });
 
-  it("surfaces tool_call text via onMessage but suppresses noisy status text", async () => {
+  it("suppresses tool_call and status text from onMessage so only assistant prose surfaces", async () => {
     const onMessage = vi.fn();
     const { runtime } = createFakeRuntime([
       {
@@ -254,9 +254,9 @@ describe("AcpAgent", () => {
     await agent.run("p", "/w", { onMessage });
 
     const messages = onMessage.mock.calls.map((args) => args[0] as string);
-    expect(messages).toContain("Read file foo.ts");
-    // Status text is metadata that fires frequently and shouldn't flicker
-    // over the assistant message currently on screen.
+    // Tool descriptions and status metadata are noisy and not useful to
+    // surface in the TUI - only assistant text messages should appear.
+    expect(messages).not.toContain("Read file foo.ts");
     expect(messages).not.toContain("usage updated: 100/1000");
   });
 
@@ -473,7 +473,7 @@ describe("AcpAgent", () => {
     expect(calls).toEqual([json]);
   });
 
-  it("flushes the buffered message on a tool_call boundary so each completed message surfaces once", async () => {
+  it("flushes the buffered message on a tool_call boundary so each completed assistant message surfaces once", async () => {
     const onMessage = vi.fn();
     const json = JSON.stringify(VALID_OUTPUT);
     const { runtime } = createFakeRuntime([
@@ -493,7 +493,9 @@ describe("AcpAgent", () => {
     await agent.run("p", "/w", { onMessage });
 
     const calls = onMessage.mock.calls.map((args) => args[0] as string);
-    expect(calls).toEqual(["Let me examine the code.", "Read foo.ts", json]);
+    // The tool_call boundary flushes the buffered prose but the tool_call
+    // text itself is suppressed.
+    expect(calls).toEqual(["Let me examine the code.", json]);
   });
 
   it("parses the last assistant message rather than concatenating intermediate prose with the final JSON", async () => {
@@ -551,6 +553,40 @@ describe("AcpAgent", () => {
     // ACP only reports a cumulative `used` context value (not split
     // input/output), so we estimate output tokens from streamed bytes.
     expect(result.usage.outputTokens).toBeGreaterThan(0);
+  });
+
+  it("counts thought-stream text toward output tokens so reasoning agents don't sit at 0", async () => {
+    // Regression: agents that stream reasoning before answering (Gemini,
+    // GPT-5 reasoning models, etc.) used to leave the renderer at 0 output
+    // tokens for the entire thinking phase because only `output` stream
+    // chars were counted. Reasoning is real generated text that consumes
+    // output tokens, so it must count too.
+    const onUsage = vi.fn();
+    const longReasoning = "thinking ".repeat(200);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          textDelta(longReasoning, "thought"),
+          textDelta(JSON.stringify(VALID_OUTPUT)),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w", { onUsage });
+
+    const reportedOutputs = onUsage.mock.calls.map(
+      (args) => (args[0] as { outputTokens: number }).outputTokens,
+    );
+    // The renderer should have seen the output token count rise during the
+    // thinking phase, before the final JSON arrived.
+    const reasoningPhaseMax = Math.max(
+      0,
+      ...reportedOutputs.slice(0, reportedOutputs.length - 1),
+    );
+    expect(reasoningPhaseMax).toBeGreaterThan(0);
+    expect(result.usage.outputTokens).toBeGreaterThan(reasoningPhaseMax);
   });
 
   it("falls back to a prompt-length input-token estimate when no usage_update events are emitted", async () => {
