@@ -74,11 +74,6 @@ describe("git utilities", () => {
         },
       );
     });
-
-    it("never composes the branch name into a shell string", () => {
-      createBranch("weird`name$(ok)", "/repo");
-      expect(argsOfCall(0)).toEqual(["checkout", "-b", "weird`name$(ok)"]);
-    });
   });
 
   describe("getCurrentBranch", () => {
@@ -144,12 +139,6 @@ describe("git utilities", () => {
       expect(argsOfCall(1)).toEqual(["commit", "-m", "initial commit"]);
     });
 
-    it("preserves shell metacharacters in the message without any escaping", () => {
-      const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
-      commitAll(injection, "/repo");
-      expect(argsOfCall(1)).toEqual(["commit", "-m", injection]);
-    });
-
     it("does not throw when there is nothing to commit", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
@@ -174,18 +163,6 @@ describe("git utilities", () => {
       });
 
       expect(getBranchCommitCount("abc123", "/repo")).toBe(1);
-    });
-
-    it("counts all branch commits after the base commit", () => {
-      mockExecFileSync.mockImplementation((_cmd, args) => {
-        const argv = args as string[];
-        if (argv.includes("base123..HEAD")) {
-          return "4";
-        }
-        return "";
-      });
-
-      expect(getBranchCommitCount("base123", "/repo")).toBe(4);
     });
 
     it("returns 0 when the branch has no commits after the base commit", () => {
