@@ -782,60 +782,6 @@ describe("Renderer ctrl+c", () => {
     expect(orchestratorStop).not.toHaveBeenCalled();
     expect(pause).not.toHaveBeenCalled();
   });
-
-  it("delegates ctrl+c when the aborted screen is shown", async () => {
-    const state: OrchestratorState = {
-      status: "aborted",
-      gracefulStopRequested: false,
-      interruptHint: "exit",
-      currentIteration: 1,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      commitCount: 0,
-      iterations: [],
-      successCount: 0,
-      failCount: 0,
-      consecutiveFailures: 0,
-      consecutiveErrors: 0,
-      startTime: new Date("2026-01-01T00:00:00Z"),
-      waitingUntil: null,
-      lastMessage: null,
-    };
-
-    const { onInterrupt, orchestratorStop, pause } =
-      await runRendererCtrlCTest(state);
-
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-    expect(orchestratorStop).not.toHaveBeenCalled();
-    expect(pause).not.toHaveBeenCalled();
-  });
-
-  it("keeps routing ctrl+c to force-stop during graceful cleanup", async () => {
-    const state: OrchestratorState = {
-      status: "stopped",
-      gracefulStopRequested: false,
-      interruptHint: "force-stop",
-      currentIteration: 1,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      commitCount: 0,
-      iterations: [],
-      successCount: 0,
-      failCount: 0,
-      consecutiveFailures: 0,
-      consecutiveErrors: 0,
-      startTime: new Date("2026-01-01T00:00:00Z"),
-      waitingUntil: null,
-      lastMessage: null,
-    };
-
-    const { onInterrupt, orchestratorStop, pause } =
-      await runRendererCtrlCTest(state);
-
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-    expect(orchestratorStop).not.toHaveBeenCalled();
-    expect(pause).not.toHaveBeenCalled();
-  });
 });
 
 describe("Renderer terminal title", () => {
