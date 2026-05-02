@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("./claude.js", () => {
@@ -104,6 +105,8 @@ const stubRunInfo: RunInfo = {
   commitMessagePath: "/repo/.gnhf/runs/test-run/commit-message",
   commitMessage: undefined,
 };
+
+const acpSessionStateDir = join(stubRunInfo.runDir, "acp-sessions");
 
 const noStopSchema = {
   type: "object",
@@ -374,7 +377,7 @@ describe("createAgent", () => {
       target: "gemini",
       schema: noStopSchema,
       runId: stubRunInfo.runId,
-      sessionStateDir: `${stubRunInfo.runDir}/acp-sessions`,
+      sessionStateDir: acpSessionStateDir,
     });
     expect(agent.name).toBe("acp:gemini");
   });
@@ -387,7 +390,7 @@ describe("createAgent", () => {
       target: "cursor",
       schema: withStopSchema,
       runId: stubRunInfo.runId,
-      sessionStateDir: `${stubRunInfo.runDir}/acp-sessions`,
+      sessionStateDir: acpSessionStateDir,
     });
   });
 
@@ -401,7 +404,7 @@ describe("createAgent", () => {
       target: "gemini",
       schema: noStopSchema,
       runId: stubRunInfo.runId,
-      sessionStateDir: `${stubRunInfo.runDir}/acp-sessions`,
+      sessionStateDir: acpSessionStateDir,
     });
   });
 });
