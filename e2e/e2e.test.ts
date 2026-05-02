@@ -204,7 +204,7 @@ describe("gnhf e2e", () => {
 
     expect(result.code).toBe(0);
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
-    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf #1:");
+    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
 
     const startEvent = await waitForLogEvent(mockLogPath, "server:start");
     expect(startEvent.command).toBe("serve");
@@ -317,7 +317,7 @@ describe("gnhf e2e", () => {
 
       // The commit message should follow gnhf format
       expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain(
-        "gnhf #1:",
+        "gnhf 1:",
       );
 
       // Debug log should record worktree info
@@ -397,7 +397,7 @@ describe("gnhf e2e", () => {
       );
       expect(commitsAfterSecond).toBe(commitsAfterFirst + 1);
       expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain(
-        "gnhf #2:",
+        "gnhf 2:",
       );
     },
     60_000,

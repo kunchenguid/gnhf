@@ -12,7 +12,7 @@ function commitMessageOutput(output: CommitMessageTestOutput): AgentOutput {
 }
 
 describe("buildCommitMessage", () => {
-  it("renders the pre-existing gnhf commit subject when config is omitted", () => {
+  it("renders the default gnhf commit subject without GitHub issue markers", () => {
     const message = buildCommitMessage(
       undefined,
       {
@@ -24,7 +24,7 @@ describe("buildCommitMessage", () => {
       { iteration: 3 },
     );
 
-    expect(message).toBe("gnhf #3: add retry coverage");
+    expect(message).toBe("gnhf 3: add retry coverage");
   });
 
   it("renders a Conventional Commits header with a scope", () => {
