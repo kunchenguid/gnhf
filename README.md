@@ -273,7 +273,7 @@ Including a snippet of `gnhf.log` is the single most useful thing you can attach
 
 ## Telemetry
 
-`gnhf` sends one anonymous run summary per invocation to my self-hosted analytics so I can see what's actually getting used.
+`gnhf` sends anonymous usage telemetry to my self-hosted analytics so I can see what's actually getting used.
 No prompts, repo paths, or branch names are sent.
 Set `GNHF_TELEMETRY=0` to turn it off.
 
