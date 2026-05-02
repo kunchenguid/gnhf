@@ -231,7 +231,7 @@ describe("AcpAgent", () => {
     expect(result.output).toEqual(VALID_OUTPUT);
   });
 
-  it("surfaces tool_call and status text via onMessage so the renderer can show progress", async () => {
+  it("surfaces tool_call text via onMessage but suppresses noisy status text", async () => {
     const onMessage = vi.fn();
     const { runtime } = createFakeRuntime([
       {
@@ -255,7 +255,9 @@ describe("AcpAgent", () => {
 
     const messages = onMessage.mock.calls.map((args) => args[0] as string);
     expect(messages).toContain("Read file foo.ts");
-    expect(messages).toContain("usage updated: 100/1000");
+    // Status text is metadata that fires frequently and shouldn't flicker
+    // over the assistant message currently on screen.
+    expect(messages).not.toContain("usage updated: 100/1000");
   });
 
   it("reports input-token usage from usage_update status events", async () => {
@@ -290,7 +292,11 @@ describe("AcpAgent", () => {
     const reported = onUsage.mock.calls.map(
       (args) => (args[0] as { inputTokens: number }).inputTokens,
     );
-    expect(reported).toEqual([50, 120]);
+    // Once usage_update arrives, the reported `used` delta takes over and
+    // overrides the prompt-length estimate that fires at iteration start.
+    expect(reported).toContain(50);
+    expect(reported).toContain(120);
+    expect(reported[reported.length - 1]).toBe(120);
   });
 
   it("reports per-iteration deltas of `used` across iterations", async () => {
@@ -445,13 +451,17 @@ describe("AcpAgent", () => {
     expect(calls.startTurnInputs[0]!.signal).toBe(controller.signal);
   });
 
-  it("calls onMessage with each output text chunk", async () => {
+  it("buffers consecutive text_delta chunks into a single onMessage call so the renderer sees full messages instead of per-token flicker", async () => {
     const onMessage = vi.fn();
     const json = JSON.stringify(VALID_OUTPUT);
-    const half = Math.floor(json.length / 2);
+    const third = Math.floor(json.length / 3);
     const { runtime } = createFakeRuntime([
       {
-        events: [textDelta(json.slice(0, half)), textDelta(json.slice(half))],
+        events: [
+          textDelta(json.slice(0, third)),
+          textDelta(json.slice(third, 2 * third)),
+          textDelta(json.slice(2 * third)),
+        ],
         result: { status: "completed" },
       },
     ]);
@@ -460,7 +470,103 @@ describe("AcpAgent", () => {
     await agent.run("p", "/w", { onMessage });
 
     const calls = onMessage.mock.calls.map((args) => args[0] as string);
-    expect(calls).toEqual([json.slice(0, half), json.slice(half)]);
+    expect(calls).toEqual([json]);
+  });
+
+  it("flushes the buffered message on a tool_call boundary so each completed message surfaces once", async () => {
+    const onMessage = vi.fn();
+    const json = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          textDelta("Let me "),
+          textDelta("examine the "),
+          textDelta("code."),
+          { type: "tool_call", text: "Read foo.ts", toolCallId: "1" },
+          textDelta(json),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    await agent.run("p", "/w", { onMessage });
+
+    const calls = onMessage.mock.calls.map((args) => args[0] as string);
+    expect(calls).toEqual(["Let me examine the code.", "Read foo.ts", json]);
+  });
+
+  it("parses the last assistant message rather than concatenating intermediate prose with the final JSON", async () => {
+    // This is the regression case from acp:opencode runs - intermediate
+    // prose like "Let me examine..." was being concatenated with the final
+    // JSON answer and JSON.parse choked on the leading prose.
+    const json = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          textDelta("Let me examine the codebase first."),
+          { type: "tool_call", text: "Grep for 'foo'", toolCallId: "1" },
+          textDelta("Now I have what I need."),
+          { type: "tool_call", text: "Edit bar.ts", toolCallId: "2" },
+          textDelta(json),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+    expect(result.output).toEqual(VALID_OUTPUT);
+  });
+
+  it("extracts a JSON object from a single uninterrupted message that mixes prose and JSON", async () => {
+    // If the agent never makes a tool call, we end up with one big output
+    // message containing both prose and the JSON answer. Extract the
+    // rightmost balanced object out of that.
+    const json = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [textDelta(`Here is my answer:\n${json}\nDone.`)],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+    expect(result.output).toEqual(VALID_OUTPUT);
+  });
+
+  it("estimates non-zero output tokens from streamed text_delta chunks", async () => {
+    const json = JSON.stringify(VALID_OUTPUT);
+    const onUsage = vi.fn();
+    const { runtime } = createFakeRuntime([
+      {
+        events: [textDelta(json)],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w", { onUsage });
+    // ACP only reports a cumulative `used` context value (not split
+    // input/output), so we estimate output tokens from streamed bytes.
+    expect(result.usage.outputTokens).toBeGreaterThan(0);
+  });
+
+  it("falls back to a prompt-length input-token estimate when no usage_update events are emitted", async () => {
+    const json = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [textDelta(json)],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+    // Many ACP adapters never emit usage_update; without an estimate the
+    // renderer would be stuck at 0 input tokens forever.
+    expect(result.usage.inputTokens).toBeGreaterThan(0);
   });
 
   it("reuses the same session across multiple iterations", async () => {
