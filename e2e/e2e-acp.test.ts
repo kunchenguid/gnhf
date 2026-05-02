@@ -15,7 +15,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
-const mockAcpTargetPath = join(repoRoot, "e2e", "fixtures", "mock-acp-target.mjs");
+const mockAcpTargetPath = join(
+  repoRoot,
+  "e2e",
+  "fixtures",
+  "mock-acp-target.mjs",
+);
 
 interface RunResult {
   code: number | null;

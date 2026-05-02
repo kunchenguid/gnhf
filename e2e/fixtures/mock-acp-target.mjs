@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -107,7 +109,7 @@ class MockAcpAgent {
     this.iterationCounter = 0;
   }
 
-  async initialize(_params) {
+  async initialize() {
     appendLog("agent:initialize");
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
@@ -117,16 +119,16 @@ class MockAcpAgent {
     };
   }
 
-  async authenticate(_params) {
+  async authenticate() {
     return {};
   }
 
-  async setSessionMode(_params) {
+  async setSessionMode() {
     return {};
   }
 
   async newSession(params) {
-    const sessionId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    const sessionId = Array.from(randomBytes(16))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
     this.sessions.set(sessionId, {
@@ -155,16 +157,16 @@ class MockAcpAgent {
     });
 
     session.pendingPrompt?.abort();
-    const controller = new AbortController();
+    const controller = new globalThis.AbortController();
     session.pendingPrompt = controller;
 
     const hangMs = readEnvNumber("MOCK_ACP_HANG_MS");
     if (hangMs && hangMs > 0) {
       try {
         await new Promise((resolveHang, reject) => {
-          const timer = setTimeout(resolveHang, hangMs);
+          const timer = globalThis.setTimeout(resolveHang, hangMs);
           controller.signal.addEventListener("abort", () => {
-            clearTimeout(timer);
+            globalThis.clearTimeout(timer);
             reject(new Error("aborted"));
           });
         });
