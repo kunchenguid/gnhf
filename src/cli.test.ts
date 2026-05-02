@@ -581,25 +581,6 @@ async function runCliResumeWithActualRun(
 }
 
 describe("cli", () => {
-  it("uses config.agent when --agent is not passed", async () => {
-    const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
-      agent: "codex",
-      agentPathOverride: {},
-      agentArgsOverride: {},
-      maxConsecutiveFailures: 3,
-      preventSleep: false,
-    });
-
-    expect(loadConfig).toHaveBeenCalledWith({});
-    expect(createAgent).toHaveBeenCalledWith(
-      "codex",
-      stubRunInfo,
-      undefined,
-      undefined,
-      { includeStopField: false },
-    );
-  });
-
   it("uses the explicit --agent flag as an override", async () => {
     const { loadConfig, createAgent } = await runCliWithMocks(
       ["ship it", "--agent", "claude"],

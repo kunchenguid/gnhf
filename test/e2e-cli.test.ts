@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
+const fixtureBinDir = join(repoRoot, "test", "fixtures");
 const packageVersion = JSON.parse(
   readFileSync(join(repoRoot, "package.json"), "utf-8"),
 ).version as string;
@@ -100,6 +101,27 @@ function createHomeWithConfig(
   return { ...process.env, HOME: home, USERPROFILE: home };
 }
 
+function createMockOpencodeEnv(
+  temp: TempCleanup,
+  configYaml: string,
+): { env: NodeJS.ProcessEnv; mockLogPath: string } {
+  const home = temp.mkdir("home");
+  mkdirSync(join(home, ".gnhf"), { recursive: true });
+  writeFileSync(join(home, ".gnhf", "config.yml"), configYaml, "utf-8");
+  const logDir = temp.mkdir("logs");
+  const mockLogPath = join(logDir, "mock-opencode.jsonl");
+  return {
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+      GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+    },
+    mockLogPath,
+  };
+}
+
 async function withTemp<T>(fn: (temp: TempCleanup) => Promise<T>): Promise<T> {
   const temp = new TempCleanup();
   try {
@@ -152,6 +174,27 @@ describe.concurrent("gnhf e2e cli", () => {
       );
     });
   }, 15_000);
+
+  it("uses config.agent when --agent flag is omitted", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const { env, mockLogPath } = createMockOpencodeEnv(
+        temp,
+        "agent: opencode\n",
+      );
+
+      const result = await runCli(
+        cwd,
+        ["ship it", "--max-iterations", "1"],
+        env,
+      );
+
+      expect(result.code).toBe(0);
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+      const mockLog = readFileSync(mockLogPath, "utf-8");
+      expect(mockLog).toContain('"event":"server:start"');
+    });
+  }, 30_000);
 
   it.each([
     ["preset: gnhf", "commitMessage:\n  preset: gnhf\n"],
