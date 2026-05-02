@@ -295,14 +295,6 @@ describe("loadConfig", () => {
     });
   });
 
-  it("throws when commitMessage is present without a value", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage: expected an object/,
-    );
-  });
-
   it("merges file config with defaults", () => {
     mockReadFileSync.mockReturnValue("maxConsecutiveFailures: 10\n");
 

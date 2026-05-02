@@ -176,6 +176,20 @@ describe.concurrent("gnhf e2e cli", () => {
     15_000,
   );
 
+  it("rejects commitMessage with no value", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const env = createHomeWithConfig(temp, "commitMessage:\n");
+
+      const result = await runCli(cwd, ["ship it", "--agent", "claude"], env);
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        "Invalid config value for commitMessage: expected an object",
+      );
+    });
+  }, 15_000);
+
   it("rejects commitMessage config with template field", async () => {
     await withTemp(async (temp) => {
       const cwd = createRepo(temp);
