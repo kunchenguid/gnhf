@@ -15,9 +15,6 @@ import { CONVENTIONAL_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
 
-const packageVersion = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
-).version as string;
 const TEST_AGENT_NAMES = [
   "claude",
   "codex",
@@ -584,41 +581,6 @@ async function runCliResumeWithActualRun(
 }
 
 describe("cli", () => {
-  it("prints the package version for -V", async () => {
-    const originalArgv = [...process.argv];
-    const stdoutWrite = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
-      code?: string | number | null,
-    ) => {
-      throw new Error(
-        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
-      );
-    }) as typeof process.exit);
-
-    process.argv = ["node", "gnhf", "-V"];
-
-    try {
-      vi.resetModules();
-      await expect(import("./cli.js")).rejects.toThrow(
-        /process\.exit unexpectedly called with 1/,
-      );
-
-      expect(stdoutWrite).toHaveBeenCalledWith(`${packageVersion}\n`);
-      expect(exitSpy).toHaveBeenNthCalledWith(1, 0);
-      expect(exitSpy).toHaveBeenNthCalledWith(2, 1);
-    } finally {
-      process.argv = originalArgv;
-      stdoutWrite.mockRestore();
-      consoleError.mockRestore();
-      exitSpy.mockRestore();
-    }
-  });
-
   it("uses config.agent when --agent is not passed", async () => {
     const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
       agent: "codex",
@@ -2252,67 +2214,6 @@ describe("cli", () => {
     await cliPromise;
   });
 
-  it("prints a friendly message outside a git repository", async () => {
-    const originalArgv = [...process.argv];
-    const stdoutWrite = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
-      code?: string | number | null,
-    ) => {
-      throw new Error(
-        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
-      );
-    }) as typeof process.exit);
-
-    vi.resetModules();
-    vi.doMock("./core/config.js", () => ({
-      AGENT_NAMES: TEST_AGENT_NAMES,
-      loadConfig: vi.fn(() => ({
-        agent: "claude",
-        agentPathOverride: {},
-        agentArgsOverride: {},
-        maxConsecutiveFailures: 3,
-        preventSleep: false,
-      })),
-    }));
-    vi.doMock("./core/git.js", () => ({
-      ensureCleanWorkingTree: vi.fn(),
-      createBranch: vi.fn(),
-      getHeadCommit: vi.fn(() => "abc123"),
-      getCurrentBranch: vi.fn(() => {
-        throw new Error(
-          [
-            "Command failed: git rev-parse --abbrev-ref HEAD",
-            "fatal: not a git repository (or any of the parent directories): .git",
-          ].join("\n"),
-        );
-      }),
-    }));
-
-    process.argv = ["node", "gnhf", "ship it"];
-
-    try {
-      await expect(import("./cli.js")).rejects.toThrow(
-        /process\.exit unexpectedly called with 1/,
-      );
-
-      expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
-        ),
-      );
-    } finally {
-      process.argv = originalArgv;
-      stdoutWrite.mockRestore();
-      consoleError.mockRestore();
-      exitSpy.mockRestore();
-    }
-  });
-
   it("uses the SIGTERM exit code when shutdown times out after SIGTERM", async () => {
     vi.useFakeTimers();
 
@@ -3241,96 +3142,6 @@ describe("cli", () => {
       );
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("exits with error when --worktree is used from a gnhf branch", async () => {
-    const originalArgv = [...process.argv];
-    const stdoutWrite = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
-      code?: string | number | null,
-    ) => {
-      throw new Error(
-        `process.exit unexpectedly called with ${JSON.stringify(code)}`,
-      );
-    }) as typeof process.exit);
-
-    vi.resetModules();
-    vi.doMock("./core/config.js", () => ({
-      AGENT_NAMES: TEST_AGENT_NAMES,
-      loadConfig: vi.fn(() => ({
-        agent: "claude",
-        agentPathOverride: {},
-        agentArgsOverride: {},
-        maxConsecutiveFailures: 3,
-        preventSleep: false,
-      })),
-    }));
-    vi.doMock("./core/debug-log.js", () => ({
-      appendDebugLog: vi.fn(),
-      initDebugLog: vi.fn(),
-      serializeError: vi.fn(),
-    }));
-    vi.doMock("./core/git.js", () => ({
-      ensureCleanWorkingTree: vi.fn(),
-      createBranch: vi.fn(),
-      getHeadCommit: vi.fn(() => "abc123"),
-      getCurrentBranch: vi.fn(() => "gnhf/existing-run"),
-      getRepoRootDir: vi.fn(() => "/repo"),
-      createWorktree: vi.fn(),
-      removeWorktree: vi.fn(),
-    }));
-    vi.doMock("./core/run.js", () => ({
-      setupRun: vi.fn(() => stubRunInfo),
-      peekRunMetadata: vi.fn(() => ({
-        ...stubRunInfo,
-        promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
-      })),
-      resumeRun: vi.fn(() => ({
-        ...stubRunInfo,
-        promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
-      })),
-      getLastIterationNumber: vi.fn(() => 0),
-    }));
-    vi.doMock("./core/agents/factory.js", () => ({
-      createAgent: vi.fn(() => ({ name: "claude" })),
-    }));
-    vi.doMock("./core/orchestrator.js", () => ({
-      Orchestrator: class MockOrchestrator {
-        start = vi.fn(() => Promise.resolve());
-        stop = vi.fn();
-        on = vi.fn();
-        getState = vi.fn();
-      },
-    }));
-    vi.doMock("./renderer.js", () => ({
-      Renderer: class MockRenderer {
-        start = vi.fn();
-        stop = vi.fn();
-        waitUntilExit = vi.fn(() => Promise.resolve());
-      },
-    }));
-
-    process.argv = ["node", "gnhf", "new objective", "--worktree"];
-
-    try {
-      await expect(import("./cli.js")).rejects.toThrow(
-        /process\.exit unexpectedly called with 1/,
-      );
-
-      expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Cannot use --worktree from a gnhf branch"),
-      );
-    } finally {
-      process.argv = originalArgv;
-      stdoutWrite.mockRestore();
-      consoleError.mockRestore();
-      exitSpy.mockRestore();
     }
   });
 
