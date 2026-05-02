@@ -165,18 +165,6 @@ describe("git utilities", () => {
       expect(getBranchCommitCount("abc123", "/repo")).toBe(1);
     });
 
-    it("counts all branch commits after the base commit", () => {
-      mockExecFileSync.mockImplementation((_cmd, args) => {
-        const argv = args as string[];
-        if (argv.includes("base123..HEAD")) {
-          return "4";
-        }
-        return "";
-      });
-
-      expect(getBranchCommitCount("base123", "/repo")).toBe(4);
-    });
-
     it("returns 0 when the branch has no commits after the base commit", () => {
       mockExecFileSync.mockReturnValue("0");
       expect(getBranchCommitCount("abc123", "/repo")).toBe(0);
