@@ -40,6 +40,8 @@ const STUB_HANDLE: AcpRuntimeHandle = {
 
 interface FakeTurn {
   events: AcpRuntimeEvent[];
+  startError?: unknown;
+  eventError?: unknown;
   result: AcpRuntimeTurnResult;
   cancel?: () => Promise<void>;
 }
@@ -69,6 +71,7 @@ function createFakeRuntime(turns: FakeTurn[]) {
       calls.startTurnInputs.push(input);
       const turn = turns[turnIndex++];
       if (!turn) throw new Error("No fake turn queued");
+      if (turn.startError) throw turn.startError;
 
       // Emulate signal cancellation: if signal aborts mid-stream, the
       // returned `result` flips to "cancelled" and turn.cancel() is invoked.
@@ -88,6 +91,7 @@ function createFakeRuntime(turns: FakeTurn[]) {
           await Promise.resolve();
           yield event;
         }
+        if (turn.eventError) throw turn.eventError;
       })();
 
       const result: Promise<AcpRuntimeTurnResult> = (async () => {
@@ -168,6 +172,80 @@ describe("AcpAgent", () => {
 
       await agent.run("p", "/w");
       await agent.close();
+
+      const log = readFileSync(logPath, "utf-8");
+      expect(log).toContain('"target":"custom"');
+      expect(log).not.toContain(rawTarget);
+      expect(log).not.toContain("secret");
+    } finally {
+      resetDebugLogForTests();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("redacts raw command targets inside serialized ACP stream errors", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-acp-test-"));
+    try {
+      resetDebugLogForTests();
+      const logPath = join(tempDir, "gnhf.log");
+      initDebugLog(logPath);
+      const rawTarget = "./bin/dev-acp --profile ci --token secret";
+      const streamError = new Error(`failed to start ${rawTarget}`, {
+        cause: new Error(`spawn ${rawTarget} exited`),
+      });
+      streamError.stack = `Error: failed to start ${rawTarget}\n    at ${rawTarget}:1:1`;
+      const { runtime } = createFakeRuntime([
+        {
+          events: [],
+          eventError: streamError,
+          result: { status: "completed" },
+        },
+      ]);
+      const agent = makeAgent(runtime, { target: rawTarget });
+
+      const thrown = await agent
+        .run("p", "/w")
+        .catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("custom");
+      expect((thrown as Error).message).not.toContain(rawTarget);
+      expect((thrown as Error).message).not.toContain("secret");
+
+      const log = readFileSync(logPath, "utf-8");
+      expect(log).toContain('"target":"custom"');
+      expect(log).not.toContain(rawTarget);
+      expect(log).not.toContain("secret");
+    } finally {
+      resetDebugLogForTests();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("redacts raw command targets when ACP startup throws before streaming", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-acp-test-"));
+    try {
+      resetDebugLogForTests();
+      const logPath = join(tempDir, "gnhf.log");
+      initDebugLog(logPath);
+      const rawTarget = "./bin/dev-acp --profile ci --token secret";
+      const startError = new Error(`spawn failed for ${rawTarget}`);
+      startError.stack = `Error: spawn failed for ${rawTarget}\n    at ${rawTarget}:1:1`;
+      const { runtime } = createFakeRuntime([
+        {
+          events: [],
+          startError,
+          result: { status: "completed" },
+        },
+      ]);
+      const agent = makeAgent(runtime, { target: rawTarget });
+
+      const thrown = await agent
+        .run("p", "/w")
+        .catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("custom");
+      expect((thrown as Error).message).not.toContain(rawTarget);
+      expect((thrown as Error).message).not.toContain("secret");
 
       const log = readFileSync(logPath, "utf-8");
       expect(log).toContain('"target":"custom"');
