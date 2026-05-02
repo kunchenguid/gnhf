@@ -6,7 +6,7 @@ import {
   type AgentOutput,
   type TokenUsage,
 } from "./agents/types.js";
-import type { Config } from "./config.js";
+import { redactAgentSpecForLogs, type Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 import { appendNotes, toStringArray } from "./run.js";
 import { appendDebugLog, serializeError } from "./debug-log.js";
@@ -234,7 +234,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.emit("state", this.getState());
 
     appendDebugLog("orchestrator:start", {
-      agent: this.agent.name,
+      agent: redactAgentSpecForLogs(this.agent.name),
       runId: this.runInfo.runId,
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
@@ -440,7 +440,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     const agentStartedAt = Date.now();
     appendDebugLog("agent:run:start", {
       iteration: this.state.currentIteration,
-      agent: this.agent.name,
+      agent: redactAgentSpecForLogs(this.agent.name),
       logPath,
     });
 

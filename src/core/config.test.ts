@@ -540,4 +540,8 @@ describe("isAgentSpec", () => {
     expect(isAgentSpec("acp:./bin/dev-acp --profile ci")).toBe(true);
     expect(isAgentSpec("acp:npx -y @scope/custom-agent acp")).toBe(true);
   });
+
+  it("returns false for non-string values", () => {
+    expect(isAgentSpec(42 as unknown as string)).toBe(false);
+  });
 });

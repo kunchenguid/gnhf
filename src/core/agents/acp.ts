@@ -10,6 +10,7 @@ import {
   type AcpxRuntime,
 } from "acpx/runtime";
 import { appendDebugLog, serializeError } from "../debug-log.js";
+import { redactAcpTargetForLogs } from "../config.js";
 import {
   PermanentAgentError,
   validateAgentOutput,
@@ -215,7 +216,7 @@ export class AcpAgent implements Agent {
 
     const requestId = randomUUID();
     appendDebugLog("acp:turn:start", {
-      target: this.target,
+      target: redactAcpTargetForLogs(this.target),
       sessionKey: this.runId,
       requestId,
       cwd,
@@ -364,14 +365,14 @@ export class AcpAgent implements Agent {
         if (signal?.aborted || isAbortError(error)) {
           await turn.cancel({ reason: "gnhf-aborted" }).catch(() => undefined);
           appendDebugLog("acp:turn:aborted", {
-            target: this.target,
+            target: redactAcpTargetForLogs(this.target),
             requestId,
             elapsedMs: Date.now() - startedAt,
           });
           throw createAbortError();
         }
         appendDebugLog("acp:turn:stream-error", {
-          target: this.target,
+          target: redactAcpTargetForLogs(this.target),
           requestId,
           elapsedMs: Date.now() - startedAt,
           error: serializeError(error),
@@ -381,7 +382,7 @@ export class AcpAgent implements Agent {
 
       const result: AcpRuntimeTurnResult = await turn.result;
       appendDebugLog("acp:turn:result", {
-        target: this.target,
+        target: redactAcpTargetForLogs(this.target),
         requestId,
         status: result.status,
         stopReason:
@@ -460,10 +461,12 @@ export class AcpAgent implements Agent {
     this.handle = null;
     try {
       await runtime.close({ handle, reason: "gnhf-shutdown" });
-      appendDebugLog("acp:close", { target: this.target });
+      appendDebugLog("acp:close", {
+        target: redactAcpTargetForLogs(this.target),
+      });
     } catch (error) {
       appendDebugLog("acp:close-error", {
-        target: this.target,
+        target: redactAcpTargetForLogs(this.target),
         error: serializeError(error),
       });
     }
@@ -484,7 +487,7 @@ export class AcpAgent implements Agent {
     });
     this.runtime = runtime;
     appendDebugLog("acp:runtime:created", {
-      target: this.target,
+      target: redactAcpTargetForLogs(this.target),
       sessionStateDir: this.sessionStateDir,
       cwd,
     });

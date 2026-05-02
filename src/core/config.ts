@@ -24,8 +24,11 @@ export type AcpAgentSpec = `acp:${string}`;
 
 export type AgentSpec = AgentName | AcpAgentSpec;
 
-export function isAgentName(name: string): name is AgentName {
-  return (AGENT_NAMES as readonly string[]).includes(name);
+export function isAgentName(name: unknown): name is AgentName {
+  return (
+    typeof name === "string" &&
+    (AGENT_NAMES as readonly string[]).includes(name)
+  );
 }
 
 function hasDisallowedAcpTargetChar(target: string): boolean {
@@ -36,7 +39,8 @@ function hasDisallowedAcpTargetChar(target: string): boolean {
   return false;
 }
 
-export function isAcpSpec(spec: string): spec is AcpAgentSpec {
+export function isAcpSpec(spec: unknown): spec is AcpAgentSpec {
+  if (typeof spec !== "string") return false;
   if (!spec.startsWith("acp:")) return false;
   const target = spec.slice("acp:".length);
   return (
@@ -46,12 +50,25 @@ export function isAcpSpec(spec: string): spec is AcpAgentSpec {
   );
 }
 
-export function isAgentSpec(spec: string): spec is AgentSpec {
+export function isAgentSpec(spec: unknown): spec is AgentSpec {
   return isAgentName(spec) || isAcpSpec(spec);
 }
 
 export function getAcpTarget(spec: AcpAgentSpec): string {
   return spec.slice("acp:".length);
+}
+
+export function isNamedAcpTarget(target: string): boolean {
+  return ACP_TARGET_NAME_PATTERN.test(target);
+}
+
+export function redactAcpTargetForLogs(target: string): string {
+  return isNamedAcpTarget(target) ? target : "custom";
+}
+
+export function redactAgentSpecForLogs(spec: string): string {
+  if (!spec.startsWith("acp:")) return spec;
+  return `acp:${redactAcpTargetForLogs(spec.slice("acp:".length))}`;
 }
 
 export interface Config {

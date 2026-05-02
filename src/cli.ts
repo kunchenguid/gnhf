@@ -19,6 +19,7 @@ import {
   AGENT_NAMES,
   isAgentSpec,
   loadConfig,
+  redactAgentSpecForLogs,
   type AgentName,
   type AgentSpec,
 } from "./core/config.js";
@@ -116,11 +117,28 @@ function getNativeAgentName(spec: AgentSpec): AgentName | undefined {
 }
 
 function getTelemetryAgent(spec: AgentSpec): string {
-  if (!spec.startsWith("acp:")) return spec;
-  const target = spec.slice("acp:".length);
-  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(target)
-    ? spec
-    : "acp:custom";
+  return redactAgentSpecForLogs(spec);
+}
+
+function redactDebugArgs(args: string[]): string[] {
+  const redacted = [...args];
+  for (let i = 0; i < redacted.length; i += 1) {
+    const arg = redacted[i];
+    if (arg === "--") break;
+    if (arg === "--agent") {
+      const next = redacted[i + 1];
+      if (next !== undefined) {
+        redacted[i + 1] = redactAgentSpecForLogs(next);
+        i += 1;
+      }
+      continue;
+    }
+    if (arg?.startsWith("--agent=")) {
+      redacted[i] =
+        `--agent=${redactAgentSpecForLogs(arg.slice("--agent=".length))}`;
+    }
+  }
+  return redacted;
 }
 
 function buildSchemaOptions(
@@ -783,10 +801,10 @@ program
 
       initDebugLog(runInfo.logPath);
       appendDebugLog("run:start", {
-        args: process.argv.slice(2),
+        args: redactDebugArgs(process.argv.slice(2)),
         runId: runInfo.runId,
         runDir: runInfo.runDir,
-        agent: config.agent,
+        agent: redactAgentSpecForLogs(config.agent),
         promptLength: prompt.length,
         promptFromStdin,
         startIteration,

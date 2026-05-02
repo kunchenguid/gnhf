@@ -32,6 +32,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 
 import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
+import { appendDebugLog } from "./debug-log.js";
 import { Orchestrator } from "./orchestrator.js";
 import {
   PermanentAgentError,
@@ -45,6 +46,7 @@ import type { RunInfo } from "./run.js";
 const mockCommitAll = vi.mocked(commitAll);
 const mockAppendNotes = vi.mocked(appendNotes);
 const mockResetHard = vi.mocked(resetHard);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 const config: Config = {
   agent: "claude",
@@ -91,6 +93,37 @@ describe("Orchestrator output normalization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+  });
+
+  it("redacts raw ACP agent specs in debug logs", async () => {
+    const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
+    const agent: Agent = {
+      name: rawAgent,
+      run: vi.fn(async () => createSuccessResult()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "orchestrator:start",
+      expect.objectContaining({ agent: "acp:custom" }),
+    );
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "agent:run:start",
+      expect.objectContaining({ agent: "acp:custom" }),
+    );
+    expect(JSON.stringify(mockAppendDebugLog.mock.calls)).not.toContain(
+      "secret",
+    );
   });
 
   it("handles key_changes_made returned as a JSON string instead of an array", async () => {

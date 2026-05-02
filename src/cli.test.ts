@@ -29,6 +29,11 @@ const TEST_IS_AGENT_SPEC = (name: string) => {
   const target = name.slice("acp:".length);
   return target.length > 0 && target.trim() === target;
 };
+const TEST_REDACT_AGENT_SPEC = (name: string) => {
+  if (!name.startsWith("acp:")) return name;
+  const target = name.slice("acp:".length);
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(target) ? name : "acp:custom";
+};
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -146,6 +151,7 @@ async function runCliWithMocks(
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
     isAgentSpec: TEST_IS_AGENT_SPEC,
+    redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
     loadConfig,
   }));
   vi.doMock("./core/debug-log.js", () => ({
@@ -336,6 +342,7 @@ async function runSigintCliTest({
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
     isAgentSpec: TEST_IS_AGENT_SPEC,
+    redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
     loadConfig: vi.fn(() => ({
       agent: "claude",
       agentPathOverride: {},
@@ -488,6 +495,7 @@ async function runCliResumeWithActualRun(
   vi.doMock("./core/config.js", () => ({
     AGENT_NAMES: TEST_AGENT_NAMES,
     isAgentSpec: TEST_IS_AGENT_SPEC,
+    redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
     loadConfig: vi.fn(() => ({
       agent: "claude",
       agentPathOverride: {},
@@ -646,6 +654,53 @@ describe("cli", () => {
       "run",
       expect.objectContaining({ agent: "acp:custom" }),
     );
+  });
+
+  it("redacts raw ACP command specs in run start debug logs", async () => {
+    const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
+    const { appendDebugLog } = await runCliWithMocks(
+      ["--agent", rawAgent, "ship it"],
+      {
+        agent: rawAgent,
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:start",
+      expect.objectContaining({
+        agent: "acp:custom",
+        args: ["--agent", "acp:custom", "ship it"],
+      }),
+    );
+    expect(JSON.stringify(appendDebugLog.mock.calls)).not.toContain("secret");
+  });
+
+  it("redacts raw ACP command specs in equals-form agent args", async () => {
+    const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
+    const { appendDebugLog } = await runCliWithMocks(
+      [`--agent=${rawAgent}`, "ship it"],
+      {
+        agent: rawAgent,
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:start",
+      expect.objectContaining({
+        args: ["--agent=acp:custom", "ship it"],
+      }),
+    );
+    expect(JSON.stringify(appendDebugLog.mock.calls)).not.toContain("secret");
   });
 
   it("threads includeStopField=true into agent creation when --stop-when is set", async () => {
@@ -1203,6 +1258,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig,
     }));
     vi.doMock("./core/debug-log.js", () => ({
@@ -1353,6 +1409,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1489,6 +1546,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1621,6 +1679,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1748,6 +1807,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1872,6 +1932,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -1989,6 +2050,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2168,6 +2230,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2314,6 +2377,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2487,6 +2551,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
@@ -2639,6 +2704,7 @@ describe("cli", () => {
     vi.doMock("./core/config.js", () => ({
       AGENT_NAMES: TEST_AGENT_NAMES,
       isAgentSpec: TEST_IS_AGENT_SPEC,
+      redactAgentSpecForLogs: TEST_REDACT_AGENT_SPEC,
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},

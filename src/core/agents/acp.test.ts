@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AcpAgent } from "./acp.js";
+import { initDebugLog, resetDebugLogForTests } from "../debug-log.js";
 import { PermanentAgentError, type AgentOutputSchema } from "./types.js";
 import type {
   AcpRuntimeEnsureInput,
@@ -145,6 +149,34 @@ describe("AcpAgent", () => {
     const { runtime } = createFakeRuntime([]);
     const agent = makeAgent(runtime, { target: "gemini" });
     expect(agent.name).toBe("acp:gemini");
+  });
+
+  it("redacts raw command targets in debug logs", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-acp-test-"));
+    try {
+      resetDebugLogForTests();
+      const logPath = join(tempDir, "gnhf.log");
+      initDebugLog(logPath);
+      const rawTarget = "./bin/dev-acp --profile ci --token secret";
+      const { runtime } = createFakeRuntime([
+        {
+          events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+          result: { status: "completed" },
+        },
+      ]);
+      const agent = makeAgent(runtime, { target: rawTarget });
+
+      await agent.run("p", "/w");
+      await agent.close();
+
+      const log = readFileSync(logPath, "utf-8");
+      expect(log).toContain('"target":"custom"');
+      expect(log).not.toContain(rawTarget);
+      expect(log).not.toContain("secret");
+    } finally {
+      resetDebugLogForTests();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("ensures a persistent session keyed on runId and target, then submits a prompt turn", async () => {
