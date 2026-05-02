@@ -265,18 +265,6 @@ describe("loadConfig", () => {
     });
   });
 
-  it("reads per-agent extra args from config", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  codex:\n    - -m\n    - gpt-5.4\n    - --full-auto\n",
-    );
-
-    const config = loadConfig();
-
-    expect(config.agentArgsOverride).toEqual({
-      codex: ["-m", "gpt-5.4", "--full-auto"],
-    });
-  });
-
   it("reads per-agent extra args for all supported agents", () => {
     mockReadFileSync.mockReturnValue(
       [
