@@ -481,6 +481,12 @@ function serializeAgentArgsOverride(
     .trimEnd();
 }
 
+function serializeAgent(agent: AgentSpec): string {
+  return yaml
+    .dump({ agent }, { lineWidth: -1, noRefs: true, sortKeys: false })
+    .trimEnd();
+}
+
 function serializeConfig(config: Config): string {
   const agentPathOverrideSection = serializeAgentPathOverride(
     config.agentPathOverride,
@@ -490,7 +496,7 @@ function serializeConfig(config: Config): string {
   );
   const lines = [
     "# Agent to use by default: native agent name or acp:<target-or-command>",
-    `agent: ${config.agent}`,
+    serializeAgent(config.agent),
     "",
     "# Custom paths to native agent binaries (optional)",
     "# Paths may be absolute, bare executable names on PATH,",

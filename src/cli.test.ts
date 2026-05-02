@@ -23,8 +23,12 @@ const TEST_AGENT_NAMES = [
   "copilot",
   "pi",
 ];
-const TEST_IS_AGENT_SPEC = (name: string) =>
-  TEST_AGENT_NAMES.includes(name) || /^acp:\S+/.test(name);
+const TEST_IS_AGENT_SPEC = (name: string) => {
+  if (TEST_AGENT_NAMES.includes(name)) return true;
+  if (!name.startsWith("acp:")) return false;
+  const target = name.slice("acp:".length);
+  return target.length > 0 && target.trim() === target;
+};
 
 const stubRunInfo: RunInfo = {
   runId: "run-abc",
@@ -61,6 +65,11 @@ interface CliMockOverrides {
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
   rendererStop?: ReturnType<typeof vi.fn>;
   startSleepPrevention?: ReturnType<typeof vi.fn>;
+  telemetry?: {
+    track: ReturnType<typeof vi.fn>;
+    pageview: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
   stdinIsTTY?: boolean;
 }
 
@@ -92,6 +101,11 @@ async function runCliWithMocks(
   const startSleepPrevention =
     overrides.startSleepPrevention ??
     vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
+  const telemetry = overrides.telemetry ?? {
+    track: vi.fn(),
+    pageview: vi.fn(),
+    close: vi.fn(() => Promise.resolve()),
+  };
   let consoleErrorCalls: unknown[][] = [];
   const setupRun = vi.fn(() => stubRunInfo);
   const peekRunMetadata = overrides.peekRunMetadata ?? vi.fn(() => stubRunInfo);
@@ -163,6 +177,10 @@ async function runCliWithMocks(
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
   vi.doMock("./core/sleep.js", () => ({
     startSleepPrevention,
+  }));
+  vi.doMock("./core/telemetry.js", () => ({
+    initDefaultTelemetry: vi.fn(),
+    getDefaultTelemetry: vi.fn(() => telemetry),
   }));
   vi.doMock("./core/orchestrator.js", () => ({
     Orchestrator: class MockOrchestrator {
@@ -236,6 +254,7 @@ async function runCliWithMocks(
     orchestratorRequestGracefulStop,
     readStdinText,
     startSleepPrevention,
+    telemetry,
   };
 }
 
@@ -606,6 +625,26 @@ describe("cli", () => {
       undefined,
       ["-m", "gpt-5.4", "--full-auto"],
       { includeStopField: false, acpRegistryOverrides: {} },
+    );
+  });
+
+  it("buckets raw ACP command specs in telemetry", async () => {
+    const { telemetry } = await runCliWithMocks(["ship it"], {
+      agent: "acp:./bin/dev-acp --profile ci --token secret",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      acpRegistryOverrides: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(telemetry.pageview).toHaveBeenCalledWith("/run", {
+      agent: "acp:custom",
+      mode: "new",
+    });
+    expect(telemetry.track).toHaveBeenCalledWith(
+      "run",
+      expect.objectContaining({ agent: "acp:custom" }),
     );
   });
 

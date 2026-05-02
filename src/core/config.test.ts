@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join, resolve } from "node:path";
+import yaml from "js-yaml";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -152,6 +153,24 @@ describe("loadConfig", () => {
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
+  });
+
+  it("YAML-quotes raw ACP command specs when bootstrapping", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const agent = "acp:./bin/dev-acp --profile ci # local";
+
+    loadConfig({ agent });
+
+    const written = mockWriteFileSync.mock.calls[0]?.[1];
+    expect(typeof written).toBe("string");
+    expect((yaml.load(written as string) as { agent: string }).agent).toBe(
+      agent,
+    );
   });
 
   it("writes agentPathOverride values when bootstrapping a missing config file", () => {

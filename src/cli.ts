@@ -115,6 +115,14 @@ function getNativeAgentName(spec: AgentSpec): AgentName | undefined {
   return isAgentName(spec) ? spec : undefined;
 }
 
+function getTelemetryAgent(spec: AgentSpec): string {
+  if (!spec.startsWith("acp:")) return spec;
+  const target = spec.slice("acp:".length);
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(target)
+    ? spec
+    : "acp:custom";
+}
+
 function buildSchemaOptions(
   stopWhen: string | undefined,
   commitMessage: CommitMessageConfig | undefined,
@@ -767,8 +775,9 @@ program
           ? "resume"
           : "new";
 
+      const telemetryAgent = getTelemetryAgent(config.agent);
       telemetry.pageview("/run", {
-        agent: config.agent,
+        agent: telemetryAgent,
         mode: runMode,
       });
 
@@ -927,7 +936,7 @@ program
         });
 
         telemetry.track("run", {
-          agent: config.agent,
+          agent: telemetryAgent,
           mode: runMode,
           status: finalState.status,
           signal: shutdownSignal ?? undefined,
