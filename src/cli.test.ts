@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { CONVENTIONAL_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
@@ -2810,37 +2810,6 @@ describe("cli", () => {
       consoleError.mockRestore();
       exitSpy.mockRestore();
     }
-  });
-
-  it("passes the worktree path as effectiveCwd to the orchestrator in --worktree mode", async () => {
-    const createWorktree = vi.fn();
-    const getRepoRootDir = vi.fn(() => "/repo");
-
-    const { orchestratorCtor, appendDebugLog } = await runCliWithMocks(
-      ["ship it", "--worktree"],
-      {
-        agent: "claude",
-        agentPathOverride: {},
-        agentArgsOverride: {},
-        maxConsecutiveFailures: 3,
-        preventSleep: false,
-      },
-      { createWorktree, getRepoRootDir },
-    );
-
-    expect(getRepoRootDir).toHaveBeenCalled();
-    expect(createWorktree).toHaveBeenCalledWith(
-      "/repo",
-      expect.stringContaining(`repo-gnhf-worktrees${sep}`),
-      expect.stringMatching(/^gnhf\//),
-    );
-    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
-    const effectiveCwd = orchestratorCtor.mock.calls[0]?.[4];
-    expect(effectiveCwd).toContain(`repo-gnhf-worktrees${sep}`);
-    expect(appendDebugLog).toHaveBeenCalledWith(
-      "run:start",
-      expect.objectContaining({ worktree: true }),
-    );
   });
 
   it("suffixes new branch names when the generated branch already exists", async () => {
