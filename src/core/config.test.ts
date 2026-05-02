@@ -344,12 +344,6 @@ describe("loadConfig", () => {
     });
   });
 
-  it("throws when preventSleep has an unrecognized value", () => {
-    mockReadFileSync.mockReturnValue("preventSleep: flase\n");
-
-    expect(() => loadConfig()).toThrow(/Invalid config value for preventSleep/);
-  });
-
   it("overrides take precedence over file config and defaults", () => {
     mockReadFileSync.mockReturnValue(
       "agent: codex\nmaxConsecutiveFailures: 10\npreventSleep: false\n",
@@ -503,70 +497,6 @@ describe("loadConfig", () => {
     expect(config.agentPathOverride.claude).toBe("claude-code-switch");
   });
 
-  it("throws when agentPathOverride contains an unknown agent name", () => {
-    mockReadFileSync.mockReturnValue("agentPathOverride:\n  unknown: /bin/x\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid agent name in agentPathOverride/,
-    );
-  });
-
-  it("throws when agentPathOverride value is not a string", () => {
-    mockReadFileSync.mockReturnValue("agentPathOverride:\n  claude: 42\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid path for agentPathOverride.claude/,
-    );
-  });
-
-  it("throws when agentPathOverride value is blank", () => {
-    mockReadFileSync.mockReturnValue('agentPathOverride:\n  claude: "   "\n');
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid path for agentPathOverride.claude/,
-    );
-  });
-
-  it("throws when agentArgsOverride contains an unknown agent name", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  unknown:\n    - --flag\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid agent name in agentArgsOverride/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex is not an array", () => {
-    mockReadFileSync.mockReturnValue(
-      'agentArgsOverride:\n  codex: "--full-auto"\n',
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for agentArgsOverride\.codex/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex contains blank values", () => {
-    mockReadFileSync.mockReturnValue(
-      'agentArgsOverride:\n  codex:\n    - "   "\n',
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for agentArgsOverride\.codex\[0\]/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  codex:\n    - --output-schema=custom.json\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.codex\[0\].*managed by gnhf/,
-    );
-  });
-
   it("allows agentArgsOverride.claude to set the dangerous permission flag explicitly", () => {
     mockReadFileSync.mockReturnValue(
       "agentArgsOverride:\n  claude:\n    - --dangerously-skip-permissions\n",
@@ -577,26 +507,6 @@ describe("loadConfig", () => {
     expect(config.agentArgsOverride).toEqual({
       claude: ["--dangerously-skip-permissions"],
     });
-  });
-
-  it("throws when agentArgsOverride.rovodev contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  rovodev:\n    - serve\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.rovodev\[0\].*managed by gnhf/,
-    );
-  });
-
-  it("throws when agentArgsOverride.copilot contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  copilot:\n    - --output-format=json\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.copilot\[0\].*managed by gnhf/,
-    );
   });
 
   it("allows safe agentArgsOverride.pi flags", () => {

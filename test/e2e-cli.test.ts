@@ -197,4 +197,71 @@ describe.concurrent("gnhf e2e cli", () => {
       );
     });
   }, 15_000);
+
+  it.each([
+    {
+      label: "preventSleep: unrecognized value",
+      yaml: "preventSleep: flase\n",
+      expected: "Invalid config value for preventSleep",
+    },
+    {
+      label: "agentPathOverride: unknown agent name",
+      yaml: "agentPathOverride:\n  unknown: /bin/x\n",
+      expected: "Invalid agent name in agentPathOverride",
+    },
+    {
+      label: "agentPathOverride: non-string value",
+      yaml: "agentPathOverride:\n  claude: 42\n",
+      expected: "Invalid path for agentPathOverride.claude",
+    },
+    {
+      label: "agentPathOverride: blank string",
+      yaml: 'agentPathOverride:\n  claude: "   "\n',
+      expected: "Invalid path for agentPathOverride.claude",
+    },
+    {
+      label: "agentArgsOverride: unknown agent name",
+      yaml: "agentArgsOverride:\n  unknown:\n    - --flag\n",
+      expected: "Invalid agent name in agentArgsOverride",
+    },
+    {
+      label: "agentArgsOverride.codex: not an array",
+      yaml: 'agentArgsOverride:\n  codex: "--full-auto"\n',
+      expected: "Invalid config value for agentArgsOverride.codex",
+    },
+    {
+      label: "agentArgsOverride.codex: blank value",
+      yaml: 'agentArgsOverride:\n  codex:\n    - "   "\n',
+      expected: "Invalid config value for agentArgsOverride.codex[0]",
+    },
+    {
+      label: "agentArgsOverride.codex: gnhf-managed flag",
+      yaml: "agentArgsOverride:\n  codex:\n    - --output-schema=custom.json\n",
+      expected: "managed by gnhf",
+    },
+    {
+      label: "agentArgsOverride.rovodev: gnhf-managed flag",
+      yaml: "agentArgsOverride:\n  rovodev:\n    - serve\n",
+      expected: "managed by gnhf",
+    },
+    {
+      label: "agentArgsOverride.copilot: gnhf-managed flag",
+      yaml: "agentArgsOverride:\n  copilot:\n    - --output-format=json\n",
+      expected: "managed by gnhf",
+    },
+  ])(
+    "rejects invalid config: $label",
+    async ({ yaml, expected }) => {
+      await withTemp(async (temp) => {
+        const cwd = createRepo(temp);
+        const env = createHomeWithConfig(temp, yaml);
+
+        const result = await runCli(cwd, ["ship it", "--agent", "claude"], env);
+
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain(expected);
+      });
+    },
+    15_000,
+  );
 });
