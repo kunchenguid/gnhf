@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { resolve as resolvePath } from "node:path";
 
+import { appendDebugLog, serializeError } from "./debug-log.js";
+
 const NOT_GIT_REPOSITORY_MESSAGE =
   'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
 
@@ -194,24 +196,41 @@ export function getBranchDiffStats(
 }
 
 export function commitAll(message: string, cwd: string): void {
+  // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
+  // signing enabled would otherwise have every gnhf iteration spawn gpg
+  // and (for a locked agent) wait on a pinentry passphrase prompt that
+  // never arrives in the alt-screen TUI.
+  const commitArgs = [
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "tag.gpgsign=false",
+    "commit",
+    "-m",
+    message,
+  ];
+
+  git(["add", "-A"], cwd);
+  let firstError: unknown;
+  try {
+    git(commitArgs, cwd);
+    return;
+  } catch (error) {
+    firstError = error;
+  }
+
+  // First commit failed. Most often this is a pre-commit hook rejecting
+  // the change (or a formatter hook that mutated files and returned
+  // non-zero so the developer re-stages). Re-add to capture any hook
+  // modifications, then retry with --no-verify so a failing hook doesn't
+  // strand the agent's work uncommitted. If the underlying problem was
+  // "nothing to commit", the retry fails the same way and we swallow it.
   git(["add", "-A"], cwd);
   try {
-    // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
-    // signing enabled would otherwise have every gnhf iteration spawn gpg
-    // and (for a locked agent) wait on a pinentry passphrase prompt that
-    // never arrives in the alt-screen TUI.
-    git(
-      [
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "tag.gpgsign=false",
-        "commit",
-        "-m",
-        message,
-      ],
-      cwd,
-    );
+    git([...commitArgs, "--no-verify"], cwd);
+    appendDebugLog("git:commit:no-verify-fallback", {
+      firstError: serializeError(firstError),
+    });
   } catch {
     // Nothing to commit (no changes) -- that's fine
   }
