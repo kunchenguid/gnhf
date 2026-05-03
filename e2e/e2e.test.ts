@@ -203,6 +203,11 @@ describe("gnhf e2e", () => {
     );
 
     expect(result.code).toBe(0);
+    expect(result.stdout).toContain("gnhf stopped");
+    expect(result.stdout).toContain("opencode ran");
+    expect(result.stdout).toContain("max iterations reached (1)");
+    expect(result.stdout).toContain("branch diff");
+    expect(result.stdout).toContain("git log --oneline");
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
     expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
 
