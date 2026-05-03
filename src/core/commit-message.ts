@@ -96,7 +96,7 @@ export function buildCommitMessage(
   context: CommitMessageContext,
 ): string {
   if (config === undefined) {
-    return collapseHeader(`gnhf #${context.iteration}: ${output.summary}`);
+    return collapseHeader(`gnhf ${context.iteration}: ${output.summary}`);
   }
 
   const commitOutput = output as AgentOutputWithCommitMessageFields;

@@ -225,7 +225,7 @@ agent: claude
 #   staging: "node /opt/staging/agent.mjs"
 
 # Commit message convention (optional)
-# Defaults to: gnhf #<iteration>: <summary>
+# Defaults to: gnhf <iteration>: <summary>
 # Use the conventional preset for semantic-release compatible headers:
 # commitMessage:
 #   preset: conventional
@@ -253,7 +253,7 @@ You can also pass a raw custom ACP server command directly as a quoted `acp:` sp
 
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
-- Omit it to keep the default `gnhf #<iteration>: <summary>` format.
+- Omit it to keep the default `gnhf <iteration>: <summary>` format.
 - Set `preset: conventional` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
 - The resolved commit-message convention is saved per run, so resuming a `gnhf/` branch keeps the original subject format even if `config.yml` changes later.
 
