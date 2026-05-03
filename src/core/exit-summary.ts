@@ -22,12 +22,15 @@ export interface ExitSummaryOptions {
   baseRef: string;
   diffStats: BranchDiffStats;
   color: boolean;
+  terminalColumns?: number;
 }
 
-const CARD_WIDTH = 60;
+const MIN_CARD_WIDTH = 62;
 const LABEL_WIDTH = 16;
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
+// eslint-disable-next-line no-control-regex
+const ANSI_TOKEN_RE = /\x1b\[[0-9;]*m/g;
 const NO_MISTAKES_URL = "https://github.com/kunchenguid/no-mistakes";
 
 export function stripExitSummaryAnsi(text: string): string {
@@ -55,6 +58,35 @@ function visibleLength(text: string): number {
 
 function padVisible(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleLength(text)));
+}
+
+function truncateVisible(text: string, width: number): string {
+  if (visibleLength(text) <= width) return text;
+  if (width <= 0) return "";
+
+  const targetWidth = Math.max(0, width - 1);
+  let output = "";
+  let visible = 0;
+  let index = 0;
+
+  for (const match of text.matchAll(ANSI_TOKEN_RE)) {
+    const chunk = text.slice(index, match.index);
+    for (const char of chunk) {
+      if (visible >= targetWidth) return `${output}…`;
+      output += char;
+      visible += 1;
+    }
+    output += match[0];
+    index = match.index! + match[0].length;
+  }
+
+  for (const char of text.slice(index)) {
+    if (visible >= targetWidth) return `${output}…`;
+    output += char;
+    visible += 1;
+  }
+
+  return `${output}…`;
 }
 
 function formatDuration(ms: number): string {
@@ -96,8 +128,33 @@ function continuationLine(text: string): string {
   return `  ${"".padEnd(LABEL_WIDTH)}${text}`;
 }
 
-function cardLine(content: string, dim: (text: string) => string): string {
-  return `${dim("│ ")}${padVisible(content, CARD_WIDTH - 2)}${dim(" │")}`;
+function resolveCardWidth(
+  contents: string[],
+  terminalColumns?: number,
+): number {
+  const contentWidth = Math.max(...contents.map(visibleLength));
+  const desiredWidth = Math.max(MIN_CARD_WIDTH, contentWidth + 4);
+  const columns =
+    terminalColumns && terminalColumns > 0 ? terminalColumns : undefined;
+  return Math.max(4, columns ? Math.min(desiredWidth, columns) : desiredWidth);
+}
+
+function cardBorder(
+  left: string,
+  right: string,
+  width: number,
+  dim: (text: string) => string,
+): string {
+  return dim(`${left}${"─".repeat(Math.max(0, width - 2))}${right}`);
+}
+
+function cardLine(
+  content: string,
+  width: number,
+  dim: (text: string) => string,
+): string {
+  const contentWidth = Math.max(0, width - 4);
+  return `${dim("│ ")}${padVisible(truncateVisible(content, contentWidth), contentWidth)}${dim(" │")}`;
 }
 
 export function renderExitSummary(options: ExitSummaryOptions): string {
@@ -110,6 +167,8 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
   const subtitle = stopped
     ? `${s.cyan(options.agentName)} ran for ${s.yellow(elapsed)} before: ${options.abortReason ?? options.status}`
     : `${s.cyan(options.agentName)} worked for ${s.yellow(elapsed)} on ${s.magenta(options.branchName)}`;
+  const cardContents = [title, `  ${subtitle}`];
+  const cardWidth = resolveCardWidth(cardContents, options.terminalColumns);
   const rolledBack = `${options.failCount} rolled back`;
   const inputTokens = formatTokenCount(
     options.totalInputTokens,
@@ -126,10 +185,10 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
   const linesDeleted = `-${formatNumber(options.diffStats.linesDeleted)}`;
 
   const lines = [
-    s.dim(`╭${"─".repeat(CARD_WIDTH)}╮`),
-    cardLine(title, s.dim),
-    cardLine(`  ${subtitle}`, s.dim),
-    s.dim(`╰${"─".repeat(CARD_WIDTH)}╯`),
+    cardBorder("╭", "╮", cardWidth, s.dim),
+    cardLine(title, cardWidth, s.dim),
+    cardLine(`  ${subtitle}`, cardWidth, s.dim),
+    cardBorder("╰", "╯", cardWidth, s.dim),
     "",
     metricLine(s.dim("iterations"), [
       `${s.bold(String(options.iterations))} total`,

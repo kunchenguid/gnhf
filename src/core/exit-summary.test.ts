@@ -89,4 +89,50 @@ describe("renderExitSummary", () => {
     expect(summary).toContain("\x1b[");
     expect(stripExitSummaryAnsi(summary)).not.toContain("\x1b[");
   });
+
+  it("widens the top card for long branch names", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        branchName:
+          "gnhf/add-responsive-exit-summary-for-extremely-long-branch-names",
+        color: false,
+        terminalColumns: 100,
+      }),
+    );
+    const cardLines = summary
+      .split("\n")
+      .filter(
+        (line) =>
+          line.startsWith("╭") || line.startsWith("│") || line.startsWith("╰"),
+      );
+    const cardWidth = cardLines[0]!.length;
+
+    expect(cardWidth).toBeGreaterThan(62);
+    expect(cardLines.every((line) => line.length === cardWidth)).toBe(true);
+  });
+
+  it("keeps the top card within narrow terminal width", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        branchName:
+          "gnhf/add-responsive-exit-summary-for-extremely-long-branch-names",
+        color: false,
+        terminalColumns: 50,
+      }),
+    );
+    const cardLines = summary
+      .split("\n")
+      .filter(
+        (line) =>
+          line.startsWith("╭") || line.startsWith("│") || line.startsWith("╰"),
+      );
+
+    expect(cardLines.length).toBe(4);
+    expect(cardLines.every((line) => line.length <= 50)).toBe(true);
+    expect(
+      cardLines.every((line) => line.length === cardLines[0]!.length),
+    ).toBe(true);
+  });
 });

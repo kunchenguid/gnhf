@@ -1002,6 +1002,7 @@ program
           baseRef: runInfo.baseCommit.slice(0, 12) || runInfo.baseCommit,
           diffStats,
           color: shouldUseColor(),
+          terminalColumns: process.stdout.columns,
         });
 
         appendDebugLog("run:complete", {
