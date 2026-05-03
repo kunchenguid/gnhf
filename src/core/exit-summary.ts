@@ -68,25 +68,28 @@ function truncateVisible(text: string, width: number): string {
   let output = "";
   let visible = 0;
   let index = 0;
+  let hasActiveStyle = false;
+  const finish = () => `${output}…${hasActiveStyle ? "\x1b[0m" : ""}`;
 
   for (const match of text.matchAll(ANSI_TOKEN_RE)) {
     const chunk = text.slice(index, match.index);
     for (const char of chunk) {
-      if (visible >= targetWidth) return `${output}…`;
+      if (visible >= targetWidth) return finish();
       output += char;
       visible += 1;
     }
     output += match[0];
+    hasActiveStyle = match[0] !== "\x1b[0m";
     index = match.index! + match[0].length;
   }
 
   for (const char of text.slice(index)) {
-    if (visible >= targetWidth) return `${output}…`;
+    if (visible >= targetWidth) return finish();
     output += char;
     visible += 1;
   }
 
-  return `${output}…`;
+  return finish();
 }
 
 function formatDuration(ms: number): string {

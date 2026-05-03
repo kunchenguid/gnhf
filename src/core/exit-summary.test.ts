@@ -135,4 +135,19 @@ describe("renderExitSummary", () => {
       cardLines.every((line) => line.length === cardLines[0]!.length),
     ).toBe(true);
   });
+
+  it("resets color before the right border when truncating colored content", () => {
+    const summary = renderExitSummary({
+      ...baseSummary,
+      branchName:
+        "gnhf/add-responsive-exit-summary-for-extremely-long-branch-names",
+      color: true,
+      terminalColumns: 50,
+    });
+    const subtitleLine = summary
+      .split("\n")
+      .find((line) => line.includes("worked for"));
+
+    expect(subtitleLine).toContain("…\x1b[0m\x1b[2m │");
+  });
 });
