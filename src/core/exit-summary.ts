@@ -220,8 +220,8 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
     continuationLine(s.cyan(`git diff --stat ${options.baseRef}..HEAD`)),
     continuationLine(s.cyan("gh pr create")),
     "",
-    commandLine(s.dim("too much?"), `${s.cyan("git push no-mistakes")}:`),
-    continuationLine(s.blueUnderline(NO_MISTAKES_URL)),
+    commandLine(s.dim("too much"), `${s.cyan("git push no-mistakes")}:`),
+    commandLine(s.dim("to review?"), s.blueUnderline(NO_MISTAKES_URL)),
   ];
 
   return `\n${lines.join("\n")}\n`;

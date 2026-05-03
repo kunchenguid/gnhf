@@ -50,8 +50,9 @@ describe("renderExitSummary", () => {
       "files           7 added       9 updated    2 deleted",
     );
     expect(summary).toContain("next steps      git log --oneline main..HEAD");
-    expect(summary).toContain("too much?       git push no-mistakes:");
-    expect(summary).toContain("https://github.com/kunchenguid/no-mistakes");
+    expect(summary).toContain(
+      "too much        git push no-mistakes:\n  to review?      https://github.com/kunchenguid/no-mistakes",
+    );
     expect(summary).not.toContain("moon log");
   });
 
