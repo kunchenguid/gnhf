@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.35](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.34...gnhf-v0.1.35) (2026-05-03)
+
+
+### Bug Fixes
+
+* **core:** retry failed commits without hooks ([#130](https://github.com/kunchenguid/gnhf/issues/130)) ([bb2c2f9](https://github.com/kunchenguid/gnhf/commit/bb2c2f9737fa5d43abaea9e3c2de0b62ea068469))
+
 ## [0.1.34](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.33...gnhf-v0.1.34) (2026-05-03)
 
 
