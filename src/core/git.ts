@@ -122,6 +122,77 @@ export function getBranchCommitCount(baseCommit: string, cwd: string): number {
   );
 }
 
+export interface BranchDiffStats {
+  commits: number;
+  filesChanged: number;
+  filesAdded: number;
+  filesUpdated: number;
+  filesDeleted: number;
+  filesRenamed: number;
+  binaryFiles: number;
+  linesAdded: number;
+  linesDeleted: number;
+}
+
+function emptyBranchDiffStats(): BranchDiffStats {
+  return {
+    commits: 0,
+    filesChanged: 0,
+    filesAdded: 0,
+    filesUpdated: 0,
+    filesDeleted: 0,
+    filesRenamed: 0,
+    binaryFiles: 0,
+    linesAdded: 0,
+    linesDeleted: 0,
+  };
+}
+
+export function getBranchDiffStats(
+  baseCommit: string,
+  cwd: string,
+): BranchDiffStats {
+  if (!baseCommit) return emptyBranchDiffStats();
+
+  const range = `${baseCommit}..HEAD`;
+  const stats = emptyBranchDiffStats();
+  stats.commits = Number.parseInt(
+    git(["rev-list", "--count", "--first-parent", range], cwd),
+    10,
+  );
+
+  const nameStatus = git(["diff", "--name-status", range], cwd);
+  for (const line of nameStatus.split("\n")) {
+    if (!line) continue;
+    const [status] = line.split("\t");
+    stats.filesChanged++;
+    if (status === "A") {
+      stats.filesAdded++;
+    } else if (status === "D") {
+      stats.filesDeleted++;
+    } else if (status?.startsWith("R")) {
+      stats.filesUpdated++;
+      stats.filesRenamed++;
+    } else {
+      stats.filesUpdated++;
+    }
+  }
+
+  const numstat = git(["diff", "--numstat", range], cwd);
+  for (const line of numstat.split("\n")) {
+    if (!line) continue;
+    const [added, deleted] = line.split("\t");
+    if (added === "-" || deleted === "-") {
+      stats.binaryFiles++;
+      continue;
+    }
+    stats.linesAdded += Number.parseInt(added ?? "0", 10) || 0;
+    stats.linesDeleted += Number.parseInt(deleted ?? "0", 10) || 0;
+  }
+
+  return stats;
+}
+
 export function commitAll(message: string, cwd: string): void {
   git(["add", "-A"], cwd);
   try {

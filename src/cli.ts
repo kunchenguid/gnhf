@@ -37,6 +37,8 @@ import {
   createWorktree,
   removeWorktree,
   listWorktreePaths,
+  getBranchDiffStats,
+  type BranchDiffStats,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -55,6 +57,7 @@ import {
   type CommitMessageConfig,
 } from "./core/commit-message.js";
 import { Orchestrator } from "./core/orchestrator.js";
+import { renderExitSummary } from "./core/exit-summary.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
 import { slugifyPrompt } from "./utils/slugify.js";
@@ -118,6 +121,28 @@ function getNativeAgentName(spec: AgentSpec): AgentName | undefined {
 
 function getTelemetryAgent(spec: AgentSpec): string {
   return redactAgentSpecForLogs(spec);
+}
+
+function shouldUseColor(): boolean {
+  return (
+    process.stdout.isTTY === true &&
+    process.env.NO_COLOR === undefined &&
+    process.env.TERM !== "dumb"
+  );
+}
+
+function emptyBranchDiffStats(commitCount: number): BranchDiffStats {
+  return {
+    commits: commitCount,
+    filesChanged: 0,
+    filesAdded: 0,
+    filesUpdated: 0,
+    filesDeleted: 0,
+    filesRenamed: 0,
+    binaryFiles: 0,
+    linesAdded: 0,
+    linesDeleted: 0,
+  };
 }
 
 function redactDebugArgs(args: string[]): string[] {
@@ -941,6 +966,44 @@ program
 
       {
         const finalState = orchestrator.getState();
+        let finalBranchName = "HEAD";
+        try {
+          finalBranchName = getCurrentBranch(effectiveCwd);
+        } catch (error) {
+          appendDebugLog("summary:branch-error", {
+            error: serializeError(error),
+          });
+        }
+
+        let diffStats = emptyBranchDiffStats(finalState.commitCount);
+        try {
+          diffStats = getBranchDiffStats(runInfo.baseCommit, effectiveCwd);
+        } catch (error) {
+          appendDebugLog("summary:diff-stats-error", {
+            error: serializeError(error),
+          });
+        }
+
+        const exitSummary = renderExitSummary({
+          agentName: config.agent,
+          branchName: finalBranchName,
+          elapsedMs: Date.now() - finalState.startTime.getTime(),
+          status: finalState.status,
+          abortReason: finalState.lastAgentError ?? finalState.lastMessage,
+          iterations: finalState.currentIteration,
+          successCount: finalState.successCount,
+          failCount: finalState.failCount,
+          totalInputTokens: finalState.totalInputTokens,
+          totalOutputTokens: finalState.totalOutputTokens,
+          tokensEstimated: finalState.tokensEstimated,
+          commitCount: finalState.commitCount,
+          notesPath: runInfo.notesPath,
+          logPath: runInfo.logPath,
+          baseRef: runInfo.baseCommit.slice(0, 12) || runInfo.baseCommit,
+          diffStats,
+          color: shouldUseColor(),
+        });
+
         appendDebugLog("run:complete", {
           signal: shutdownSignal,
           status: finalState.status,
@@ -990,6 +1053,8 @@ program
             });
           }
         }
+
+        process.stdout.write(exitSummary);
       }
 
       if (shutdownSignal) {

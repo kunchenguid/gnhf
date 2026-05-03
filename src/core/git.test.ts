@@ -11,6 +11,7 @@ import {
   commitAll,
   findLegacyRunBaseCommit,
   getBranchCommitCount,
+  getBranchDiffStats,
   getCurrentBranch,
   resetHard,
   getRepoRootDir,
@@ -232,6 +233,67 @@ describe("git utilities", () => {
 
     it("returns 0 when the base commit is missing", () => {
       expect(getBranchCommitCount("", "/repo")).toBe(0);
+    });
+  });
+
+  describe("getBranchDiffStats", () => {
+    it("summarizes commits, file status, and line counts from the branch base", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-list") return "6";
+        if (argv[0] === "diff" && argv[1] === "--name-status") {
+          return [
+            "A\tsrc/new.ts",
+            "M\tsrc/changed.ts",
+            "D\tsrc/old.ts",
+            "R100\tsrc/before.ts\tsrc/after.ts",
+          ].join("\n");
+        }
+        if (argv[0] === "diff" && argv[1] === "--numstat") {
+          return [
+            "10\t0\tsrc/new.ts",
+            "4\t2\tsrc/changed.ts",
+            "0\t8\tsrc/old.ts",
+            "-\t-\tassets/logo.png",
+          ].join("\n");
+        }
+        return "";
+      });
+
+      expect(getBranchDiffStats("abc123", "/repo")).toEqual({
+        commits: 6,
+        filesChanged: 4,
+        filesAdded: 1,
+        filesUpdated: 2,
+        filesDeleted: 1,
+        filesRenamed: 1,
+        binaryFiles: 1,
+        linesAdded: 14,
+        linesDeleted: 10,
+      });
+      expect(argsOfCall(0)).toEqual([
+        "rev-list",
+        "--count",
+        "--first-parent",
+        "abc123..HEAD",
+      ]);
+      expect(argsOfCall(1)).toEqual(["diff", "--name-status", "abc123..HEAD"]);
+      expect(argsOfCall(2)).toEqual(["diff", "--numstat", "abc123..HEAD"]);
+    });
+
+    it("returns empty stats when there is no base commit", () => {
+      expect(getBranchDiffStats("", "/repo")).toEqual({
+        commits: 0,
+        filesChanged: 0,
+        filesAdded: 0,
+        filesUpdated: 0,
+        filesDeleted: 0,
+        filesRenamed: 0,
+        binaryFiles: 0,
+        linesAdded: 0,
+        linesDeleted: 0,
+      });
+      expect(mockExecFileSync).not.toHaveBeenCalled();
     });
   });
 

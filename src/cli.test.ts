@@ -62,6 +62,7 @@ interface CliMockOverrides {
   removeWorktree?: ReturnType<typeof vi.fn>;
   listWorktreePaths?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
+  getBranchDiffStats?: ReturnType<typeof vi.fn>;
   peekRunMetadata?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
@@ -112,6 +113,7 @@ async function runCliWithMocks(
     close: vi.fn(() => Promise.resolve()),
   };
   let consoleErrorCalls: unknown[][] = [];
+  let stdoutWriteCalls: unknown[][] = [];
   const setupRun = vi.fn(() => stubRunInfo);
   const peekRunMetadata = overrides.peekRunMetadata ?? vi.fn(() => stubRunInfo);
 
@@ -172,6 +174,19 @@ async function runCliWithMocks(
     removeWorktree: overrides.removeWorktree ?? vi.fn(),
     listWorktreePaths: overrides.listWorktreePaths ?? vi.fn(() => new Set()),
     worktreeExists: overrides.worktreeExists ?? vi.fn(() => false),
+    getBranchDiffStats:
+      overrides.getBranchDiffStats ??
+      vi.fn(() => ({
+        commits: 6,
+        filesChanged: 18,
+        filesAdded: 7,
+        filesUpdated: 9,
+        filesDeleted: 2,
+        filesRenamed: 0,
+        binaryFiles: 0,
+        linesAdded: 1284,
+        linesDeleted: 412,
+      })),
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun,
@@ -241,6 +256,7 @@ async function runCliWithMocks(
         process.env[key] = value;
       }
     }
+    stdoutWriteCalls = [...stdoutWrite.mock.calls];
     stdoutWrite.mockRestore();
     consoleErrorCalls = [...consoleError.mock.calls];
     consoleError.mockRestore();
@@ -251,6 +267,7 @@ async function runCliWithMocks(
     appendDebugLog,
     consoleError,
     consoleErrorCalls,
+    stdoutWriteCalls,
     loadConfig,
     createAgent,
     setupRun,
@@ -654,6 +671,53 @@ describe("cli", () => {
       "run",
       expect.objectContaining({ agent: "acp:custom" }),
     );
+  });
+
+  it("prints a permanent exit summary after the run completes", async () => {
+    const { stdoutWriteCalls } = await runCliWithMocks(
+      ["refactor auth flow"],
+      {
+        agent: "opencode",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      {
+        getCurrentBranch: vi
+          .fn()
+          .mockReturnValueOnce("main")
+          .mockReturnValue("gnhf/refactor-auth-flow"),
+        orchestratorGetState: vi.fn(() => ({
+          status: "stopped" as const,
+          gracefulStopRequested: false,
+          currentIteration: 8,
+          totalInputTokens: 12_400_000,
+          totalOutputTokens: 96_100,
+          tokensEstimated: false,
+          commitCount: 6,
+          iterations: [],
+          successCount: 6,
+          failCount: 2,
+          consecutiveFailures: 0,
+          consecutiveErrors: 0,
+          startTime: new Date(Date.now() - (47 * 60_000 + 12_000)),
+          waitingUntil: null,
+          lastMessage: null,
+          interruptHint: "none" as const,
+        })),
+      },
+    );
+
+    const stdout = stdoutWriteCalls.map(([chunk]) => String(chunk)).join("");
+    expect(stdout).toContain("gnhf wrapped");
+    expect(stdout).toContain(
+      "opencode worked for 47m 12s on gnhf/refactor-auth-flow",
+    );
+    expect(stdout).toContain("branch diff");
+    expect(stdout).toContain("6 commits");
+    expect(stdout).toContain("git push no-mistakes");
   });
 
   it("redacts raw ACP command specs in run start debug logs", async () => {
