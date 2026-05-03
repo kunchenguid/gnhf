@@ -238,7 +238,14 @@ describe("gnhf e2e", () => {
 
     const result = await runCli(
       cwd,
-      ["--agent", "opencode", "--max-iterations", "1"],
+      [
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "1",
+        "--prevent-sleep",
+        "off",
+      ],
       {
         stdin: "ship it from stdin\n",
         env: createTestEnv(mockLogPath, tempDirs),
