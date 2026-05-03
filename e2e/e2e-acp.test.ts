@@ -300,16 +300,19 @@ describe("gnhf acp e2e", () => {
     async () => {
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
-      const rawAgentSpec = `acp:${process.execPath} ${mockAcpTargetPath}`;
+      const rawAgentCommand = buildMockTargetCommand({
+        eventLogPath: mockLogPath,
+      });
+      const { home } = setupAcpHome(tempDirs, rawAgentCommand);
+      const rawAgentSpec = `acp:${rawAgentCommand}`;
 
       const result = await runCli(
         cwd,
         ["ship it", "--agent", rawAgentSpec, "--max-iterations", "1"],
-        { env: buildEnv(home, mockLogPath) },
+        { env: buildEnv(home) },
       );
 
       expect(result.code).toBe(0);
@@ -323,7 +326,7 @@ describe("gnhf acp e2e", () => {
       expect(debugLog).toContain('"agent":"acp:custom"');
       expect(debugLog).toContain('"target":"custom"');
       expect(debugLog).not.toContain(rawAgentSpec);
-      expect(debugLog).not.toContain(mockAcpTargetPath);
+      expect(debugLog).not.toContain(rawAgentCommand);
     },
     30_000,
   );
