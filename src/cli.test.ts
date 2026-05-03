@@ -720,6 +720,26 @@ describe("cli", () => {
     expect(stdout).toContain("git push no-mistakes");
   });
 
+  it("redacts raw ACP command specs in the exit summary", async () => {
+    const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
+    const { stdoutWriteCalls } = await runCliWithMocks(
+      ["--agent", rawAgent, "ship it"],
+      {
+        agent: rawAgent,
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    const stdout = stdoutWriteCalls.map(([chunk]) => String(chunk)).join("");
+    expect(stdout).toContain("acp:custom worked");
+    expect(stdout).not.toContain("secret");
+    expect(stdout).not.toContain(rawAgent);
+  });
+
   it("redacts raw ACP command specs in run start debug logs", async () => {
     const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
     const { appendDebugLog } = await runCliWithMocks(

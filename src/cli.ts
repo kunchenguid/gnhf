@@ -985,7 +985,7 @@ program
         }
 
         const exitSummary = renderExitSummary({
-          agentName: config.agent,
+          agentName: redactAgentSpecForLogs(config.agent),
           branchName: finalBranchName,
           elapsedMs: Date.now() - finalState.startTime.getTime(),
           status: finalState.status,
