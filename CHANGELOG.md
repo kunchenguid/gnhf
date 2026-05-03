@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.33](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.32...gnhf-v0.1.33) (2026-05-03)
+
+
+### Features
+
+* **core:** support raw ACP command specs ([#122](https://github.com/kunchenguid/gnhf/issues/122)) ([ef7bfb2](https://github.com/kunchenguid/gnhf/commit/ef7bfb2ee698d04083d5004266f52e57cafa94ac))
+
+
+### Bug Fixes
+
+* **core:** drop issue marker from default commits ([#124](https://github.com/kunchenguid/gnhf/issues/124)) ([2f99dfb](https://github.com/kunchenguid/gnhf/commit/2f99dfbd300b46175e41edae0fd35b134e45f102))
+
 ## [0.1.32](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.31...gnhf-v0.1.32) (2026-05-02)
 
 
