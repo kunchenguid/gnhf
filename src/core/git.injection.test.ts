@@ -94,7 +94,10 @@ describe("git shell injection regression", () => {
 
     const subject = rawGit(["log", "-1", "--pretty=%s"], repo);
     expect(subject).toBe("feat: commit despite hook");
-    const committedFiles = rawGit(["show", "--name-only", "--pretty=", "HEAD"], repo)
+    const committedFiles = rawGit(
+      ["show", "--name-only", "--pretty=", "HEAD"],
+      repo,
+    )
       .split("\n")
       .filter(Boolean);
     expect(committedFiles).toEqual(["hook.txt", "work.txt"]);
