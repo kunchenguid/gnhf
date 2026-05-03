@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.34](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.33...gnhf-v0.1.34) (2026-05-03)
+
+
+### Features
+
+* **cli:** print post-run exit summaries ([#126](https://github.com/kunchenguid/gnhf/issues/126)) ([f3622f5](https://github.com/kunchenguid/gnhf/commit/f3622f5ab302a8c0db04b4302fdca69bb6b6912b))
+
+
+### Bug Fixes
+
+* **core:** clarify no-mistakes review link ([#129](https://github.com/kunchenguid/gnhf/issues/129)) ([6ecd669](https://github.com/kunchenguid/gnhf/commit/6ecd6692bcd4f0f84f53244d16ecfac41c89c0da))
+* **core:** keep exit summary within terminal width ([#128](https://github.com/kunchenguid/gnhf/issues/128)) ([0e65519](https://github.com/kunchenguid/gnhf/commit/0e65519f602abbbde21b817f95d5fb742a2df0df))
+
 ## [0.1.33](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.32...gnhf-v0.1.33) (2026-05-03)
 
 
