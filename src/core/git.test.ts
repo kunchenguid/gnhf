@@ -187,6 +187,60 @@ describe("git utilities", () => {
 
       expect(() => commitAll("empty", "/repo")).not.toThrow();
     });
+
+    it("retries with --no-verify when the first commit fails so a failing pre-commit hook does not block the run", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv.includes("commit") && !argv.includes("--no-verify")) {
+          throw new Error("pre-commit hook failed");
+        }
+        return "";
+      });
+
+      expect(() => commitAll("msg", "/repo")).not.toThrow();
+
+      // Sequence: add, commit (fails), re-add (formatter hook may have
+      // modified files), commit --no-verify.
+      expect(argsOfCall(0)).toEqual(["add", "-A"]);
+      expect(argsOfCall(1)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "msg",
+      ]);
+      expect(argsOfCall(2)).toEqual(["add", "-A"]);
+      expect(argsOfCall(3)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "msg",
+        "--no-verify",
+      ]);
+    });
+
+    it("does not retry with --no-verify when the first commit succeeds", () => {
+      commitAll("msg", "/repo");
+      expect(mockExecFileSync.mock.calls.length).toBe(2);
+      expect(argsOfCall(1)).not.toContain("--no-verify");
+    });
+
+    it("does not throw when both the normal and --no-verify commits fail (nothing to commit)", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv.includes("commit")) {
+          throw new Error("nothing to commit");
+        }
+        return "";
+      });
+
+      expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
   });
 
   describe("prompt-blocking env vars", () => {
