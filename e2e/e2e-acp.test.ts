@@ -11,16 +11,26 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mockAgentCommand } from "acp-mock";
 import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
-const mockAcpTargetPath = join(
+const acpMockBinPath = join(
   repoRoot,
-  "e2e",
-  "fixtures",
-  "mock-acp-target.mjs",
+  "node_modules",
+  "acp-mock",
+  "dist",
+  "cli.js",
 );
+const acpTracesDir = join(repoRoot, "e2e", "fixtures", "acp-traces");
+
+const defaultMockOutput = {
+  success: true,
+  summary: "mock acp iteration",
+  key_changes_made: ["README.md"],
+  key_learnings: ["mock acp completed successfully"],
+};
 
 interface RunResult {
   code: number | null;
@@ -80,7 +90,34 @@ async function waitForLogEvent(
   throw new Error(`Timed out waiting for log event ${event} in ${filePath}`);
 }
 
-function setupAcpHome(tempDirs: string[]): {
+function buildMockTargetCommand(options: {
+  eventLogPath: string;
+  runtimeEventsPath?: string;
+  usageUpdateUsed?: number;
+  usageUpdateMode?: "static" | "cumulative";
+  toolCallCount?: number;
+  promptDelayMs?: number;
+}): string {
+  return mockAgentCommand({
+    bin: acpMockBinPath,
+    eventLogPath: options.eventLogPath,
+    runtimeEventsPath: options.runtimeEventsPath,
+    agentMessageJson: defaultMockOutput,
+    usageUpdateUsed: options.usageUpdateUsed,
+    usageUpdateMode: options.usageUpdateMode,
+    toolCallCount: options.toolCallCount,
+    promptDelayMs: options.promptDelayMs,
+    appendFile: {
+      path: "README.md",
+      text: `- mock acp change ${Date.now()}\n`,
+    },
+  });
+}
+
+function setupAcpHome(
+  tempDirs: string[],
+  mockCommand: string,
+): {
   home: string;
   configPath: string;
 } {
@@ -92,7 +129,7 @@ function setupAcpHome(tempDirs: string[]): {
     configPath,
     [
       "acpRegistryOverrides:",
-      `  mock-target: "${process.execPath} ${mockAcpTargetPath}"`,
+      `  mock-target: ${JSON.stringify(mockCommand)}`,
       "",
     ].join("\n"),
     "utf-8",
@@ -100,17 +137,11 @@ function setupAcpHome(tempDirs: string[]): {
   return { home, configPath };
 }
 
-function buildEnv(
-  home: string,
-  mockLogPath: string,
-  extra: Record<string, string> = {},
-): NodeJS.ProcessEnv {
+function buildEnv(home: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     HOME: home,
     USERPROFILE: home,
-    MOCK_ACP_LOG_PATH: mockLogPath,
-    ...extra,
   };
 }
 
@@ -163,9 +194,9 @@ describe("gnhf acp e2e", () => {
     }
   });
 
-  // Real-adapter persona tests. Each persona replays a recorded `iteration-1.jsonl`
-  // captured from a real ACP adapter (Claude Code, Codex, OpenCode) via the bundled
-  // acpx runtime, so the wire shape gnhf has to consume exactly matches what real
+  // Real-adapter persona tests. Each persona replays a recorded trace captured
+  // from a real ACP adapter (Claude Code, Codex, OpenCode) via the bundled acpx
+  // runtime, so the wire shape gnhf has to consume exactly matches what real
   // adapters emit:
   //   - claude: 7 medium agent_message_chunk text_deltas, prose+JSON in one
   //     continuous stream, ~25 interleaved tool_call/usage_update events
@@ -177,16 +208,22 @@ describe("gnhf acp e2e", () => {
     async (persona) => {
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const { home } = setupAcpHome(
+        tempDirs,
+        buildMockTargetCommand({
+          eventLogPath: mockLogPath,
+          runtimeEventsPath: join(acpTracesDir, `${persona}.jsonl`),
+        }),
+      );
 
       const result = await runCli(
         cwd,
         ["ship it", "--agent", "acp:mock-target", "--max-iterations", "1"],
         {
-          env: buildEnv(home, mockLogPath, { MOCK_ACP_PERSONA: persona }),
+          env: buildEnv(home),
         },
       );
 
@@ -222,15 +259,18 @@ describe("gnhf acp e2e", () => {
     async () => {
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const { home } = setupAcpHome(
+        tempDirs,
+        buildMockTargetCommand({ eventLogPath: mockLogPath }),
+      );
 
       const result = await runCli(
         cwd,
         ["ship it", "--agent", "acp:mock-target", "--max-iterations", "1"],
-        { env: buildEnv(home, mockLogPath) },
+        { env: buildEnv(home) },
       );
 
       expect(result.code).toBe(0);
@@ -293,17 +333,22 @@ describe("gnhf acp e2e", () => {
     async () => {
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const { home } = setupAcpHome(
+        tempDirs,
+        buildMockTargetCommand({
+          eventLogPath: mockLogPath,
+          usageUpdateUsed: 100,
+          usageUpdateMode: "cumulative",
+        }),
+      );
 
       const result = await runCli(
         cwd,
         ["ship it", "--agent", "acp:mock-target", "--max-iterations", "3"],
-        {
-          env: buildEnv(home, mockLogPath, { MOCK_ACP_USAGE_USED: "100" }),
-        },
+        { env: buildEnv(home) },
       );
 
       expect(result.code).toBe(0);
@@ -358,22 +403,24 @@ describe("gnhf acp e2e", () => {
       // as estimated so the renderer can show "~". This test exercises both.
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const { home } = setupAcpHome(
+        tempDirs,
+        buildMockTargetCommand({
+          eventLogPath: mockLogPath,
+          toolCallCount: 5,
+        }),
+      );
 
-      // No MOCK_ACP_USAGE_USED -> no usage_update events emitted. 5 tool
+      // No usage_update flag -> no usage_update events emitted. 5 tool
       // calls per iteration × 2 iterations = 10 distinct tool calls feeding
       // the heuristic.
       const result = await runCli(
         cwd,
         ["ship it", "--agent", "acp:mock-target", "--max-iterations", "2"],
-        {
-          env: buildEnv(home, mockLogPath, {
-            MOCK_ACP_TOOL_CALL_COUNT: "5",
-          }),
-        },
+        { env: buildEnv(home) },
       );
 
       expect(result.code).toBe(0);
@@ -414,17 +461,23 @@ describe("gnhf acp e2e", () => {
     async () => {
       const cwd = createRepo();
       tempDirs.push(cwd);
-      const { home } = setupAcpHome(tempDirs);
       const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-acp-logs-"));
       tempDirs.push(logDir);
       const mockLogPath = join(logDir, "mock-acp.jsonl");
+      const { home } = setupAcpHome(
+        tempDirs,
+        buildMockTargetCommand({
+          eventLogPath: mockLogPath,
+          promptDelayMs: 30_000,
+        }),
+      );
 
       const child = spawn(
         process.execPath,
         [distCliPath, "ship it", "--agent", "acp:mock-target"],
         {
           cwd,
-          env: buildEnv(home, mockLogPath, { MOCK_ACP_HANG_MS: "30000" }),
+          env: buildEnv(home),
           stdio: ["pipe", "pipe", "pipe"],
         },
       );
