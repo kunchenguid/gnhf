@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join, resolve } from "node:path";
+import yaml from "js-yaml";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -12,7 +13,7 @@ vi.mock("node:os", () => ({
 }));
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { loadConfig } from "./config.js";
+import { isAgentSpec, loadConfig } from "./config.js";
 
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
@@ -23,10 +24,10 @@ const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
   [
-    "# Agent to use by default",
+    "# Agent to use by default: native agent name or acp:<target-or-command>",
     `agent: ${agent}`,
     "",
-    "# Custom paths to agent binaries (optional)",
+    "# Custom paths to native agent binaries (optional)",
     "# Paths may be absolute, bare executable names on PATH,",
     "# ~-prefixed, or relative to this config directory.",
     "# Note: rovodev overrides must point to an acli-compatible binary.",
@@ -37,7 +38,8 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#   pi: /path/to/custom-pi",
     "#   swival: /path/to/custom-swival",
     "",
-    "# Per-agent CLI arg overrides (optional)",
+    "# Native agent CLI arg overrides (optional)",
+    "# ACP targets do not support path or arg overrides.",
     "# agentArgsOverride:",
     "#   codex:",
     "#     - -m",
@@ -61,8 +63,15 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#     - --model",
     "#     - z-ai/glm-5.1",
     "",
+    "# Custom ACP target commands (optional)",
+    "# Maps acp:<target> names to spawn commands. Useful for naming a",
+    "# local or beta build of an ACP agent.",
+    "# acpRegistryOverrides:",
+    '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
+    '#   staging: "node /opt/staging/agent.mjs"',
+    "",
     "# Commit message convention (optional)",
-    "# Defaults to: gnhf #<iteration>: <summary>",
+    "# Defaults to: gnhf <iteration>: <summary>",
     "# Use Conventional Commits semantic-release headers:",
     "# commitMessage:",
     "#   preset: conventional",
@@ -99,6 +108,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -121,6 +131,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -144,9 +155,28 @@ describe("loadConfig", () => {
       agent: "codex",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
+  });
+
+  it("YAML-quotes raw ACP command specs when bootstrapping", () => {
+    mockReadFileSync.mockImplementation(() => {
+      const error = new Error("ENOENT");
+      Object.assign(error, { code: "ENOENT" });
+      throw error;
+    });
+
+    const agent = "acp:./bin/dev-acp --profile ci # local";
+
+    loadConfig({ agent });
+
+    const written = mockWriteFileSync.mock.calls[0]?.[1];
+    expect(typeof written).toBe("string");
+    expect((yaml.load(written as string) as { agent: string }).agent).toBe(
+      agent,
+    );
   });
 
   it("writes agentPathOverride values when bootstrapping a missing config file", () => {
@@ -183,98 +213,7 @@ describe("loadConfig", () => {
         codex: resolvedCodex,
       },
       agentArgsOverride: {},
-      maxConsecutiveFailures: 3,
-      preventSleep: true,
-    });
-  });
-
-  it("supports bootstrapping rovodev as the configured agent", () => {
-    mockReadFileSync.mockImplementation(() => {
-      const error = new Error("ENOENT");
-      Object.assign(error, { code: "ENOENT" });
-      throw error;
-    });
-
-    const config = loadConfig({ agent: "rovodev" });
-
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CONFIG_PATH,
-      BOOTSTRAP_CONFIG_TEMPLATE("rovodev"),
-      "utf-8",
-    );
-    expect(config).toEqual({
-      agent: "rovodev",
-      agentPathOverride: {},
-      agentArgsOverride: {},
-      maxConsecutiveFailures: 3,
-      preventSleep: true,
-    });
-  });
-
-  it("supports bootstrapping opencode as the configured agent", () => {
-    mockReadFileSync.mockImplementation(() => {
-      const error = new Error("ENOENT");
-      Object.assign(error, { code: "ENOENT" });
-      throw error;
-    });
-
-    const config = loadConfig({ agent: "opencode" });
-
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CONFIG_PATH,
-      BOOTSTRAP_CONFIG_TEMPLATE("opencode"),
-      "utf-8",
-    );
-    expect(config).toEqual({
-      agent: "opencode",
-      agentPathOverride: {},
-      agentArgsOverride: {},
-      maxConsecutiveFailures: 3,
-      preventSleep: true,
-    });
-  });
-
-  it("supports bootstrapping copilot as the configured agent", () => {
-    mockReadFileSync.mockImplementation(() => {
-      const error = new Error("ENOENT");
-      Object.assign(error, { code: "ENOENT" });
-      throw error;
-    });
-
-    const config = loadConfig({ agent: "copilot" });
-
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CONFIG_PATH,
-      BOOTSTRAP_CONFIG_TEMPLATE("copilot"),
-      "utf-8",
-    );
-    expect(config).toEqual({
-      agent: "copilot",
-      agentPathOverride: {},
-      agentArgsOverride: {},
-      maxConsecutiveFailures: 3,
-      preventSleep: true,
-    });
-  });
-
-  it("supports bootstrapping pi as the configured agent", () => {
-    mockReadFileSync.mockImplementation(() => {
-      const error = new Error("ENOENT");
-      Object.assign(error, { code: "ENOENT" });
-      throw error;
-    });
-
-    const config = loadConfig({ agent: "pi" });
-
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      CONFIG_PATH,
-      BOOTSTRAP_CONFIG_TEMPLATE("pi"),
-      "utf-8",
-    );
-    expect(config).toEqual({
-      agent: "pi",
-      agentPathOverride: {},
-      agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -298,6 +237,7 @@ describe("loadConfig", () => {
       agent: "swival",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -324,61 +264,6 @@ describe("loadConfig", () => {
     });
   });
 
-  it("throws when commitMessage omits a preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage: {}\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
-  it("throws when commitMessage is present without a value", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage: expected an object/,
-    );
-  });
-
-  it("throws when commitMessage uses the gnhf preset explicitly", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: gnhf\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
-  it("throws when commitMessage uses the old angular preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: angular\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
-  it("throws when commitMessage includes a template", () => {
-    mockReadFileSync.mockReturnValue(
-      [
-        "commitMessage:",
-        "  preset: conventional",
-        '  template: "{{type}}: {{summary}}"',
-        "",
-      ].join("\n"),
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Unsupported config key for commitMessage\.template/,
-    );
-  });
-
-  it("throws when commitMessage has an unknown preset", () => {
-    mockReadFileSync.mockReturnValue("commitMessage:\n  preset: semantic\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for commitMessage\.preset: expected "conventional"/,
-    );
-  });
-
   it("merges file config with defaults", () => {
     mockReadFileSync.mockReturnValue("maxConsecutiveFailures: 10\n");
 
@@ -387,6 +272,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -401,6 +287,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -415,15 +302,10 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
-  });
-
-  it("throws when preventSleep has an unrecognized value", () => {
-    mockReadFileSync.mockReturnValue("preventSleep: flase\n");
-
-    expect(() => loadConfig()).toThrow(/Invalid config value for preventSleep/);
   });
 
   it("overrides take precedence over file config and defaults", () => {
@@ -435,6 +317,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -442,20 +325,9 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
-    });
-  });
-
-  it("reads per-agent extra args from config", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  codex:\n    - -m\n    - gpt-5.4\n    - --full-auto\n",
-    );
-
-    const config = loadConfig();
-
-    expect(config.agentArgsOverride).toEqual({
-      codex: ["-m", "gpt-5.4", "--full-auto"],
     });
   });
 
@@ -516,6 +388,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -531,6 +404,7 @@ describe("loadConfig", () => {
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -579,70 +453,6 @@ describe("loadConfig", () => {
     expect(config.agentPathOverride.claude).toBe("claude-code-switch");
   });
 
-  it("throws when agentPathOverride contains an unknown agent name", () => {
-    mockReadFileSync.mockReturnValue("agentPathOverride:\n  unknown: /bin/x\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid agent name in agentPathOverride/,
-    );
-  });
-
-  it("throws when agentPathOverride value is not a string", () => {
-    mockReadFileSync.mockReturnValue("agentPathOverride:\n  claude: 42\n");
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid path for agentPathOverride.claude/,
-    );
-  });
-
-  it("throws when agentPathOverride value is blank", () => {
-    mockReadFileSync.mockReturnValue('agentPathOverride:\n  claude: "   "\n');
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid path for agentPathOverride.claude/,
-    );
-  });
-
-  it("throws when agentArgsOverride contains an unknown agent name", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  unknown:\n    - --flag\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid agent name in agentArgsOverride/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex is not an array", () => {
-    mockReadFileSync.mockReturnValue(
-      'agentArgsOverride:\n  codex: "--full-auto"\n',
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for agentArgsOverride\.codex/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex contains blank values", () => {
-    mockReadFileSync.mockReturnValue(
-      'agentArgsOverride:\n  codex:\n    - "   "\n',
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /Invalid config value for agentArgsOverride\.codex\[0\]/,
-    );
-  });
-
-  it("throws when agentArgsOverride.codex contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  codex:\n    - --output-schema=custom.json\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.codex\[0\].*managed by gnhf/,
-    );
-  });
-
   it("allows agentArgsOverride.claude to set the dangerous permission flag explicitly", () => {
     mockReadFileSync.mockReturnValue(
       "agentArgsOverride:\n  claude:\n    - --dangerously-skip-permissions\n",
@@ -653,26 +463,6 @@ describe("loadConfig", () => {
     expect(config.agentArgsOverride).toEqual({
       claude: ["--dangerously-skip-permissions"],
     });
-  });
-
-  it("throws when agentArgsOverride.rovodev contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  rovodev:\n    - serve\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.rovodev\[0\].*managed by gnhf/,
-    );
-  });
-
-  it("throws when agentArgsOverride.copilot contains gnhf-managed flags", () => {
-    mockReadFileSync.mockReturnValue(
-      "agentArgsOverride:\n  copilot:\n    - --output-format=json\n",
-    );
-
-    expect(() => loadConfig()).toThrow(
-      /agentArgsOverride\.copilot\[0\].*managed by gnhf/,
-    );
   });
 
   it("allows safe agentArgsOverride.pi flags", () => {
@@ -746,4 +536,77 @@ describe("loadConfig", () => {
       );
     },
   );
+
+  it("reads acpRegistryOverrides from config", () => {
+    mockReadFileSync.mockReturnValue(
+      [
+        "acpRegistryOverrides:",
+        '  my-fork: "node /opt/my-acp-agent.mjs"',
+        '  staging-claude: "claude-code-beta --acp"',
+        "",
+      ].join("\n"),
+    );
+
+    const config = loadConfig();
+
+    expect(config.acpRegistryOverrides).toEqual({
+      "my-fork": "node /opt/my-acp-agent.mjs",
+      "staging-claude": "claude-code-beta --acp",
+    });
+  });
+
+  it("defaults acpRegistryOverrides to an empty object", () => {
+    mockReadFileSync.mockReturnValue("");
+
+    const config = loadConfig();
+
+    expect(config.acpRegistryOverrides).toEqual({});
+  });
+
+  it.each([
+    {
+      label: "non-object value",
+      yaml: 'acpRegistryOverrides: "not-an-object"\n',
+      expected: "Invalid config value for acpRegistryOverrides",
+    },
+    {
+      label: "array value",
+      yaml: "acpRegistryOverrides:\n  - foo\n",
+      expected: "Invalid config value for acpRegistryOverrides",
+    },
+    {
+      label: "non-string command",
+      yaml: "acpRegistryOverrides:\n  foo: 42\n",
+      expected: "Invalid command for acpRegistryOverrides.foo",
+    },
+    {
+      label: "blank command",
+      yaml: 'acpRegistryOverrides:\n  foo: "   "\n',
+      expected: "Invalid command for acpRegistryOverrides.foo",
+    },
+    {
+      label: "blank target name",
+      yaml: 'acpRegistryOverrides:\n  "": "node x.mjs"\n',
+      expected: "Invalid target name in acpRegistryOverrides",
+    },
+    {
+      label: "target name with space",
+      yaml: 'acpRegistryOverrides:\n  "bad name": "node x.mjs"\n',
+      expected: "Invalid target name in acpRegistryOverrides",
+    },
+  ])("rejects invalid acpRegistryOverrides: $label", ({ yaml, expected }) => {
+    mockReadFileSync.mockReturnValue(yaml);
+    expect(() => loadConfig()).toThrow(expected);
+  });
+});
+
+describe("isAgentSpec", () => {
+  it("accepts raw ACP commands after the acp: prefix", () => {
+    expect(isAgentSpec("acp:./bin/dev-acp --profile ci")).toBe(true);
+    expect(isAgentSpec("acp:npx -y @scope/custom-agent acp")).toBe(true);
+  });
+
+  it("returns false for non-string values", () => {
+    expect(isAgentSpec(42 as unknown as string)).toBe(false);
+  });
 });

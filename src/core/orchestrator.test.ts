@@ -32,6 +32,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 
 import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
+import { appendDebugLog } from "./debug-log.js";
 import { Orchestrator } from "./orchestrator.js";
 import {
   PermanentAgentError,
@@ -45,11 +46,13 @@ import type { RunInfo } from "./run.js";
 const mockCommitAll = vi.mocked(commitAll);
 const mockAppendNotes = vi.mocked(appendNotes);
 const mockResetHard = vi.mocked(resetHard);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 const config: Config = {
   agent: "claude",
   agentPathOverride: {},
   agentArgsOverride: {},
+  acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
@@ -90,6 +93,37 @@ describe("Orchestrator output normalization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+  });
+
+  it("redacts raw ACP agent specs in debug logs", async () => {
+    const rawAgent = "acp:./bin/dev-acp --profile ci --token secret";
+    const agent: Agent = {
+      name: rawAgent,
+      run: vi.fn(async () => createSuccessResult()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "orchestrator:start",
+      expect.objectContaining({ agent: "acp:custom" }),
+    );
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "agent:run:start",
+      expect.objectContaining({ agent: "acp:custom" }),
+    );
+    expect(JSON.stringify(mockAppendDebugLog.mock.calls)).not.toContain(
+      "secret",
+    );
   });
 
   it("handles key_changes_made returned as a JSON string instead of an array", async () => {
@@ -134,7 +168,7 @@ describe("Orchestrator output normalization", () => {
       ["learning"],
     );
     expect(mockCommitAll).toHaveBeenCalledTimes(1);
-    expect(mockCommitAll).toHaveBeenCalledWith("gnhf #1: done", "/repo");
+    expect(mockCommitAll).toHaveBeenCalledWith("gnhf 1: done", "/repo");
     expect(orchestrator.getState().status).toBe("aborted");
   });
 
@@ -484,6 +518,108 @@ describe("Orchestrator stop limits", () => {
       status: "aborted",
       totalInputTokens: 7,
       totalOutputTokens: 4,
+    });
+  });
+
+  it("marks in-flight usage as estimated until authoritative usage arrives", async () => {
+    const observedEstimatedStates: boolean[] = [];
+    const agent: Agent = {
+      name: "acp:test",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onUsage?.({
+          inputTokens: 4,
+          outputTokens: 2,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          estimated: true,
+        });
+        options?.onUsage?.({
+          inputTokens: 5,
+          outputTokens: 3,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+    orchestrator.on("state", (state) => {
+      if (state.totalInputTokens > 0 || state.totalOutputTokens > 0) {
+        observedEstimatedStates.push(state.tokensEstimated);
+      }
+    });
+
+    await orchestrator.start();
+
+    expect(observedEstimatedStates[0]).toBe(true);
+    expect(observedEstimatedStates.slice(1)).toEqual([false, false, false]);
+    expect(orchestrator.getState().tokensEstimated).toBe(false);
+  });
+
+  it("keeps usage estimated when estimated tokens are followed by an agent error", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const agent: Agent = {
+      name: "acp:test",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        callCount++;
+        if (callCount === 1) {
+          options?.onUsage?.({
+            inputTokens: 4,
+            outputTokens: 2,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            estimated: true,
+          });
+          throw new Error("transient error");
+        }
+        options?.onUsage?.({
+          inputTokens: 5,
+          outputTokens: 3,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+    await vi.waitFor(() => {
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      totalInputTokens: 9,
+      totalOutputTokens: 5,
+      tokensEstimated: true,
     });
   });
 

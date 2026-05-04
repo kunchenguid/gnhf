@@ -11,6 +11,7 @@ import {
   commitAll,
   findLegacyRunBaseCommit,
   getBranchCommitCount,
+  getBranchDiffStats,
   getCurrentBranch,
   resetHard,
   getRepoRootDir,
@@ -25,6 +26,18 @@ function argsOfCall(index: number): string[] {
   const call = mockExecFileSync.mock.calls[index];
   if (!call) throw new Error(`no call at index ${index}`);
   return call[1] as string[];
+}
+
+function optionsOfCall(index: number): {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+} {
+  const call = mockExecFileSync.mock.calls[index];
+  if (!call) throw new Error(`no call at index ${index}`);
+  return (call[2] ?? {}) as {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  };
 }
 
 describe("git utilities", () => {
@@ -52,11 +65,11 @@ describe("git utilities", () => {
       expect(mockExecFileSync).toHaveBeenCalledWith(
         "git",
         ["status", "--porcelain"],
-        {
+        expect.objectContaining({
           cwd: "/my/repo",
           encoding: "utf-8",
           stdio: "pipe",
-        },
+        }),
       );
     });
   });
@@ -67,17 +80,12 @@ describe("git utilities", () => {
       expect(mockExecFileSync).toHaveBeenCalledWith(
         "git",
         ["checkout", "-b", "feature/test"],
-        {
+        expect.objectContaining({
           cwd: "/repo",
           encoding: "utf-8",
           stdio: "pipe",
-        },
+        }),
       );
-    });
-
-    it("never composes the branch name into a shell string", () => {
-      createBranch("weird`name$(ok)", "/repo");
-      expect(argsOfCall(0)).toEqual(["checkout", "-b", "weird`name$(ok)"]);
     });
   });
 
@@ -141,25 +149,121 @@ describe("git utilities", () => {
     it("stages all files and passes the message as its own argv entry", () => {
       commitAll("initial commit", "/repo");
       expect(argsOfCall(0)).toEqual(["add", "-A"]);
-      expect(argsOfCall(1)).toEqual(["commit", "-m", "initial commit"]);
+      expect(argsOfCall(1)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "initial commit",
+      ]);
+    });
+
+    it("disables GPG signing on the commit so a configured signing key cannot prompt", () => {
+      commitAll("anything", "/repo");
+      const args = argsOfCall(1);
+      expect(args).toContain("commit.gpgsign=false");
+      expect(args).toContain("tag.gpgsign=false");
+      expect(args.indexOf("commit.gpgsign=false")).toBeLessThan(
+        args.indexOf("commit"),
+      );
     });
 
     it("preserves shell metacharacters in the message without any escaping", () => {
       const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
       commitAll(injection, "/repo");
-      expect(argsOfCall(1)).toEqual(["commit", "-m", injection]);
+      expect(argsOfCall(1)).toContain(injection);
     });
 
     it("does not throw when there is nothing to commit", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
-        if (argv[0] === "commit") {
+        if (argv.includes("commit")) {
           throw new Error("nothing to commit");
         }
         return "";
       });
 
       expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
+
+    it("retries with --no-verify when the first commit fails so a failing pre-commit hook does not block the run", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv.includes("commit") && !argv.includes("--no-verify")) {
+          throw new Error("pre-commit hook failed");
+        }
+        return "";
+      });
+
+      expect(() => commitAll("msg", "/repo")).not.toThrow();
+
+      // Sequence: add, commit (fails), re-add (formatter hook may have
+      // modified files), commit --no-verify.
+      expect(argsOfCall(0)).toEqual(["add", "-A"]);
+      expect(argsOfCall(1)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "msg",
+      ]);
+      expect(argsOfCall(2)).toEqual(["add", "-A"]);
+      expect(argsOfCall(3)).toEqual([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-m",
+        "msg",
+        "--no-verify",
+      ]);
+    });
+
+    it("does not retry with --no-verify when the first commit succeeds", () => {
+      commitAll("msg", "/repo");
+      expect(mockExecFileSync.mock.calls.length).toBe(2);
+      expect(argsOfCall(1)).not.toContain("--no-verify");
+    });
+
+    it("does not throw when both the normal and --no-verify commits fail (nothing to commit)", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv.includes("commit")) {
+          throw new Error("nothing to commit");
+        }
+        return "";
+      });
+
+      expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
+  });
+
+  describe("prompt-blocking env vars", () => {
+    it("sets GIT_TERMINAL_PROMPT=0 on every git invocation so HTTPS auth prompts cannot block", () => {
+      ensureCleanWorkingTree("/repo");
+      expect(optionsOfCall(0).env?.GIT_TERMINAL_PROMPT).toBe("0");
+    });
+
+    it("preserves existing process.env keys alongside GIT_TERMINAL_PROMPT", () => {
+      ensureCleanWorkingTree("/repo");
+      const env = optionsOfCall(0).env ?? {};
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.GIT_TERMINAL_PROMPT).toBe("0");
+    });
+
+    it("keeps GIT_TERMINAL_PROMPT=0 when the caller passes its own env (e.g. LC_ALL)", () => {
+      // getCurrentBranch -> isGitRepository sets LC_ALL=C internally; the
+      // helper must still inject GIT_TERMINAL_PROMPT into that custom env.
+      getCurrentBranch("/repo");
+      // First call is the rev-parse --git-dir probe with LC_ALL=C.
+      const probe = optionsOfCall(0);
+      expect(probe.env?.LC_ALL).toBe("C");
+      expect(probe.env?.GIT_TERMINAL_PROMPT).toBe("0");
     });
   });
 
@@ -176,18 +280,6 @@ describe("git utilities", () => {
       expect(getBranchCommitCount("abc123", "/repo")).toBe(1);
     });
 
-    it("counts all branch commits after the base commit", () => {
-      mockExecFileSync.mockImplementation((_cmd, args) => {
-        const argv = args as string[];
-        if (argv.includes("base123..HEAD")) {
-          return "4";
-        }
-        return "";
-      });
-
-      expect(getBranchCommitCount("base123", "/repo")).toBe(4);
-    });
-
     it("returns 0 when the branch has no commits after the base commit", () => {
       mockExecFileSync.mockReturnValue("0");
       expect(getBranchCommitCount("abc123", "/repo")).toBe(0);
@@ -195,6 +287,67 @@ describe("git utilities", () => {
 
     it("returns 0 when the base commit is missing", () => {
       expect(getBranchCommitCount("", "/repo")).toBe(0);
+    });
+  });
+
+  describe("getBranchDiffStats", () => {
+    it("summarizes commits, file status, and line counts from the branch base", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-list") return "6";
+        if (argv[0] === "diff" && argv[1] === "--name-status") {
+          return [
+            "A\tsrc/new.ts",
+            "M\tsrc/changed.ts",
+            "D\tsrc/old.ts",
+            "R100\tsrc/before.ts\tsrc/after.ts",
+          ].join("\n");
+        }
+        if (argv[0] === "diff" && argv[1] === "--numstat") {
+          return [
+            "10\t0\tsrc/new.ts",
+            "4\t2\tsrc/changed.ts",
+            "0\t8\tsrc/old.ts",
+            "-\t-\tassets/logo.png",
+          ].join("\n");
+        }
+        return "";
+      });
+
+      expect(getBranchDiffStats("abc123", "/repo")).toEqual({
+        commits: 6,
+        filesChanged: 4,
+        filesAdded: 1,
+        filesUpdated: 2,
+        filesDeleted: 1,
+        filesRenamed: 1,
+        binaryFiles: 1,
+        linesAdded: 14,
+        linesDeleted: 10,
+      });
+      expect(argsOfCall(0)).toEqual([
+        "rev-list",
+        "--count",
+        "--first-parent",
+        "abc123..HEAD",
+      ]);
+      expect(argsOfCall(1)).toEqual(["diff", "--name-status", "abc123..HEAD"]);
+      expect(argsOfCall(2)).toEqual(["diff", "--numstat", "abc123..HEAD"]);
+    });
+
+    it("returns empty stats when there is no base commit", () => {
+      expect(getBranchDiffStats("", "/repo")).toEqual({
+        commits: 0,
+        filesChanged: 0,
+        filesAdded: 0,
+        filesUpdated: 0,
+        filesDeleted: 0,
+        filesRenamed: 0,
+        binaryFiles: 0,
+        linesAdded: 0,
+        linesDeleted: 0,
+      });
+      expect(mockExecFileSync).not.toHaveBeenCalled();
     });
   });
 

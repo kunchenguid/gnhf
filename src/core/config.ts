@@ -18,10 +18,65 @@ export const AGENT_NAMES = [
 
 export type AgentName = (typeof AGENT_NAMES)[number];
 
+// Agents reached via the bundled acpx runtime: built-in target names,
+// configured registry names, or raw custom ACP server commands. Always
+// written as "acp:<target-or-command>" so the prefix routes to AcpAgent.
+export type AcpAgentSpec = `acp:${string}`;
+
+export type AgentSpec = AgentName | AcpAgentSpec;
+
+export function isAgentName(name: unknown): name is AgentName {
+  return (
+    typeof name === "string" &&
+    (AGENT_NAMES as readonly string[]).includes(name)
+  );
+}
+
+function hasDisallowedAcpTargetChar(target: string): boolean {
+  for (let i = 0; i < target.length; i += 1) {
+    const code = target.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+export function isAcpSpec(spec: unknown): spec is AcpAgentSpec {
+  if (typeof spec !== "string") return false;
+  if (!spec.startsWith("acp:")) return false;
+  const target = spec.slice("acp:".length);
+  return (
+    target.length > 0 &&
+    target.trim() === target &&
+    !hasDisallowedAcpTargetChar(target)
+  );
+}
+
+export function isAgentSpec(spec: unknown): spec is AgentSpec {
+  return isAgentName(spec) || isAcpSpec(spec);
+}
+
+export function getAcpTarget(spec: AcpAgentSpec): string {
+  return spec.slice("acp:".length);
+}
+
+export function isNamedAcpTarget(target: string): boolean {
+  return ACP_TARGET_NAME_PATTERN.test(target);
+}
+
+export function redactAcpTargetForLogs(target: string): string {
+  return isNamedAcpTarget(target) ? target : "custom";
+}
+
+export function redactAgentSpecForLogs(spec: string): string {
+  if (!spec.startsWith("acp:")) return spec;
+  return `acp:${redactAcpTargetForLogs(spec.slice("acp:".length))}`;
+}
+
 export interface Config {
-  agent: AgentName;
+  agent: AgentSpec;
   agentPathOverride: Partial<Record<AgentName, string>>;
   agentArgsOverride: Partial<Record<AgentName, string[]>>;
+  acpRegistryOverrides: Record<string, string>;
   commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
@@ -31,9 +86,12 @@ const DEFAULT_CONFIG: Config = {
   agent: "claude",
   agentPathOverride: {},
   agentArgsOverride: {},
+  acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
+
+const ACP_TARGET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
 function formatAgentNameList(): string {
   const quoted = AGENT_NAMES.map((name) => `"${name}"`);
@@ -289,6 +347,39 @@ function normalizeAgentArgsOverride(
   return Object.keys(result).length === 0 ? undefined : result;
 }
 
+function normalizeAcpRegistryOverrides(
+  value: unknown,
+): Record<string, string> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for acpRegistryOverrides: expected an object mapping ACP target names to commands`,
+    );
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!ACP_TARGET_NAME_PATTERN.test(key)) {
+      throw new InvalidConfigError(
+        `Invalid target name in acpRegistryOverrides: "${key}". Target names must start with a letter or digit and contain only letters, digits, dots, underscores, colons, or hyphens.`,
+      );
+    }
+    if (typeof val !== "string") {
+      throw new InvalidConfigError(
+        `Invalid command for acpRegistryOverrides.${key}: expected a string`,
+      );
+    }
+    if (val.trim() === "") {
+      throw new InvalidConfigError(
+        `Invalid command for acpRegistryOverrides.${key}: expected a non-empty string`,
+      );
+    }
+    result[key] = val.trim();
+  }
+
+  return result;
+}
+
 function normalizeConfig(
   config: Partial<Config>,
   configDir?: string,
@@ -345,6 +436,23 @@ function normalizeConfig(
     }
   } else {
     delete normalized.agentArgsOverride;
+  }
+
+  const hasAcpRegistryOverrides = Object.prototype.hasOwnProperty.call(
+    config,
+    "acpRegistryOverrides",
+  );
+  if (hasAcpRegistryOverrides) {
+    const acpRegistryOverrides = normalizeAcpRegistryOverrides(
+      config.acpRegistryOverrides,
+    );
+    if (acpRegistryOverrides === undefined) {
+      delete normalized.acpRegistryOverrides;
+    } else {
+      normalized.acpRegistryOverrides = acpRegistryOverrides;
+    }
+  } else {
+    delete normalized.acpRegistryOverrides;
   }
 
   const hasCommitMessage = Object.prototype.hasOwnProperty.call(
@@ -409,6 +517,12 @@ function serializeAgentArgsOverride(
     .trimEnd();
 }
 
+function serializeAgent(agent: AgentSpec): string {
+  return yaml
+    .dump({ agent }, { lineWidth: -1, noRefs: true, sortKeys: false })
+    .trimEnd();
+}
+
 function serializeConfig(config: Config): string {
   const agentPathOverrideSection = serializeAgentPathOverride(
     config.agentPathOverride,
@@ -417,10 +531,10 @@ function serializeConfig(config: Config): string {
     config.agentArgsOverride,
   );
   const lines = [
-    "# Agent to use by default",
-    `agent: ${config.agent}`,
+    "# Agent to use by default: native agent name or acp:<target-or-command>",
+    serializeAgent(config.agent),
     "",
-    "# Custom paths to agent binaries (optional)",
+    "# Custom paths to native agent binaries (optional)",
     "# Paths may be absolute, bare executable names on PATH,",
     "# ~-prefixed, or relative to this config directory.",
     "# Note: rovodev overrides must point to an acli-compatible binary.",
@@ -431,7 +545,8 @@ function serializeConfig(config: Config): string {
     "#   pi: /path/to/custom-pi",
     "#   swival: /path/to/custom-swival",
     "",
-    "# Per-agent CLI arg overrides (optional)",
+    "# Native agent CLI arg overrides (optional)",
+    "# ACP targets do not support path or arg overrides.",
     "# agentArgsOverride:",
     "#   codex:",
     "#     - -m",
@@ -455,8 +570,15 @@ function serializeConfig(config: Config): string {
     "#     - --model",
     "#     - z-ai/glm-5.1",
     "",
+    "# Custom ACP target commands (optional)",
+    "# Maps acp:<target> names to spawn commands. Useful for naming a",
+    "# local or beta build of an ACP agent.",
+    "# acpRegistryOverrides:",
+    '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
+    '#   staging: "node /opt/staging/agent.mjs"',
+    "",
     "# Commit message convention (optional)",
-    "# Defaults to: gnhf #<iteration>: <summary>",
+    "# Defaults to: gnhf <iteration>: <summary>",
     "# Use Conventional Commits semantic-release headers:",
     "# commitMessage:",
     "#   preset: conventional",

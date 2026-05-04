@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("./claude.js", () => {
@@ -79,7 +80,20 @@ vi.mock("./swival.js", () => {
   return { SwivalAgent };
 });
 
+vi.mock("./acp.js", () => {
+  const AcpAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    const target = (deps as { target?: string } | undefined)?.target ?? "";
+    this.name = `acp:${target}`;
+    this.deps = deps;
+  });
+  return { AcpAgent };
+});
+
 import { createAgent } from "./factory.js";
+import { AcpAgent } from "./acp.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
@@ -103,6 +117,8 @@ const stubRunInfo: RunInfo = {
   commitMessagePath: "/repo/.gnhf/runs/test-run/commit-message",
   commitMessage: undefined,
 };
+
+const acpSessionStateDir = join(stubRunInfo.runDir, "acp-sessions");
 
 const noStopSchema = {
   type: "object",
@@ -401,6 +417,65 @@ describe("createAgent", () => {
       bin: undefined,
       extraArgs: undefined,
       schema: withStopSchema,
+    });
+  });
+
+  it("creates an AcpAgent when the spec uses an acp: prefix", () => {
+    const agent = createAgent("acp:gemini", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+
+    expect(AcpAgent).toHaveBeenCalledWith({
+      target: "gemini",
+      schema: noStopSchema,
+      runId: stubRunInfo.runId,
+      sessionStateDir: acpSessionStateDir,
+    });
+    expect(agent.name).toBe("acp:gemini");
+  });
+
+  it("forwards raw ACP command specs as custom acpx targets", () => {
+    const command = "./bin/dev-acp --profile ci";
+    const agent = createAgent(
+      `acp:${command}`,
+      stubRunInfo,
+      undefined,
+      undefined,
+      {
+        includeStopField: false,
+      },
+    );
+
+    expect(AcpAgent).toHaveBeenCalledWith({
+      target: command,
+      schema: noStopSchema,
+      runId: stubRunInfo.runId,
+      sessionStateDir: acpSessionStateDir,
+    });
+    expect(agent.name).toBe(`acp:${command}`);
+  });
+
+  it("hands AcpAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("acp:cursor", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(AcpAgent).toHaveBeenCalledWith({
+      target: "cursor",
+      schema: withStopSchema,
+      runId: stubRunInfo.runId,
+      sessionStateDir: acpSessionStateDir,
+    });
+  });
+
+  it("ignores per-agent path/args overrides for acp specs (v1)", () => {
+    createAgent("acp:gemini", stubRunInfo, "/custom", ["--model", "x"], {
+      includeStopField: false,
+    });
+    expect(AcpAgent).toHaveBeenCalledWith({
+      target: "gemini",
+      schema: noStopSchema,
+      runId: stubRunInfo.runId,
+      sessionStateDir: acpSessionStateDir,
     });
   });
 });

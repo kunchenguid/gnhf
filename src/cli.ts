@@ -15,7 +15,14 @@ import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { Command, InvalidArgumentError } from "commander";
-import { AGENT_NAMES, loadConfig, type AgentName } from "./core/config.js";
+import {
+  AGENT_NAMES,
+  isAgentSpec,
+  loadConfig,
+  redactAgentSpecForLogs,
+  type AgentName,
+  type AgentSpec,
+} from "./core/config.js";
 import {
   appendDebugLog,
   initDebugLog,
@@ -30,6 +37,8 @@ import {
   createWorktree,
   removeWorktree,
   listWorktreePaths,
+  getBranchDiffStats,
+  type BranchDiffStats,
 } from "./core/git.js";
 import {
   type RunInfo,
@@ -42,11 +51,13 @@ import {
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
 import { createAgent } from "./core/agents/factory.js";
+import { getDefaultTelemetry, initDefaultTelemetry } from "./core/telemetry.js";
 import {
   getCommitMessageSchemaFields,
   type CommitMessageConfig,
 } from "./core/commit-message.js";
 import { Orchestrator } from "./core/orchestrator.js";
+import { renderExitSummary } from "./core/exit-summary.js";
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
 import { slugifyPrompt } from "./utils/slugify.js";
@@ -63,6 +74,7 @@ const AGENT_NAME_SET = new Set<string>(AGENT_NAMES);
 const AGENT_NAME_LIST = `"${AGENT_NAMES.slice(0, -1).join('", "')}", or "${
   AGENT_NAMES[AGENT_NAMES.length - 1]
 }"`;
+const AGENT_SPEC_LIST = `${AGENT_NAME_LIST}, or "acp:<target-or-command>" (e.g. acp:gemini)`;
 
 class PromptSignalError extends Error {
   constructor(public readonly signal: NodeJS.Signals) {
@@ -101,6 +113,57 @@ function humanizeErrorMessage(message: string): string {
 
 function isAgentName(name: string): name is AgentName {
   return AGENT_NAME_SET.has(name);
+}
+
+function getNativeAgentName(spec: AgentSpec): AgentName | undefined {
+  return isAgentName(spec) ? spec : undefined;
+}
+
+function getTelemetryAgent(spec: AgentSpec): string {
+  return redactAgentSpecForLogs(spec);
+}
+
+function shouldUseColor(): boolean {
+  return (
+    process.stdout.isTTY === true &&
+    process.env.NO_COLOR === undefined &&
+    process.env.TERM !== "dumb"
+  );
+}
+
+function emptyBranchDiffStats(commitCount: number): BranchDiffStats {
+  return {
+    commits: commitCount,
+    filesChanged: 0,
+    filesAdded: 0,
+    filesUpdated: 0,
+    filesDeleted: 0,
+    filesRenamed: 0,
+    binaryFiles: 0,
+    linesAdded: 0,
+    linesDeleted: 0,
+  };
+}
+
+function redactDebugArgs(args: string[]): string[] {
+  const redacted = [...args];
+  for (let i = 0; i < redacted.length; i += 1) {
+    const arg = redacted[i];
+    if (arg === "--") break;
+    if (arg === "--agent") {
+      const next = redacted[i + 1];
+      if (next !== undefined) {
+        redacted[i + 1] = redactAgentSpecForLogs(next);
+        i += 1;
+      }
+      continue;
+    }
+    if (arg?.startsWith("--agent=")) {
+      redacted[i] =
+        `--agent=${redactAgentSpecForLogs(arg.slice("--agent=".length))}`;
+    }
+  }
+  return redacted;
 }
 
 function buildSchemaOptions(
@@ -440,7 +503,10 @@ program
   .description("Before I go to bed, I tell my agents: good night, have fun")
   .version(packageVersion)
   .argument("[prompt]", "The objective for the coding agent")
-  .option("--agent <agent>", `Agent to use (${AGENT_NAMES.join(", ")})`)
+  .option(
+    "--agent <agent>",
+    `Agent to use (${AGENT_NAMES.join(", ")}, or acp:<target-or-command>)`,
+  )
   .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
@@ -508,9 +574,9 @@ program
       let promptFromStdin = false;
 
       const agentName = options.agent;
-      if (agentName !== undefined && !isAgentName(agentName)) {
+      if (agentName !== undefined && !isAgentSpec(agentName)) {
         console.error(
-          `Unknown agent: ${options.agent}. Use ${AGENT_NAME_LIST}.`,
+          `Unknown agent: ${options.agent}. Use ${AGENT_SPEC_LIST}.`,
         );
         process.exit(1);
       }
@@ -528,12 +594,21 @@ program
           ? {}
           : { preventSleep: options.preventSleep }),
       };
-      if (!isAgentName(config.agent)) {
+      if (!isAgentSpec(config.agent)) {
         console.error(
-          `Unknown agent: ${config.agent}. Use ${AGENT_NAME_LIST}.`,
+          `Unknown agent: ${config.agent}. Use ${AGENT_SPEC_LIST}.`,
         );
         process.exit(1);
       }
+
+      initDefaultTelemetry({
+        app: "gnhf",
+        version: packageVersion,
+        platform: process.platform,
+        arch: process.arch,
+      });
+      const telemetry = getDefaultTelemetry();
+      const runStartedAt = Date.now();
 
       if (!prompt && process.env.GNHF_SLEEP_INHIBITED === "1") {
         prompt = readReexecStdinPrompt(process.env);
@@ -737,12 +812,24 @@ program
         }
       }
 
+      const runMode: "new" | "resume" | "worktree" = options.worktree
+        ? "worktree"
+        : startIteration > 0
+          ? "resume"
+          : "new";
+
+      const telemetryAgent = getTelemetryAgent(config.agent);
+      telemetry.pageview("/run", {
+        agent: telemetryAgent,
+        mode: runMode,
+      });
+
       initDebugLog(runInfo.logPath);
       appendDebugLog("run:start", {
-        args: process.argv.slice(2),
+        args: redactDebugArgs(process.argv.slice(2)),
         runId: runInfo.runId,
         runDir: runInfo.runDir,
-        agent: config.agent,
+        agent: redactAgentSpecForLogs(config.agent),
         promptLength: prompt.length,
         promptFromStdin,
         startIteration,
@@ -751,7 +838,9 @@ program
         stopWhen: effectiveStopWhen,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
-        agentArgsOverride: config.agentArgsOverride?.[config.agent],
+        agentArgsOverride: getNativeAgentName(config.agent)
+          ? config.agentArgsOverride?.[getNativeAgentName(config.agent)!]
+          : undefined,
         worktree: options.worktree,
         worktreePath,
         platform: process.platform,
@@ -759,12 +848,16 @@ program
         gnhfVersion: packageVersion,
       });
 
+      const nativeAgent = getNativeAgentName(config.agent);
       const agent = createAgent(
         config.agent,
         runInfo,
-        config.agentPathOverride[config.agent],
-        config.agentArgsOverride?.[config.agent],
-        schemaOptions,
+        nativeAgent ? config.agentPathOverride[nativeAgent] : undefined,
+        nativeAgent ? config.agentArgsOverride?.[nativeAgent] : undefined,
+        {
+          ...schemaOptions,
+          acpRegistryOverrides: config.acpRegistryOverrides,
+        },
       );
       const orchestrator = new Orchestrator(
         { ...config, commitMessage: effectiveCommitMessage },
@@ -873,6 +966,45 @@ program
 
       {
         const finalState = orchestrator.getState();
+        let finalBranchName = "HEAD";
+        try {
+          finalBranchName = getCurrentBranch(effectiveCwd);
+        } catch (error) {
+          appendDebugLog("summary:branch-error", {
+            error: serializeError(error),
+          });
+        }
+
+        let diffStats = emptyBranchDiffStats(finalState.commitCount);
+        try {
+          diffStats = getBranchDiffStats(runInfo.baseCommit, effectiveCwd);
+        } catch (error) {
+          appendDebugLog("summary:diff-stats-error", {
+            error: serializeError(error),
+          });
+        }
+
+        const exitSummary = renderExitSummary({
+          agentName: redactAgentSpecForLogs(config.agent),
+          branchName: finalBranchName,
+          elapsedMs: Date.now() - finalState.startTime.getTime(),
+          status: finalState.status,
+          abortReason: finalState.lastAgentError ?? finalState.lastMessage,
+          iterations: finalState.currentIteration,
+          successCount: finalState.successCount,
+          failCount: finalState.failCount,
+          totalInputTokens: finalState.totalInputTokens,
+          totalOutputTokens: finalState.totalOutputTokens,
+          tokensEstimated: finalState.tokensEstimated,
+          commitCount: finalState.commitCount,
+          notesPath: runInfo.notesPath,
+          logPath: runInfo.logPath,
+          baseRef: runInfo.baseCommit.slice(0, 12) || runInfo.baseCommit,
+          diffStats,
+          color: shouldUseColor(),
+          terminalColumns: process.stdout.columns,
+        });
+
         appendDebugLog("run:complete", {
           signal: shutdownSignal,
           status: finalState.status,
@@ -884,6 +1016,24 @@ program
           commitCount: finalState.commitCount,
           worktreePath,
         });
+
+        telemetry.track("run", {
+          agent: telemetryAgent,
+          mode: runMode,
+          status: finalState.status,
+          signal: shutdownSignal ?? undefined,
+          iterations: finalState.currentIteration,
+          success_count: finalState.successCount,
+          fail_count: finalState.failCount,
+          commit_count: finalState.commitCount,
+          total_input_tokens: finalState.totalInputTokens,
+          total_output_tokens: finalState.totalOutputTokens,
+          duration_ms: Date.now() - runStartedAt,
+          prevent_sleep: config.preventSleep === true,
+          commit_message_preset: effectiveCommitMessage?.preset ?? "default",
+          stop_when_set: effectiveStopWhen !== undefined,
+        });
+        await telemetry.close(1_000);
 
         if (finalState.status === "aborted") {
           console.error(`\n  gnhf: Run log: ${runInfo.logPath}\n`);
@@ -904,6 +1054,8 @@ program
             });
           }
         }
+
+        process.stdout.write(exitSummary);
       }
 
       if (shutdownSignal) {

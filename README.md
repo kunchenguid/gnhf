@@ -46,8 +46,9 @@ You wake up to a branch full of clean work and a log of everything that happened
 
 - **Dead simple** — one command starts an autonomous loop that runs until you request stop or a configured runtime cap is reached
 - **Long running** — each iteration is committed on success, rolled back on failure, with sensible retries; retryable hard agent errors back off exponentially while agent-reported failures continue immediately
-- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then restore the previous title on exit
-- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or Swival out of the box
+- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then clear or restore it on exit depending on terminal support; token totals prefixed with `~` are estimates
+- **Exit summary**: every run ends with a permanent summary covering elapsed time, branch, iterations, tokens, branch diff stats, local notes/log paths, and review commands
+- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, Swival, or ACP targets out of the box
 
 ## Quick Start
 
@@ -137,11 +138,12 @@ npm link
                     └──────────────────────────────────────┘
 ```
 
-- **Incremental commits** — each successful iteration is a separate git commit, so you can cherry-pick or revert individual changes
-- **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, retryable hard agent errors use exponential backoff, and permanent agent errors such as Claude low credit balance abort immediately and print the run log path
+- **Incremental commits** - each successful iteration is a separate unsigned git commit, so you can cherry-pick or revert individual changes without GPG or SSH signing prompts blocking the run; if the first commit attempt fails, gnhf re-stages changes and retries with `--no-verify` so hook-mutated work is not stranded
+- **Failure handling** - all failed iterations are rolled back with `git reset --hard`; agent-reported failures proceed to the next iteration immediately, retryable hard agent errors use exponential backoff, and permanent agent errors such as Claude low credit balance abort immediately and print the run log path. Complete no-op iterations are reported as failures and count toward the consecutive-failure abort limit.
 - **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met; resumed runs reuse the saved stop condition unless you pass a new value, or `--stop-when ""` to clear it; uncommitted work is rolled back in either case, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
+- **Exit summary** - after shutdown cleanup, gnhf prints a permanent stdout summary with the final branch, elapsed time, iteration and token totals, branch diff stats, notes/debug-log paths, and review commands
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
 - **Local run metadata** — gnhf stores prompt, notes, stop conditions, and commit-message convention metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
@@ -175,25 +177,25 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ### Flags
 
-| Flag                     | Description                                                                 | Default                |
-| ------------------------ | --------------------------------------------------------------------------- | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `pi`, or `swival`) | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                            | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                   | unlimited              |
-| `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume  | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)          | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)       | `false`                |
-| `--version`              | Show version                                                                |                        |
+| Flag                     | Description                                                                                                       | Default                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `pi`, `swival`, or `acp:<target-or-command>`) | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                                                                  | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                                         | unlimited              |
+| `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume                                        | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                                | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                             | `false`                |
+| `--version`              | Show version                                                                                                      |                        |
 
 ## Configuration
 
 Config lives at `~/.gnhf/config.yml`:
 
 ```yaml
-# Agent to use by default (claude, codex, rovodev, opencode, copilot, pi, or swival)
+# Agent to use by default (claude, codex, rovodev, opencode, copilot, pi, swival, or acp:<target-or-command>)
 agent: claude
 
-# Custom paths to agent binaries (optional)
+# Custom paths to native agent binaries (optional)
 # agentPathOverride:
 #   claude: /path/to/custom-claude
 #   codex: /path/to/custom-codex
@@ -201,7 +203,7 @@ agent: claude
 #   pi: /path/to/custom-pi
 #   swival: /path/to/custom-swival
 
-# Per-agent CLI arg overrides (optional)
+# Native agent CLI arg overrides (optional)
 # agentArgsOverride:
 #   codex:
 #     - -m
@@ -225,8 +227,13 @@ agent: claude
 #     - --model
 #     - z-ai/glm-5.1
 
+# Custom ACP target commands (optional)
+# acpRegistryOverrides:
+#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"
+#   staging: "node /opt/staging/agent.mjs"
+
 # Commit message convention (optional)
-# Defaults to: gnhf #<iteration>: <summary>
+# Defaults to: gnhf <iteration>: <summary>
 # Use the conventional preset for semantic-release compatible headers:
 # commitMessage:
 #   preset: conventional
@@ -243,7 +250,10 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
 
-`agentArgsOverride.<name>` lets you pass through extra CLI flags for any supported agent.
+`agentArgsOverride.<name>` lets you pass through extra CLI flags for native agents (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, or `pi`).
+ACP targets do not support path or arg overrides in this version.
+Use `acpRegistryOverrides` to map `acp:<target>` names to custom spawn commands for local, forked, or beta ACP agents.
+You can also pass a raw custom ACP server command directly as a quoted `acp:` spec, for example `gnhf --agent 'acp:./bin/dev-acp --profile ci' "fix the tests"`.
 
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
@@ -251,13 +261,13 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
-- Omit it to keep the default `gnhf #<iteration>: <summary>` format.
+- Omit it to keep the default `gnhf <iteration>: <summary>` format.
 - Set `preset: conventional` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
 - The resolved commit-message convention is saved per run, so resuming a `gnhf/` branch keeps the original subject format even if `config.yml` changes later.
 
 ### Custom Agent Paths
 
-Use `agentPathOverride` to point any agent at a custom binary — useful for wrappers like Claude Code Switch or custom Codex builds that accept the same flags and arguments as the original:
+Use `agentPathOverride` to point any native agent at a custom binary - useful for wrappers like Claude Code Switch or custom Codex builds that accept the same flags and arguments as the original:
 
 ```yaml
 agentPathOverride:
@@ -273,23 +283,31 @@ When sleep prevention is enabled, `gnhf` uses the native mechanism for your OS: 
 
 ## Debug Logs
 
-Every run writes a JSONL debug log to `.gnhf/runs/<runId>/gnhf.log` alongside `notes.md`. Lifecycle events for the orchestrator, agent, and HTTP requests are captured with elapsed timings and (for failures) the full `error.cause` chain — which is what you need to tell a bare `TypeError: fetch failed` apart from an undici `UND_ERR_HEADERS_TIMEOUT`. The agent's own streaming output still goes to the per-iteration `iteration-<n>.jsonl` file next to it.
+Every run writes a JSONL debug log to `.gnhf/runs/<runId>/gnhf.log` alongside `notes.md`. Lifecycle events for the orchestrator, agent, and HTTP requests are captured with elapsed timings and (for failures) the full `error.cause` chain, which is what you need to tell a bare `TypeError: fetch failed` apart from an undici `UND_ERR_HEADERS_TIMEOUT`. The agent's own streaming output still goes to the per-iteration `iteration-<n>.jsonl` file next to it.
+Raw ACP command specs are redacted as `acp:custom`/`custom` in debug logs and related errors, so local paths or secrets in custom commands are not written to `gnhf.log`.
 
 Including a snippet of `gnhf.log` is the single most useful thing you can attach when filing an issue.
 
+## Telemetry
+
+`gnhf` sends anonymous usage telemetry to my self-hosted analytics so I can see what's actually getting used.
+No prompts, repo paths, or branch names are sent.
+Set `GNHF_TELEMETRY=0` to turn it off.
+
 ## Agents
 
-`gnhf` supports seven agents:
+`gnhf` supports seven native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target-or-command>` specs.
 
-| Agent              | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                                        |
-| ------------------ | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code        | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period. |
-| Codex              | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                |
-| GitHub Copilot CLI | `--agent copilot`  | Install GitHub Copilot CLI and sign in first.                              | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.            |
-| Pi                 | `--agent pi`       | Install the `pi` CLI and configure a usable provider/model first.          | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                           |
-| Rovo Dev           | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                       |
-| OpenCode           | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.             |
-| Swival             | `--agent swival`   | Install `swival` and configure a usable provider/model first.              | `gnhf` invokes `swival` directly in quiet mode (`-q`), pipes the prompt on stdin, and appends the final output schema to the prompt. Swival does not stream token usage, so `--max-tokens` is a no-op.                     |
+| Agent              | Flag                              | Requirements                                                                                                                                                                        | Notes                                                                                                                                                                                                                                                                                                       |
+| ------------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code        | `--agent claude`                  | Install Anthropic's `claude` CLI and sign in first.                                                                                                                                 | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period.                                                                                |
+| Codex              | `--agent codex`                   | Install OpenAI's `codex` CLI and sign in first.                                                                                                                                     | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                                                                                               |
+| GitHub Copilot CLI | `--agent copilot`                 | Install GitHub Copilot CLI and sign in first.                                                                                                                                       | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.                                                                                           |
+| Pi                 | `--agent pi`                      | Install the `pi` CLI and configure a usable provider/model first.                                                                                                                   | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                                                                                                          |
+| Rovo Dev           | `--agent rovodev`                 | Install Atlassian's `acli` and authenticate it with Rovo Dev first.                                                                                                                 | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                                                                                                      |
+| OpenCode           | `--agent opencode`                | Install `opencode` and configure at least one usable model provider first.                                                                                                          | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.                                                                                            |
+| Swival             | `--agent swival`                  | Install `swival` and configure a usable provider/model first.                                                                                                                       | `gnhf` invokes `swival` directly in quiet mode (`-q`), pipes the prompt on stdin, and appends the final output schema to the prompt. Swival does not stream token usage, so `--max-tokens` is a no-op.                                                                                                      |
+| ACP target         | `--agent acp:<target-or-command>` | Install and authenticate the target supported by the bundled [`acpx`](https://github.com/openclaw/acpx) registry, such as `acp:gemini`, or pass a quoted custom ACP server command. | `gnhf` runs the target through ACP with a persistent per-run session under `.gnhf/runs/<runId>/acp-sessions`; token usage and `--max-tokens` use ACP `used` deltas when available, with prompt-length plus tool-call estimates as a fallback, and `agentPathOverride` and `agentArgsOverride` do not apply. |
 
 ## Development
 
@@ -298,7 +316,7 @@ If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./C
 ```sh
 npm run build          # Build with tsdown
 npm run dev            # Watch mode
-npm test               # Build, then run unit tests (vitest)
+npm test               # Build, then run all tests (vitest)
 npm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
 npm run lint           # ESLint
 npm run format         # Prettier

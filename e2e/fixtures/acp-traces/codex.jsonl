@@ -1,0 +1,193 @@
+{"type":"status","text":"available commands updated (7)","tag":"available_commands_update"}
+{"type":"text_delta","text":"I","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"’ll","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" read","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" orchestr","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"ator","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" notes","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" and","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" repo","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" shape","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" first","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":",","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" then","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" keep","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" this","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" iteration","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" to","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" smallest","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" ver","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"ifiable","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" change","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"tool_call","text":"Read notes.md (in_progress)","tag":"tool_call","toolCallId":"call_D1hUZt9E4rcb4q8ZGqnzkYzF","status":"in_progress","title":"Read notes.md"}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_D1hUZt9E4rcb4q8ZGqnzkYzF","status":"completed","title":"tool call"}
+{"type":"status","text":"usage updated: 28177/258400","tag":"usage_update","used":28177,"size":258400}
+{"type":"tool_call","text":"List <cwd> (in_progress)","tag":"tool_call","toolCallId":"call_ZneIL0SYdlTLHavwyREMkURU","status":"in_progress","title":"List <cwd>"}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_ZneIL0SYdlTLHavwyREMkURU","status":"completed","title":"tool call"}
+{"type":"tool_call","text":"git status --short (in_progress)","tag":"tool_call","toolCallId":"call_fGb1horiLRjuvr1uJsjNpMul","status":"in_progress","title":"git status --short"}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_fGb1horiLRjuvr1uJsjNpMul","status":"completed","title":"tool call"}
+{"type":"text_delta","text":"The","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" repo","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" is","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" essentially","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" empty","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" apart","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" from","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" `","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"README","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".md","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"`,","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" and","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" run","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" has","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" no","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" prior","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" iteration","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" notes","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" I","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"’m","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" adding","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" only","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" requested","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" `","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"hello","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".js","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"`","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" with","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" a","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" single","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" function","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":",","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" then","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" I","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"’ll","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" verify","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" it","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" directly","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" with","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" Node","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" without","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" adding","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" extra","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" project","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" files","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"tool_call","text":"Edit <cwd>/hello.js (in_progress)","tag":"tool_call","toolCallId":"call_pwDfmpQspoCqlpfinHfMCWNI","status":"in_progress","title":"Edit <cwd>/hello.js"}
+{"type":"tool_call","text":"Edit <cwd>/hello.js (completed)","tag":"tool_call_update","toolCallId":"call_pwDfmpQspoCqlpfinHfMCWNI","status":"completed","title":"Edit <cwd>/hello.js"}
+{"type":"status","text":"usage updated: 28669/258400","tag":"usage_update","used":28669,"size":258400}
+{"type":"text_delta","text":"The","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" file","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" is","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" in","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" place","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" I","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"’m","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" doing","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" a","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" lightweight","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" runtime","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" check","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" now","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" since","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" there","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" is","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" no","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" package","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" manifest","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" or","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" test","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" harness","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"tool_call","text":"git diff -- hello.js (in_progress)","tag":"tool_call","toolCallId":"call_xsTSMHo1udu82WUuq6SFe7Uc","status":"in_progress","title":"git diff -- hello.js"}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_xsTSMHo1udu82WUuq6SFe7Uc","status":"completed","title":"tool call"}
+{"type":"tool_call","text":"node -e \"const fs=require('fs'); const vm=require('vm'); const ctx={}; vm.runInNewContext(fs.readFileSync('hello.js','utf8'), ctx); if (ctx.hello() !== 'world') process.exit(1);\" (in_progress)","tag":"tool_call","toolCallId":"call_Lrap8ezvBXrbKOrtPfE7jF09","status":"in_progress","title":"node -e \"const fs=require('fs'); const vm=require('vm'); const ctx={}; vm.runInNewContext(fs.readFileSync('hello.js','utf8'), ctx); if (ctx.hello() !== 'world') process.exit(1);\""}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_Lrap8ezvBXrbKOrtPfE7jF09","status":"completed","title":"tool call"}
+{"type":"status","text":"usage updated: 28958/258400","tag":"usage_update","used":28958,"size":258400}
+{"type":"tool_call","text":"git status --short (in_progress)","tag":"tool_call","toolCallId":"call_Jmlf0GU73iBGvFSWktxwgUfq","status":"in_progress","title":"git status --short"}
+{"type":"tool_call","text":"tool call (completed)","tag":"tool_call_update","toolCallId":"call_Jmlf0GU73iBGvFSWktxwgUfq","status":"completed","title":"tool call"}
+{"type":"text_delta","text":"{\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"success","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\":","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"true","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":",\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"summary","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\":\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"Added","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" requested","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" hello","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"()","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" function","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" in","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" a","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" new","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" hello","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".js","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" file","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" and","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" verified","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" it","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" returns","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" '","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"world","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"'.","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\",\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"key","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"_changes","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"_m","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"ade","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\":[\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"Created","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" hello","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".js","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" containing","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" a","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" single","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" hello","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"()","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" function","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" that","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" returns","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" the","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" string","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" '","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"world","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"'","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"],\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"key","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"_le","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"arnings","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\":[\"","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"The","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" repository","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" has","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" no","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" package","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" manifest","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" or","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" test","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" harness","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":",","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" so","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" validation","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" was","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" done","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" with","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" a","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" direct","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" Node","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" runtime","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":" check","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":".","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"\"]","stream":"output","tag":"agent_message_chunk"}
+{"type":"text_delta","text":"}","stream":"output","tag":"agent_message_chunk"}
+{"type":"status","text":"usage updated: 29227/258400","tag":"usage_update","used":29227,"size":258400}

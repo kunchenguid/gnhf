@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { resolve as resolvePath } from "node:path";
 
+import { appendDebugLog, serializeError } from "./debug-log.js";
+
 const NOT_GIT_REPOSITORY_MESSAGE =
   'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
 
@@ -14,17 +16,25 @@ function translateGitError(error: unknown): Error {
 // characters like `, $, ", ', and ; are harmless data rather than executable
 // syntax. Do not add a code path that builds a shell command string from
 // user- or agent-provided input.
+//
+// Always inject GIT_TERMINAL_PROMPT=0 so a misconfigured credential helper
+// or an HTTPS auth challenge can't hang a long-running gnhf loop on a
+// terminal prompt. GPG signing is a separate prompt pathway (pinentry) and
+// is disabled where it matters via `-c commit.gpgsign=false` at the call
+// site (see commitAll), since GIT_TERMINAL_PROMPT does not cover it.
 function git(
   args: string[],
   cwd: string,
   options: { env?: NodeJS.ProcessEnv } = {},
 ): string {
+  const baseEnv = options.env ?? process.env;
+  const env: NodeJS.ProcessEnv = { ...baseEnv, GIT_TERMINAL_PROMPT: "0" };
   try {
     return execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       stdio: "pipe",
-      ...(options.env ? { env: options.env } : {}),
+      env,
     }).trim();
   } catch (error) {
     throw translateGitError(error);
@@ -114,10 +124,113 @@ export function getBranchCommitCount(baseCommit: string, cwd: string): number {
   );
 }
 
+export interface BranchDiffStats {
+  commits: number;
+  filesChanged: number;
+  filesAdded: number;
+  filesUpdated: number;
+  filesDeleted: number;
+  filesRenamed: number;
+  binaryFiles: number;
+  linesAdded: number;
+  linesDeleted: number;
+}
+
+function emptyBranchDiffStats(): BranchDiffStats {
+  return {
+    commits: 0,
+    filesChanged: 0,
+    filesAdded: 0,
+    filesUpdated: 0,
+    filesDeleted: 0,
+    filesRenamed: 0,
+    binaryFiles: 0,
+    linesAdded: 0,
+    linesDeleted: 0,
+  };
+}
+
+export function getBranchDiffStats(
+  baseCommit: string,
+  cwd: string,
+): BranchDiffStats {
+  if (!baseCommit) return emptyBranchDiffStats();
+
+  const range = `${baseCommit}..HEAD`;
+  const stats = emptyBranchDiffStats();
+  stats.commits = Number.parseInt(
+    git(["rev-list", "--count", "--first-parent", range], cwd),
+    10,
+  );
+
+  const nameStatus = git(["diff", "--name-status", range], cwd);
+  for (const line of nameStatus.split("\n")) {
+    if (!line) continue;
+    const [status] = line.split("\t");
+    stats.filesChanged++;
+    if (status === "A") {
+      stats.filesAdded++;
+    } else if (status === "D") {
+      stats.filesDeleted++;
+    } else if (status?.startsWith("R")) {
+      stats.filesUpdated++;
+      stats.filesRenamed++;
+    } else {
+      stats.filesUpdated++;
+    }
+  }
+
+  const numstat = git(["diff", "--numstat", range], cwd);
+  for (const line of numstat.split("\n")) {
+    if (!line) continue;
+    const [added, deleted] = line.split("\t");
+    if (added === "-" || deleted === "-") {
+      stats.binaryFiles++;
+      continue;
+    }
+    stats.linesAdded += Number.parseInt(added ?? "0", 10) || 0;
+    stats.linesDeleted += Number.parseInt(deleted ?? "0", 10) || 0;
+  }
+
+  return stats;
+}
+
 export function commitAll(message: string, cwd: string): void {
+  // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
+  // signing enabled would otherwise have every gnhf iteration spawn gpg
+  // and (for a locked agent) wait on a pinentry passphrase prompt that
+  // never arrives in the alt-screen TUI.
+  const commitArgs = [
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "tag.gpgsign=false",
+    "commit",
+    "-m",
+    message,
+  ];
+
+  git(["add", "-A"], cwd);
+  let firstError: unknown;
+  try {
+    git(commitArgs, cwd);
+    return;
+  } catch (error) {
+    firstError = error;
+  }
+
+  // First commit failed. Most often this is a pre-commit hook rejecting
+  // the change (or a formatter hook that mutated files and returned
+  // non-zero so the developer re-stages). Re-add to capture any hook
+  // modifications, then retry with --no-verify so a failing hook doesn't
+  // strand the agent's work uncommitted. If the underlying problem was
+  // "nothing to commit", the retry fails the same way and we swallow it.
   git(["add", "-A"], cwd);
   try {
-    git(["commit", "-m", message], cwd);
+    git([...commitArgs, "--no-verify"], cwd);
+    appendDebugLog("git:commit:no-verify-fallback", {
+      firstError: serializeError(firstError),
+    });
   } catch {
     // Nothing to commit (no changes) -- that's fine
   }

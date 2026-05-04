@@ -32,6 +32,9 @@ jobs:
 
       - run: npm run build
         if: ${{ steps.release.outputs.release_created }}
+        env:
+          GNHF_UMAMI_HOST: https://a.kunchenguid.com
+          GNHF_UMAMI_WEBSITE_ID: ${{ vars.GNHF_UMAMI_WEBSITE_ID }}
 
       - run: npm publish --access public --provenance
         if: ${{ steps.release.outputs.release_created }}

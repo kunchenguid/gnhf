@@ -14,7 +14,21 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
-const fixtureBinDir = join(repoRoot, "test", "fixtures");
+const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
+
+// Empty gitconfig pointed at by GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM so the
+// developer's real ~/.gitconfig (which may enable commit.gpgsign, set a
+// credential helper, install hooks via core.hooksPath, etc.) cannot affect
+// these tests. Created once per worker; vitest reaps tmpdirs between runs.
+const emptyGitConfigDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-gitconfig-"));
+const emptyGitConfigPath = join(emptyGitConfigDir, "gitconfig");
+writeFileSync(emptyGitConfigPath, "", "utf-8");
+
+const sanitizedGitEnv: NodeJS.ProcessEnv = {
+  GIT_CONFIG_GLOBAL: emptyGitConfigPath,
+  GIT_CONFIG_SYSTEM: emptyGitConfigPath,
+  GIT_TERMINAL_PROMPT: "0",
+};
 
 interface RunResult {
   code: number | null;
@@ -24,7 +38,12 @@ interface RunResult {
 }
 
 function git(args: string[], cwd: string): string {
-  return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...sanitizedGitEnv },
+  }).trim();
 }
 
 function createRepo(): string {
@@ -142,6 +161,7 @@ function createTestEnv(
 
   return {
     ...process.env,
+    ...sanitizedGitEnv,
     HOME: home,
     USERPROFILE: home,
     PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
@@ -183,8 +203,13 @@ describe("gnhf e2e", () => {
     );
 
     expect(result.code).toBe(0);
+    expect(result.stdout).toContain("gnhf stopped");
+    expect(result.stdout).toContain("opencode ran");
+    expect(result.stdout).toContain("max iterations reached (1)");
+    expect(result.stdout).toContain("branch diff");
+    expect(result.stdout).toContain("git log --oneline");
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
-    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf #1:");
+    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
 
     const startEvent = await waitForLogEvent(mockLogPath, "server:start");
     expect(startEvent.command).toBe("serve");
@@ -213,7 +238,14 @@ describe("gnhf e2e", () => {
 
     const result = await runCli(
       cwd,
-      ["--agent", "opencode", "--max-iterations", "1"],
+      [
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "1",
+        "--prevent-sleep",
+        "off",
+      ],
       {
         stdin: "ship it from stdin\n",
         env: createTestEnv(mockLogPath, tempDirs),
@@ -297,7 +329,7 @@ describe("gnhf e2e", () => {
 
       // The commit message should follow gnhf format
       expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain(
-        "gnhf #1:",
+        "gnhf 1:",
       );
 
       // Debug log should record worktree info
@@ -377,7 +409,7 @@ describe("gnhf e2e", () => {
       );
       expect(commitsAfterSecond).toBe(commitsAfterFirst + 1);
       expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain(
-        "gnhf #2:",
+        "gnhf 2:",
       );
     },
     60_000,

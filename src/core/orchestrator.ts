@@ -6,7 +6,7 @@ import {
   type AgentOutput,
   type TokenUsage,
 } from "./agents/types.js";
-import type { Config } from "./config.js";
+import { redactAgentSpecForLogs, type Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 import { appendNotes, toStringArray } from "./run.js";
 import { appendDebugLog, serializeError } from "./debug-log.js";
@@ -44,6 +44,10 @@ export interface OrchestratorState {
   currentIteration: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  // Sticky flag: true when at least one iteration's usage was reported as
+  // estimated (e.g. an ACP adapter that doesn't emit usage_update). Once set,
+  // it stays set for the rest of the run so totals are presented honestly.
+  tokensEstimated: boolean;
   commitCount: number;
   iterations: IterationRecord[];
   successCount: number;
@@ -89,6 +93,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeIterationPromise: Promise<RunIterationResult> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
+  private activeIterationTokensEstimated = false;
   private loopDone = false;
   private stoppedEventEmitted = false;
 
@@ -98,6 +103,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     currentIteration: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    tokensEstimated: false,
     commitCount: 0,
     iterations: [],
     successCount: 0,
@@ -134,7 +140,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   }
 
   getState(): OrchestratorState {
-    return { ...this.state, interruptHint: getInterruptHint(this.state) };
+    return {
+      ...this.state,
+      tokensEstimated:
+        this.state.tokensEstimated || this.activeIterationTokensEstimated,
+      interruptHint: getInterruptHint(this.state),
+    };
   }
 
   requestGracefulStop(): void {
@@ -223,7 +234,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.emit("state", this.getState());
 
     appendDebugLog("orchestrator:start", {
-      agent: this.agent.name,
+      agent: redactAgentSpecForLogs(this.agent.name),
       runId: this.runInfo.runId,
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
@@ -304,6 +315,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           consecutiveFailures: this.state.consecutiveFailures,
           totalInputTokens: this.state.totalInputTokens,
           totalOutputTokens: this.state.totalOutputTokens,
+          tokensEstimated: this.state.tokensEstimated,
           commitCount: this.state.commitCount,
         });
 
@@ -396,10 +408,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
 
     this.activeAbortController = new AbortController();
     this.pendingAbortReason = null;
+    this.activeIterationTokensEstimated = false;
 
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
+      this.activeIterationTokensEstimated = usage.estimated === true;
       this.emit("state", this.getState());
 
       const reason = this.getTokenAbortReason();
@@ -426,7 +440,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     const agentStartedAt = Date.now();
     appendDebugLog("agent:run:start", {
       iteration: this.state.currentIteration,
-      agent: this.agent.name,
+      agent: redactAgentSpecForLogs(this.agent.name),
       logPath,
     });
 
@@ -438,6 +452,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         logPath,
       });
 
+      this.activeIterationTokensEstimated = false;
+      if (result.usage.estimated) this.state.tokensEstimated = true;
+
       appendDebugLog("agent:run:end", {
         iteration: this.state.currentIteration,
         elapsedMs: Date.now() - agentStartedAt,
@@ -446,6 +463,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         outputTokens: result.usage.outputTokens,
         cacheReadTokens: result.usage.cacheReadTokens,
         cacheCreationTokens: result.usage.cacheCreationTokens,
+        estimated: result.usage.estimated ?? false,
       });
 
       if (this.stopRequested) {
@@ -473,6 +491,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
+      if (this.activeIterationTokensEstimated) {
+        this.state.tokensEstimated = true;
+        this.activeIterationTokensEstimated = false;
+      }
 
       if (
         this.pendingAbortReason &&

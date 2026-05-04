@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -70,6 +76,31 @@ describe("git shell injection regression", () => {
 
     const subject = rawGit(["log", "-1", "--pretty=%s"], repo);
     expect(subject).toBe(message);
+  });
+
+  it("commitAll retries with --no-verify and restages hook changes", () => {
+    const repo = makeRepo();
+    repos.push(repo);
+    writeFileSync(join(repo, "work.txt"), "work\n", "utf-8");
+    const hook = join(repo, ".git", "hooks", "pre-commit");
+    writeFileSync(
+      hook,
+      "#!/bin/sh\nprintf 'hook change\\n' > hook.txt\nexit 1\n",
+      "utf-8",
+    );
+    chmodSync(hook, 0o755);
+
+    commitAll("feat: commit despite hook", repo);
+
+    const subject = rawGit(["log", "-1", "--pretty=%s"], repo);
+    expect(subject).toBe("feat: commit despite hook");
+    const committedFiles = rawGit(
+      ["show", "--name-only", "--pretty=", "HEAD"],
+      repo,
+    )
+      .split("\n")
+      .filter(Boolean);
+    expect(committedFiles).toEqual(["hook.txt", "work.txt"]);
   });
 
   it("createBranch treats shell metacharacters in a valid branch name as inert text", () => {
