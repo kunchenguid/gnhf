@@ -69,6 +69,17 @@ vi.mock("./opencode.js", () => {
   return { OpenCodeAgent };
 });
 
+vi.mock("./swival.js", () => {
+  const SwivalAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "swival";
+    this.deps = deps;
+  });
+  return { SwivalAgent };
+});
+
 vi.mock("./acp.js", () => {
   const AcpAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -89,6 +100,7 @@ import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
+import { SwivalAgent } from "./swival.js";
 import type { RunInfo } from "../run.js";
 
 const stubRunInfo: RunInfo = {
@@ -368,6 +380,46 @@ describe("createAgent", () => {
     });
   });
 
+  it("creates a SwivalAgent when name is 'swival'", () => {
+    const agent = createAgent("swival", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(SwivalAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("swival");
+  });
+
+  it("passes path override and extra args through to the SwivalAgent", () => {
+    const agent = createAgent(
+      "swival",
+      stubRunInfo,
+      "/custom/swival",
+      ["--provider", "openrouter", "--model", "z-ai/glm-5.1"],
+      { includeStopField: false },
+    );
+
+    expect(SwivalAgent).toHaveBeenCalledWith({
+      bin: "/custom/swival",
+      extraArgs: ["--provider", "openrouter", "--model", "z-ai/glm-5.1"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("swival");
+  });
+
+  it("hands SwivalAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("swival", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(SwivalAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
+  });
+
   it("creates an AcpAgent when the spec uses an acp: prefix", () => {
     const agent = createAgent("acp:gemini", stubRunInfo, undefined, undefined, {
       includeStopField: false,
@@ -419,8 +471,6 @@ describe("createAgent", () => {
     createAgent("acp:gemini", stubRunInfo, "/custom", ["--model", "x"], {
       includeStopField: false,
     });
-    // The factory should not forward pathOverride or extraArgs to AcpAgent;
-    // override semantics for ACP targets aren't defined in v1.
     expect(AcpAgent).toHaveBeenCalledWith({
       target: "gemini",
       schema: noStopSchema,
