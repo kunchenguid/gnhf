@@ -23,6 +23,7 @@ export interface ExitSummaryOptions {
   diffStats: BranchDiffStats;
   color: boolean;
   terminalColumns?: number;
+  hasPendingCommitFailure?: boolean;
 }
 
 const MIN_CARD_WIDTH = 62;
@@ -212,6 +213,14 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
     "",
     commandLine(s.dim("notes"), options.notesPath),
     commandLine(s.dim("debug log"), options.logPath),
+    ...(options.hasPendingCommitFailure
+      ? [
+          commandLine(
+            s.yellow("uncommitted"),
+            "commit failed; changes were left for repair",
+          ),
+        ]
+      : []),
     "",
     commandLine(
       s.dim("next steps"),

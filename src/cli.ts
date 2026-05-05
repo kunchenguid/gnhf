@@ -1061,6 +1061,7 @@ program
           diffStats,
           color: shouldUseColor(),
           terminalColumns: process.stdout.columns,
+          hasPendingCommitFailure: finalState.hasPendingCommitFailure,
         });
 
         appendDebugLog("run:complete", {

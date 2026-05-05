@@ -60,6 +60,7 @@ export interface OrchestratorState {
   waitingUntil: Date | null;
   lastMessage: string | null;
   lastAgentError?: string | null;
+  hasPendingCommitFailure?: boolean;
 }
 
 export interface OrchestratorEvents {
@@ -106,7 +107,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private loopDone = false;
   private stoppedEventEmitted = false;
 
-  private state: Omit<OrchestratorState, "interruptHint"> = {
+  private state: Omit<
+    OrchestratorState,
+    "interruptHint" | "hasPendingCommitFailure"
+  > = {
     status: "running",
     gracefulStopRequested: false,
     currentIteration: 0,
@@ -154,6 +158,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       tokensEstimated:
         this.state.tokensEstimated || this.activeIterationTokensEstimated,
       interruptHint: getInterruptHint(this.state),
+      hasPendingCommitFailure: this.pendingCommitFailure !== null,
     };
   }
 

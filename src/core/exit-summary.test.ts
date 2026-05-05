@@ -84,6 +84,22 @@ describe("renderExitSummary", () => {
     );
   });
 
+  it("warns when commit failure repairs leave uncommitted changes", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        status: "aborted",
+        abortReason: "max iterations reached",
+        hasPendingCommitFailure: true,
+        color: false,
+      }),
+    );
+
+    expect(summary).toContain(
+      "uncommitted     commit failed; changes were left for repair",
+    );
+  });
+
   it("adds ANSI color when requested", () => {
     const summary = renderExitSummary({ ...baseSummary, color: true });
 
