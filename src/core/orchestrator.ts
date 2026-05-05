@@ -561,7 +561,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       });
 
       if (err instanceof PermanentAgentError) {
-        resetHard(this.cwd);
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
         this.state.lastAgentError = err.detail;
         return { type: "aborted", reason: err.message };
       }

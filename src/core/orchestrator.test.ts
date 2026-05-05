@@ -1129,6 +1129,43 @@ describe("Orchestrator stop limits", () => {
       hasPendingCommitFailure: true,
     });
   });
+
+  it("preserves pending commit failure changes when repair hits permanent agent error", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockRejectedValueOnce(
+          new PermanentAgentError(
+            "claude credit balance too low - see gnhf.log",
+            "claude exited with code 1: Credit balance is too low",
+          ),
+        ),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasPendingCommitFailure: true,
+      lastAgentError: "claude exited with code 1: Credit balance is too low",
+    });
+  });
 });
 
 describe("Orchestrator backoff behavior", () => {
