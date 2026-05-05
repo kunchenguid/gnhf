@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.36](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.35...gnhf-v0.1.36) (2026-05-05)
+
+
+### Features
+
+* **cli:** support pushing current-branch runs ([#132](https://github.com/kunchenguid/gnhf/issues/132)) ([306bdec](https://github.com/kunchenguid/gnhf/commit/306bdec6f54b011a552985ea4a57be6bf7c2e7ac))
+
+
+### Bug Fixes
+
+* **core:** preserve commit-failure workspaces for repair ([#134](https://github.com/kunchenguid/gnhf/issues/134)) ([bfb90cc](https://github.com/kunchenguid/gnhf/commit/bfb90ccbd9a46aad3dcd39def5d2ffc3e78c65e9))
+
 ## [0.1.35](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.34...gnhf-v0.1.35) (2026-05-03)
 
 
