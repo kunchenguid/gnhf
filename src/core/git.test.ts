@@ -13,6 +13,7 @@ import {
   getBranchCommitCount,
   getBranchDiffStats,
   getCurrentBranch,
+  pushCurrentBranch,
   resetHard,
   getRepoRootDir,
   createWorktree,
@@ -240,6 +241,46 @@ describe("git utilities", () => {
       });
 
       expect(() => commitAll("empty", "/repo")).not.toThrow();
+    });
+  });
+
+  describe("pushCurrentBranch", () => {
+    it("pushes to the configured upstream when one exists", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-parse") return "origin/main\n";
+        return "";
+      });
+
+      pushCurrentBranch("/repo");
+
+      expect(argsOfCall(0)).toEqual([
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+      ]);
+      expect(argsOfCall(1)).toEqual(["push"]);
+    });
+
+    it("sets origin as upstream when the branch has no upstream", () => {
+      mockExecFileSync.mockImplementation((_cmd, args) => {
+        const argv = args as string[];
+        if (argv[0] === "rev-parse") throw new Error("no upstream");
+        if (argv[0] === "remote") return "git@example.com:org/repo.git\n";
+        return "";
+      });
+
+      pushCurrentBranch("/repo");
+
+      expect(argsOfCall(0)).toEqual([
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{upstream}",
+      ]);
+      expect(argsOfCall(1)).toEqual(["remote", "get-url", "origin"]);
+      expect(argsOfCall(2)).toEqual(["push", "-u", "origin", "HEAD"]);
     });
   });
 

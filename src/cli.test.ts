@@ -1067,6 +1067,64 @@ describe("cli", () => {
     });
   });
 
+  it("passes push mode to the orchestrator when --push is set", async () => {
+    const { orchestratorCtor } = await runCliWithMocks(["ship it", "--push"], {
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      acpRegistryOverrides: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+      push: true,
+    });
+  });
+
+  it("runs on the current branch without creating a gnhf branch when --current-branch is set", async () => {
+    const createBranch = vi.fn();
+    const { setupRun, orchestratorCtor } = await runCliWithMocks(
+      ["ship it", "--current-branch"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      { createBranch },
+    );
+
+    expect(createBranch).not.toHaveBeenCalled();
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      { includeStopField: false },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(process.cwd());
+  });
+
+  it("rejects combining --current-branch and --worktree", async () => {
+    await expect(
+      runCliWithMocks(["ship it", "--current-branch", "--worktree"], {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      }),
+    ).rejects.toThrow("process.exit unexpectedly called with 1");
+  });
+
   it("treats --prevent-sleep as a runtime override without passing it to config bootstrap", async () => {
     const { loadConfig, orchestratorCtor, startSleepPrevention } =
       await runCliWithMocks(["ship it", "--prevent-sleep", "off"], {

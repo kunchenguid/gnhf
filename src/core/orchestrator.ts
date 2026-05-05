@@ -15,6 +15,7 @@ import {
   getBranchCommitCount,
   getCurrentBranch,
   getHeadCommit,
+  pushCurrentBranch,
   resetHard,
 } from "./git.js";
 import {
@@ -72,12 +73,18 @@ export interface RunLimits {
   maxIterations?: number;
   maxTokens?: number;
   stopWhen?: string;
+  push?: boolean;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
 
 type RunIterationResult =
-  | { type: "completed"; record: IterationRecord; shouldFullyStop: boolean }
+  | {
+      type: "completed";
+      record: IterationRecord;
+      shouldFullyStop: boolean;
+      abortReason?: string;
+    }
   | { type: "stopped" }
   | { type: "aborted"; reason: string };
 
@@ -239,6 +246,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
       maxTokens: this.limits.maxTokens,
+      push: this.limits.push === true,
       maxConsecutiveFailures: this.config.maxConsecutiveFailures,
       baseCommit: this.runInfo.baseCommit,
       initialCommitCount: this.state.commitCount,
@@ -318,6 +326,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           tokensEstimated: this.state.tokensEstimated,
           commitCount: this.state.commitCount,
         });
+
+        if (result.abortReason) {
+          this.abort(result.abortReason);
+          break;
+        }
 
         if (this.stopForGracefulShutdown()) {
           break;
@@ -473,10 +486,14 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       const shouldFullyStop = result.output.should_fully_stop === true;
 
       if (result.output.success) {
+        const record = this.recordSuccess(result.output);
+        const abortReason =
+          this.limits.push === true ? this.pushAfterSuccess() : undefined;
         return {
           type: "completed",
-          record: this.recordSuccess(result.output),
+          record,
           shouldFullyStop,
+          ...(abortReason === undefined ? {} : { abortReason }),
         };
       }
       return {
@@ -576,6 +593,23 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       keyLearnings: toStringArray(output.key_learnings),
       timestamp: new Date(),
     };
+  }
+
+  private pushAfterSuccess(): string | undefined {
+    try {
+      pushCurrentBranch(this.cwd);
+      appendDebugLog("git:push:success", {
+        iteration: this.state.currentIteration,
+      });
+      return undefined;
+    } catch (err) {
+      appendDebugLog("git:push:error", {
+        iteration: this.state.currentIteration,
+        error: serializeError(err),
+      });
+      const message = err instanceof Error ? err.message : String(err);
+      return `push failed: ${message}`;
+    }
   }
 
   private recordFailure(

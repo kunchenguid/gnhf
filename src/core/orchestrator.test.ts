@@ -5,6 +5,7 @@ vi.mock("./git.js", () => ({
   getBranchCommitCount: vi.fn(() => 0),
   getCurrentBranch: vi.fn(() => "gnhf/run-abc"),
   getHeadCommit: vi.fn(() => "head123"),
+  pushCurrentBranch: vi.fn(),
   resetHard: vi.fn(),
 }));
 
@@ -30,7 +31,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
   buildIterationPrompt: vi.fn(() => "iteration prompt"),
 }));
 
-import { commitAll, resetHard } from "./git.js";
+import { commitAll, pushCurrentBranch, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
 import { appendDebugLog } from "./debug-log.js";
 import { Orchestrator } from "./orchestrator.js";
@@ -44,6 +45,7 @@ import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 
 const mockCommitAll = vi.mocked(commitAll);
+const mockPushCurrentBranch = vi.mocked(pushCurrentBranch);
 const mockAppendNotes = vi.mocked(appendNotes);
 const mockResetHard = vi.mocked(resetHard);
 const mockAppendDebugLog = vi.mocked(appendDebugLog);
@@ -1313,5 +1315,61 @@ describe("Orchestrator crash resilience", () => {
     expect(mockAppendNotes).toHaveBeenCalledTimes(1);
     expect(mockCommitAll).toHaveBeenCalledTimes(1);
     expect(mockResetHard).not.toHaveBeenCalled();
+  });
+
+  it("pushes the current branch after each successful commit when requested", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1, push: true },
+    );
+
+    await orchestrator.start();
+
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockPushCurrentBranch).toHaveBeenCalledWith("/repo");
+    expect(mockResetHard).not.toHaveBeenCalled();
+  });
+
+  it("aborts without resetting when pushing a successful commit fails", async () => {
+    mockPushCurrentBranch.mockImplementation(() => {
+      throw new Error("remote rejected push");
+    });
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2, push: true },
+    );
+    const abort = vi.fn();
+    const iterationEnd = vi.fn();
+    orchestrator.on("abort", abort);
+    orchestrator.on("iteration:end", iterationEnd);
+
+    await orchestrator.start();
+
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockPushCurrentBranch).toHaveBeenCalledWith("/repo");
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(iterationEnd).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledWith("push failed: remote rejected push");
+    expect(orchestrator.getState().status).toBe("aborted");
   });
 });

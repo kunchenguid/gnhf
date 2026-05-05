@@ -236,6 +236,26 @@ export function commitAll(message: string, cwd: string): void {
   }
 }
 
+export function pushCurrentBranch(cwd: string): void {
+  let hasUpstream = true;
+  try {
+    git(
+      ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+      cwd,
+    );
+  } catch {
+    hasUpstream = false;
+  }
+
+  if (hasUpstream) {
+    git(["push"], cwd);
+    return;
+  }
+
+  git(["remote", "get-url", "origin"], cwd);
+  git(["push", "-u", "origin", "HEAD"], cwd);
+}
+
 export function resetHard(cwd: string): void {
   git(["reset", "--hard", "HEAD"], cwd);
   git(["clean", "-fd"], cwd);

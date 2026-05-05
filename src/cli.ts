@@ -207,6 +207,20 @@ function initializeNewBranch(
   return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
 }
 
+function initializeCurrentBranchRun(
+  prompt: string,
+  cwd: string,
+  schemaOptions: RunSchemaOptions,
+): RunInfo {
+  ensureCleanWorkingTree(cwd);
+  const baseCommit = getHeadCommit(cwd);
+  const runId = createRunIdWithSuffix(
+    slugifyPrompt(prompt).split("/")[1]!,
+    cwd,
+  );
+  return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
+}
+
 function branchNameWithSuffix(branchName: string, suffix: number): string {
   return suffix === 0 ? branchName : `${branchName}-${suffix}`;
 }
@@ -227,6 +241,20 @@ function createBranchWithSuffix(branchName: string, cwd: string): string {
     }
   }
   throw new Error(`Unable to create a unique branch name for ${branchName}`);
+}
+
+function runIdWithSuffix(runId: string, suffix: number): string {
+  return suffix === 0 ? runId : `${runId}-${suffix}`;
+}
+
+function createRunIdWithSuffix(runId: string, cwd: string): string {
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const candidate = runIdWithSuffix(runId, suffix);
+    if (!existsSync(join(cwd, ".gnhf", "runs", candidate))) {
+      return candidate;
+    }
+  }
+  throw new Error(`Unable to create a unique run id for ${runId}`);
 }
 
 interface WorktreeRunResult {
@@ -531,6 +559,16 @@ program
     "Run in a separate git worktree (enables multiple agents on the same repo)",
     false,
   )
+  .option(
+    "--current-branch",
+    "Run on the current branch instead of creating a gnhf branch",
+    false,
+  )
+  .option(
+    "--push",
+    "Push the current branch after each successful iteration",
+    false,
+  )
   .option("--mock", "", false)
   .action(
     async (
@@ -542,6 +580,8 @@ program
         stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
+        currentBranch: boolean;
+        push: boolean;
         mock: boolean;
       },
     ) => {
@@ -626,6 +666,11 @@ program
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
 
+      if (options.currentBranch && options.worktree) {
+        console.error("Cannot combine --current-branch and --worktree.");
+        process.exit(1);
+      }
+
       const cliStopWhen =
         options.stopWhen === "" ? undefined : options.stopWhen;
       let effectiveStopWhen = cliStopWhen;
@@ -694,6 +739,13 @@ program
             }
           });
         }
+      } else if (options.currentBranch) {
+        if (!prompt) {
+          program.help();
+          return;
+        }
+
+        runInfo = initializeCurrentBranchRun(prompt, cwd, schemaOptions);
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
         const existingMetadata = peekRunMetadata(existingRunId, cwd);
@@ -812,11 +864,14 @@ program
         }
       }
 
-      const runMode: "new" | "resume" | "worktree" = options.worktree
-        ? "worktree"
-        : startIteration > 0
-          ? "resume"
-          : "new";
+      const runMode: "new" | "resume" | "worktree" | "current-branch" =
+        options.worktree
+          ? "worktree"
+          : options.currentBranch
+            ? "current-branch"
+            : startIteration > 0
+              ? "resume"
+              : "new";
 
       const telemetryAgent = getTelemetryAgent(config.agent);
       telemetry.pageview("/run", {
@@ -843,6 +898,8 @@ program
           : undefined,
         worktree: options.worktree,
         worktreePath,
+        currentBranch: options.currentBranch,
+        push: options.push,
         platform: process.platform,
         nodeVersion: process.version,
         gnhfVersion: packageVersion,
@@ -870,6 +927,7 @@ program
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
           stopWhen: effectiveStopWhen,
+          ...(options.push ? { push: true } : {}),
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;
@@ -1030,6 +1088,7 @@ program
           total_output_tokens: finalState.totalOutputTokens,
           duration_ms: Date.now() - runStartedAt,
           prevent_sleep: config.preventSleep === true,
+          push_each_iteration: options.push === true,
           commit_message_preset: effectiveCommitMessage?.preset ?? "default",
           stop_when_set: effectiveStopWhen !== undefined,
         });

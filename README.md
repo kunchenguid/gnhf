@@ -71,6 +71,11 @@ $ gnhf --worktree "add tests for module Y" &
 $ gnhf --worktree "refactor the API layer" &
 ```
 
+```sh
+# Commit directly on the current branch and push after each successful iteration
+$ gnhf --current-branch --push "keep improving this app"
+```
+
 Run `gnhf` from inside a Git repository with a clean working tree. If you are starting from a plain directory, run `git init` first.
 `gnhf` supports macOS, Linux, and Windows.
 
@@ -101,7 +106,7 @@ npm link
                            ▼
                 ┌──────────────────────┐
                 │  validate clean git  │
-                │  create gnhf/ branch │
+                │  create or use branch │
                 │  write prompt.md     │
                 └──────────┬───────────┘
                            ▼
@@ -148,6 +153,16 @@ npm link
 - **Local run metadata** — gnhf stores prompt, notes, stop conditions, and commit-message convention metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
 
+### Live Branch Mode
+
+Pass `--current-branch` to run on the branch you are already on instead of creating a `gnhf/` branch.
+Pass `--push` to push the current branch after each successful iteration.
+Together, `--current-branch --push` is useful for loose projects where you want a deployed or locally watched branch to update throughout the run.
+
+- Push failures abort the run after preserving the successful local commit.
+- gnhf never force-pushes or auto-pulls for this mode.
+- `--push` also works with the default `gnhf/` branch mode and sets `origin` as the upstream when needed.
+
 ### Worktree Mode
 
 Pass `--worktree` to run each agent in an isolated [git worktree](https://git-scm.com/docs/git-worktree). This lets you launch multiple agents on the same repo simultaneously — each gets its own working directory and branch without interfering with the others or your main checkout.
@@ -185,6 +200,8 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume                             | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                     | config file (`on`)     |
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                  | `false`                |
+| `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                         | `false`                |
+| `--push`                 | Push the current branch after each successful iteration                                                | `false`                |
 | `--version`              | Show version                                                                                           |                        |
 
 ## Configuration
