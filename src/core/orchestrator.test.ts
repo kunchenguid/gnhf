@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("./git.js", () => ({
-  commitAll: vi.fn(),
-  getBranchCommitCount: vi.fn(() => 0),
-  getCurrentBranch: vi.fn(() => "gnhf/run-abc"),
-  getHeadCommit: vi.fn(() => "head123"),
-  pushCurrentBranch: vi.fn(),
-  resetHard: vi.fn(),
-}));
+vi.mock("./git.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./git.js")>();
+  return {
+    ...actual,
+    commitAll: vi.fn(),
+    getBranchCommitCount: vi.fn(() => 0),
+    getCurrentBranch: vi.fn(() => "gnhf/run-abc"),
+    getHeadCommit: vi.fn(() => "head123"),
+    pushCurrentBranch: vi.fn(),
+    resetHard: vi.fn(),
+  };
+});
 
 vi.mock("./run.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./run.js")>();
@@ -31,7 +35,12 @@ vi.mock("../templates/iteration-prompt.js", () => ({
   buildIterationPrompt: vi.fn(() => "iteration prompt"),
 }));
 
-import { commitAll, pushCurrentBranch, resetHard } from "./git.js";
+import {
+  CommitFailedError,
+  commitAll,
+  pushCurrentBranch,
+  resetHard,
+} from "./git.js";
 import { appendNotes } from "./run.js";
 import { appendDebugLog } from "./debug-log.js";
 import { Orchestrator } from "./orchestrator.js";
@@ -1000,6 +1009,162 @@ describe("Orchestrator stop limits", () => {
     expect(orchestrator.getState().iterations).toEqual([]);
     expect(orchestrator.getState().status).toBe("stopped");
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears pending commit failure state after force-stop reset", async () => {
+    vi.useFakeTimers();
+
+    let rejectRepair!: (error: Error) => void;
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockImplementationOnce(
+          (_prompt, _cwd, options) =>
+            new Promise<AgentResult>((_resolve, reject) => {
+              rejectRepair = reject;
+              options?.signal?.addEventListener("abort", () => {
+                reject(new Error("Agent was aborted"));
+              });
+            }),
+        ),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+    expect(orchestrator.getState().hasPendingCommitFailure).toBe(true);
+
+    orchestrator.stop();
+    await vi.runAllTimersAsync();
+    rejectRepair(new Error("Agent was aborted"));
+    await startPromise;
+
+    expect(mockResetHard).toHaveBeenCalled();
+    expect(orchestrator.getState().hasPendingCommitFailure).toBe(false);
+  });
+
+  it("preserves pending commit failure state when a repair iteration errors", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockRejectedValueOnce(new Error("network down")),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState().hasPendingCommitFailure).toBe(true);
+  });
+
+  it("preserves pending commit failure changes when repair hits token limit", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockImplementationOnce(
+          (_prompt, _cwd, options) =>
+            new Promise<AgentResult>((_resolve, reject) => {
+              options?.signal?.addEventListener("abort", () => {
+                reject(new Error("Agent was aborted"));
+              });
+              options?.onUsage?.({
+                inputTokens: 11,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
+              });
+            }),
+        ),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 10 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasPendingCommitFailure: true,
+    });
+  });
+
+  it("preserves pending commit failure changes when repair hits permanent agent error", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockRejectedValueOnce(
+          new PermanentAgentError(
+            "claude credit balance too low - see gnhf.log",
+            "claude exited with code 1: Credit balance is too low",
+          ),
+        ),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasPendingCommitFailure: true,
+      lastAgentError: "claude exited with code 1: Credit balance is too low",
+    });
   });
 });
 

@@ -2,7 +2,7 @@
 
 import console from "node:console";
 import { Buffer } from "node:buffer";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import process from "node:process";
@@ -143,6 +143,24 @@ function applyWorkspaceChange(sessionId) {
   const session = sessions.get(sessionId);
   if (!session?.directory) return;
 
+  if (process.env.GNHF_MOCK_OPENCODE_PRECOMMIT_REPAIR === "1") {
+    const readmePath = join(session.directory, "README.md");
+    const current = readFileSync(readmePath, "utf-8");
+    if (session.lastPrompt?.includes("pre-commit hook failed")) {
+      writeFileSync(
+        readmePath,
+        current.replace("FORBIDDEN", "fixed by mock agent"),
+        "utf-8",
+      );
+      appendLog("workspace:repaired", { sessionId });
+      return;
+    }
+
+    appendFileSync(readmePath, "FORBIDDEN\n", "utf-8");
+    appendLog("workspace:changed", { sessionId, marker: "FORBIDDEN" });
+    return;
+  }
+
   const marker = `- mock change ${Date.now()}\n`;
   appendFileSync(join(session.directory, "README.md"), marker, "utf-8");
   appendLog("workspace:changed", { sessionId, marker: marker.trim() });
@@ -186,6 +204,8 @@ const server = createServer(async (req, res) => {
     const sessionId = match[1];
     const body = await readJson(req);
     const prompt = body.parts?.[0]?.text ?? "";
+    const session = sessions.get(sessionId);
+    if (session) session.lastPrompt = String(prompt);
     appendLog("message:start", { sessionId, prompt });
 
     if (String(prompt).includes("slow cleanup")) {
@@ -224,6 +244,8 @@ const server = createServer(async (req, res) => {
     const sessionId = match[1];
     const body = await readJson(req);
     const prompt = body.parts?.[0]?.text ?? "";
+    const session = sessions.get(sessionId);
+    if (session) session.lastPrompt = String(prompt);
     appendLog("message:start", { sessionId, prompt });
 
     if (String(prompt).includes("slow cleanup")) {

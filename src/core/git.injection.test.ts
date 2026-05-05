@@ -3,6 +3,7 @@ import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -10,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { commitAll, createBranch } from "./git.js";
+import { CommitFailedError, commitAll, createBranch } from "./git.js";
 
 function rawGit(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();
@@ -78,7 +79,7 @@ describe("git shell injection regression", () => {
     expect(subject).toBe(message);
   });
 
-  it("commitAll retries with --no-verify and restages hook changes", () => {
+  it("commitAll throws and leaves hook failures for the agent to repair", () => {
     const repo = makeRepo();
     repos.push(repo);
     writeFileSync(join(repo, "work.txt"), "work\n", "utf-8");
@@ -90,17 +91,14 @@ describe("git shell injection regression", () => {
     );
     chmodSync(hook, 0o755);
 
-    commitAll("feat: commit despite hook", repo);
+    expect(() => commitAll("feat: commit despite hook", repo)).toThrow(
+      CommitFailedError,
+    );
 
     const subject = rawGit(["log", "-1", "--pretty=%s"], repo);
-    expect(subject).toBe("feat: commit despite hook");
-    const committedFiles = rawGit(
-      ["show", "--name-only", "--pretty=", "HEAD"],
-      repo,
-    )
-      .split("\n")
-      .filter(Boolean);
-    expect(committedFiles).toEqual(["hook.txt", "work.txt"]);
+    expect(subject).toBe("init");
+    expect(readFileSync(join(repo, "work.txt"), "utf-8")).toBe("work\n");
+    expect(readFileSync(join(repo, "hook.txt"), "utf-8")).toBe("hook change\n");
   });
 
   it("createBranch treats shell metacharacters in a valid branch name as inert text", () => {

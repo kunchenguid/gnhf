@@ -547,7 +547,7 @@ program
   )
   .option(
     "--stop-when <condition>",
-    'End when the agent reports this condition; resumes reuse it, pass a new value to overwrite or "" to clear',
+    'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
   .option(
     "--prevent-sleep <mode>",
@@ -1061,6 +1061,7 @@ program
           diffStats,
           color: shouldUseColor(),
           terminalColumns: process.stdout.columns,
+          hasPendingCommitFailure: finalState.hasPendingCommitFailure,
         });
 
         appendDebugLog("run:complete", {
@@ -1099,7 +1100,10 @@ program
         }
 
         if (worktreePath) {
-          if (finalState.commitCount > 0) {
+          if (
+            finalState.commitCount > 0 ||
+            finalState.hasPendingCommitFailure
+          ) {
             worktreeCleanup = null;
             console.error(
               `\n  gnhf: worktree preserved at ${worktreePath}` +

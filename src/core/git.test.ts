@@ -6,6 +6,7 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync } from "node:child_process";
 import {
+  CommitFailedError,
   ensureCleanWorkingTree,
   createBranch,
   commitAll,
@@ -39,6 +40,16 @@ function optionsOfCall(index: number): {
     cwd?: string;
     env?: Record<string, string | undefined>;
   };
+}
+
+function mockStagedChanges(): void {
+  mockExecFileSync.mockImplementation((_cmd, args) => {
+    const argv = args as string[];
+    if (argv[0] === "diff" && argv[1] === "--cached") {
+      throw new Error("staged changes");
+    }
+    return "";
+  });
 }
 
 describe("git utilities", () => {
@@ -148,9 +159,13 @@ describe("git utilities", () => {
 
   describe("commitAll", () => {
     it("stages all files and passes the message as its own argv entry", () => {
+      mockStagedChanges();
+
       commitAll("initial commit", "/repo");
+
       expect(argsOfCall(0)).toEqual(["add", "-A"]);
-      expect(argsOfCall(1)).toEqual([
+      expect(argsOfCall(1)).toEqual(["diff", "--cached", "--quiet"]);
+      expect(argsOfCall(2)).toEqual([
         "-c",
         "commit.gpgsign=false",
         "-c",
@@ -162,8 +177,11 @@ describe("git utilities", () => {
     });
 
     it("disables GPG signing on the commit so a configured signing key cannot prompt", () => {
+      mockStagedChanges();
+
       commitAll("anything", "/repo");
-      const args = argsOfCall(1);
+
+      const args = argsOfCall(2);
       expect(args).toContain("commit.gpgsign=false");
       expect(args).toContain("tag.gpgsign=false");
       expect(args.indexOf("commit.gpgsign=false")).toBeLessThan(
@@ -172,38 +190,40 @@ describe("git utilities", () => {
     });
 
     it("preserves shell metacharacters in the message without any escaping", () => {
+      mockStagedChanges();
+
       const injection = "feat: `touch /tmp/pwn` && $(evil) \"quoted\" 'tick'";
       commitAll(injection, "/repo");
-      expect(argsOfCall(1)).toContain(injection);
+
+      expect(argsOfCall(2)).toContain(injection);
     });
 
     it("does not throw when there is nothing to commit", () => {
-      mockExecFileSync.mockImplementation((_cmd, args) => {
-        const argv = args as string[];
-        if (argv.includes("commit")) {
-          throw new Error("nothing to commit");
-        }
-        return "";
-      });
-
       expect(() => commitAll("empty", "/repo")).not.toThrow();
+      expect(mockExecFileSync).toHaveBeenCalledTimes(2);
+      expect(argsOfCall(0)).toEqual(["add", "-A"]);
+      expect(argsOfCall(1)).toEqual(["diff", "--cached", "--quiet"]);
     });
 
-    it("retries with --no-verify when the first commit fails so a failing pre-commit hook does not block the run", () => {
+    it("throws CommitFailedError when commit fails so the agent can repair hook failures", () => {
       mockExecFileSync.mockImplementation((_cmd, args) => {
         const argv = args as string[];
-        if (argv.includes("commit") && !argv.includes("--no-verify")) {
-          throw new Error("pre-commit hook failed");
+        if (argv[0] === "diff" && argv[1] === "--cached") {
+          throw new Error("staged changes");
+        }
+        if (argv.includes("commit")) {
+          throw Object.assign(new Error("Command failed"), {
+            stderr: "pre-commit hook failed",
+          });
         }
         return "";
       });
 
-      expect(() => commitAll("msg", "/repo")).not.toThrow();
+      expect(() => commitAll("msg", "/repo")).toThrow(CommitFailedError);
 
-      // Sequence: add, commit (fails), re-add (formatter hook may have
-      // modified files), commit --no-verify.
       expect(argsOfCall(0)).toEqual(["add", "-A"]);
-      expect(argsOfCall(1)).toEqual([
+      expect(argsOfCall(1)).toEqual(["diff", "--cached", "--quiet"]);
+      expect(argsOfCall(2)).toEqual([
         "-c",
         "commit.gpgsign=false",
         "-c",
@@ -212,35 +232,16 @@ describe("git utilities", () => {
         "-m",
         "msg",
       ]);
-      expect(argsOfCall(2)).toEqual(["add", "-A"]);
-      expect(argsOfCall(3)).toEqual([
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "tag.gpgsign=false",
-        "commit",
-        "-m",
-        "msg",
-        "--no-verify",
-      ]);
+      expect(mockExecFileSync).toHaveBeenCalledTimes(3);
     });
 
     it("does not retry with --no-verify when the first commit succeeds", () => {
+      mockStagedChanges();
+
       commitAll("msg", "/repo");
-      expect(mockExecFileSync.mock.calls.length).toBe(2);
-      expect(argsOfCall(1)).not.toContain("--no-verify");
-    });
 
-    it("does not throw when both the normal and --no-verify commits fail (nothing to commit)", () => {
-      mockExecFileSync.mockImplementation((_cmd, args) => {
-        const argv = args as string[];
-        if (argv.includes("commit")) {
-          throw new Error("nothing to commit");
-        }
-        return "";
-      });
-
-      expect(() => commitAll("empty", "/repo")).not.toThrow();
+      expect(mockExecFileSync.mock.calls.length).toBe(3);
+      expect(argsOfCall(2)).not.toContain("--no-verify");
     });
   });
 

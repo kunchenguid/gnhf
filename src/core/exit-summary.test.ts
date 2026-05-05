@@ -40,7 +40,7 @@ describe("renderExitSummary", () => {
       "opencode worked for 47m 12s on gnhf/refactor-auth-flow",
     );
     expect(summary).toContain(
-      "iterations      8 total       6 good       2 rolled back",
+      "iterations      8 total       6 good       2 failed",
     );
     expect(summary).toContain("tokens          12.4M in      96K out");
     expect(summary).toContain(
@@ -81,6 +81,22 @@ describe("renderExitSummary", () => {
     expect(summary).toContain("× gnhf stopped");
     expect(summary).toContain(
       "opencode ran for 47m 12s before: 3 consecutive failures",
+    );
+  });
+
+  it("warns when commit failure repairs leave uncommitted changes", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        status: "aborted",
+        abortReason: "max iterations reached",
+        hasPendingCommitFailure: true,
+        color: false,
+      }),
+    );
+
+    expect(summary).toContain(
+      "uncommitted     commit failed; changes were left for repair",
     );
   });
 

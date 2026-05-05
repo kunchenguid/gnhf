@@ -11,6 +11,7 @@ import type { RunInfo } from "./run.js";
 import { appendNotes, toStringArray } from "./run.js";
 import { appendDebugLog, serializeError } from "./debug-log.js";
 import {
+  CommitFailedError,
   commitAll,
   getBranchCommitCount,
   getCurrentBranch,
@@ -59,6 +60,7 @@ export interface OrchestratorState {
   waitingUntil: Date | null;
   lastMessage: string | null;
   lastAgentError?: string | null;
+  hasPendingCommitFailure?: boolean;
 }
 
 export interface OrchestratorEvents {
@@ -100,11 +102,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeIterationPromise: Promise<RunIterationResult> | null = null;
   private activeAbortController: AbortController | null = null;
   private pendingAbortReason: string | null = null;
+  private pendingCommitFailure: string | null = null;
   private activeIterationTokensEstimated = false;
   private loopDone = false;
   private stoppedEventEmitted = false;
 
-  private state: Omit<OrchestratorState, "interruptHint"> = {
+  private state: Omit<
+    OrchestratorState,
+    "interruptHint" | "hasPendingCommitFailure"
+  > = {
     status: "running",
     gracefulStopRequested: false,
     currentIteration: 0,
@@ -152,6 +158,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       tokensEstimated:
         this.state.tokensEstimated || this.activeIterationTokensEstimated,
       interruptHint: getInterruptHint(this.state),
+      hasPendingCommitFailure: this.pendingCommitFailure !== null,
     };
   }
 
@@ -227,6 +234,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         await this.closeAgent();
       }
       resetHard(this.cwd);
+      this.pendingCommitFailure = null;
       this.state.status = "stopped";
       this.emit("state", this.getState());
       this.emitStopped();
@@ -268,13 +276,16 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.emit("iteration:start", this.state.currentIteration);
         this.emit("state", this.getState());
 
-        const iterationPrompt = buildIterationPrompt({
+        const baseIterationPrompt = buildIterationPrompt({
           n: this.state.currentIteration,
           runId: this.runInfo.runId,
           prompt: this.prompt,
           stopWhen: this.limits.stopWhen,
           commitMessage: this.config.commitMessage,
         });
+        const iterationPrompt = this.pendingCommitFailure
+          ? this.buildCommitRepairPrompt(baseIterationPrompt)
+          : baseIterationPrompt;
 
         appendDebugLog("iteration:start", {
           iteration: this.state.currentIteration,
@@ -488,11 +499,13 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       if (result.output.success) {
         const record = this.recordSuccess(result.output);
         const abortReason =
-          this.limits.push === true ? this.pushAfterSuccess() : undefined;
+          record.success && this.limits.push === true
+            ? this.pushAfterSuccess()
+            : undefined;
         return {
           type: "completed",
           record,
-          shouldFullyStop,
+          shouldFullyStop: record.success ? shouldFullyStop : false,
           ...(abortReason === undefined ? {} : { abortReason }),
         };
       }
@@ -523,7 +536,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           elapsedMs,
           reason: this.pendingAbortReason,
         });
-        resetHard(this.cwd);
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
         return { type: "aborted", reason: this.pendingAbortReason };
       }
 
@@ -546,7 +561,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       });
 
       if (err instanceof PermanentAgentError) {
-        resetHard(this.cwd);
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
         this.state.lastAgentError = err.detail;
         return { type: "aborted", reason: err.message };
       }
@@ -564,18 +581,29 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   }
 
   private recordSuccess(output: AgentOutput): IterationRecord {
+    const keyChanges = toStringArray(output.key_changes_made);
+    const keyLearnings = toStringArray(output.key_learnings);
+    try {
+      commitAll(
+        buildCommitMessage(this.config.commitMessage, output, {
+          iteration: this.state.currentIteration,
+        }),
+        this.cwd,
+      );
+    } catch (error) {
+      if (error instanceof CommitFailedError) {
+        return this.recordCommitFailure(error);
+      }
+      throw error;
+    }
+
+    this.pendingCommitFailure = null;
     appendNotes(
       this.runInfo.notesPath,
       this.state.currentIteration,
       output.summary,
-      toStringArray(output.key_changes_made),
-      toStringArray(output.key_learnings),
-    );
-    commitAll(
-      buildCommitMessage(this.config.commitMessage, output, {
-        iteration: this.state.currentIteration,
-      }),
-      this.cwd,
+      keyChanges,
+      keyLearnings,
     );
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
@@ -589,8 +617,48 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       number: this.state.currentIteration,
       success: true,
       summary: output.summary,
-      keyChanges: toStringArray(output.key_changes_made),
-      keyLearnings: toStringArray(output.key_learnings),
+      keyChanges,
+      keyLearnings,
+      timestamp: new Date(),
+    };
+  }
+
+  private buildCommitRepairPrompt(basePrompt: string): string {
+    return `${basePrompt}
+
+## Previous Commit Failure
+
+The previous iteration made workspace changes, but gnhf could not commit them because git commit failed.
+Do not start unrelated work.
+Inspect and fix the existing uncommitted changes so the commit can pass, then report success.
+
+Git commit output:
+
+\`\`\`
+${this.pendingCommitFailure}
+\`\`\``;
+  }
+
+  private recordCommitFailure(error: CommitFailedError): IterationRecord {
+    this.pendingCommitFailure = error.detail;
+    const summary = "git commit failed; asking agent to repair the workspace";
+    appendNotes(
+      this.runInfo.notesPath,
+      this.state.currentIteration,
+      `[ERROR] ${summary}`,
+      [],
+      [error.detail],
+    );
+    this.state.failCount++;
+    this.state.consecutiveFailures++;
+    this.state.consecutiveErrors = 0;
+    this.state.lastAgentError = error.detail;
+    return {
+      number: this.state.currentIteration,
+      success: false,
+      summary,
+      keyChanges: [],
+      keyLearnings: [error.detail],
       timestamp: new Date(),
     };
   }
@@ -618,6 +686,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     learnings: string[],
     kind: "reported" | "error",
   ): IterationRecord {
+    const hadPendingCommitFailure = this.pendingCommitFailure !== null;
     appendNotes(
       this.runInfo.notesPath,
       this.state.currentIteration,
@@ -625,7 +694,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       [],
       toStringArray(learnings),
     );
-    resetHard(this.cwd);
+    if (!hadPendingCommitFailure) {
+      resetHard(this.cwd);
+    }
     this.state.failCount++;
     this.state.consecutiveFailures++;
     // Only hard errors (agent threw) escalate the backoff streak. Explicit

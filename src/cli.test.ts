@@ -3020,6 +3020,43 @@ describe("cli", () => {
     expect(listWorktreePaths).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves a new worktree with pending commit repair changes", async () => {
+    const removeWorktree = vi.fn();
+
+    await runCliWithMocks(
+      ["ship it", "--worktree"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+      {
+        removeWorktree,
+        orchestratorGetState: vi.fn(() => ({
+          status: "aborted" as const,
+          gracefulStopRequested: false,
+          currentIteration: 1,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          commitCount: 0,
+          iterations: [],
+          successCount: 0,
+          failCount: 1,
+          consecutiveFailures: 1,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+          waitingUntil: null,
+          lastMessage: null,
+          hasPendingCommitFailure: true,
+        })),
+      },
+    );
+
+    expect(removeWorktree).not.toHaveBeenCalled();
+  });
+
   it("resumes a preserved suffixed worktree instead of creating another one", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
     const repoRoot = join(tempDir, "repo");

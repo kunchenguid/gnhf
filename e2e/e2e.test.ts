@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readdirSync,
@@ -267,6 +268,71 @@ describe("gnhf e2e", () => {
     const debugLogPath = findRunLogPath(cwd);
     const debugEvents = readJsonLines(debugLogPath).map((entry) => entry.event);
     expect(debugEvents).toContain("git:push:success");
+  }, 30_000);
+
+  it("sends failed pre-commit hook output back to the agent for repair", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const hookPath = join(cwd, ".git", "hooks", "pre-commit");
+    writeFileSync(
+      hookPath,
+      [
+        "#!/bin/sh",
+        "if grep -q FORBIDDEN README.md; then",
+        "  echo 'pre-commit hook failed: README contains FORBIDDEN' >&2",
+        "  exit 1",
+        "fi",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    chmodSync(hookPath, 0o755);
+
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "trigger pre-commit repair",
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "2",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_OPENCODE_PRECOMMIT_REPAIR: "1",
+        },
+      },
+    );
+
+    if (result.code !== 0) {
+      throw new Error(
+        `gnhf exited ${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      );
+    }
+    expect(readFileSync(join(cwd, "README.md"), "utf-8")).toContain(
+      "fixed by mock agent",
+    );
+    expect(readFileSync(join(cwd, "README.md"), "utf-8")).not.toContain(
+      "FORBIDDEN",
+    );
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+
+    const prompts = readJsonLines(mockLogPath)
+      .filter((entry) => entry.event === "message:start")
+      .map((entry) => String(entry.prompt));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("pre-commit hook failed");
+    expect(prompts[1]).toContain("README contains FORBIDDEN");
+
+    const debugLogPath = findRunLogPath(cwd);
+    const debugEvents = readJsonLines(debugLogPath).map((entry) => entry.event);
+    expect(debugEvents).toContain("git:commit:failed");
+    expect(debugEvents).not.toContain("git:commit:no-verify-fallback");
   }, 30_000);
 
   it("reads the objective from stdin", async () => {
