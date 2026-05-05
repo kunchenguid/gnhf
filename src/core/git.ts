@@ -10,6 +10,46 @@ function translateGitError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+function outputText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Buffer.isBuffer(value)) return value.toString("utf-8");
+  if (value instanceof Uint8Array) return Buffer.from(value).toString("utf-8");
+  return "";
+}
+
+function formatGitError(error: unknown): string {
+  const parts = [
+    error instanceof Error ? error.message : String(error),
+    outputText((error as { stdout?: unknown }).stdout),
+    outputText((error as { stderr?: unknown }).stderr),
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return [...new Set(parts)].join("\n");
+}
+
+function firstLine(text: string): string {
+  return (
+    text
+      .split("\n")
+      .find((line) => line.trim())
+      ?.trim() ?? text
+  );
+}
+
+export class CommitFailedError extends Error {
+  detail: string;
+
+  constructor(error: unknown) {
+    const detail = formatGitError(error);
+    super(`git commit failed: ${firstLine(detail)}`);
+    this.name = "CommitFailedError";
+    this.detail = detail;
+    this.cause = error;
+  }
+}
+
 // All git invocations go through this helper, which uses execFileSync with an
 // argv array (no shell). That means caller-supplied strings such as commit
 // messages, branch names, and paths are never interpreted by a shell, so
@@ -211,28 +251,22 @@ export function commitAll(message: string, cwd: string): void {
   ];
 
   git(["add", "-A"], cwd);
-  let firstError: unknown;
   try {
-    git(commitArgs, cwd);
+    git(["diff", "--cached", "--quiet"], cwd);
     return;
-  } catch (error) {
-    firstError = error;
+  } catch {
+    // Exit 1 means there are staged changes to commit.
   }
 
-  // First commit failed. Most often this is a pre-commit hook rejecting
-  // the change (or a formatter hook that mutated files and returned
-  // non-zero so the developer re-stages). Re-add to capture any hook
-  // modifications, then retry with --no-verify so a failing hook doesn't
-  // strand the agent's work uncommitted. If the underlying problem was
-  // "nothing to commit", the retry fails the same way and we swallow it.
-  git(["add", "-A"], cwd);
   try {
-    git([...commitArgs, "--no-verify"], cwd);
-    appendDebugLog("git:commit:no-verify-fallback", {
-      firstError: serializeError(firstError),
+    git(commitArgs, cwd);
+  } catch (error) {
+    const commitError = new CommitFailedError(error);
+    appendDebugLog("git:commit:failed", {
+      error: serializeError(error),
+      detail: commitError.detail,
     });
-  } catch {
-    // Nothing to commit (no changes) -- that's fine
+    throw commitError;
   }
 }
 
