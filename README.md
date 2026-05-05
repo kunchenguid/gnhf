@@ -198,7 +198,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `pi`, or `acp:<target-or-command>`) | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                                                       | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                              | unlimited              |
-| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume      | unlimited              |
+| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume     | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                     | config file (`on`)     |
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                  | `false`                |
 | `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                         | `false`                |
