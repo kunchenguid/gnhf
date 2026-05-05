@@ -234,6 +234,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         await this.closeAgent();
       }
       resetHard(this.cwd);
+      this.pendingCommitFailure = null;
       this.state.status = "stopped";
       this.emit("state", this.getState());
       this.emitStopped();

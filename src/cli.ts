@@ -1100,7 +1100,7 @@ program
         }
 
         if (worktreePath) {
-          if (finalState.commitCount > 0) {
+          if (finalState.commitCount > 0 || finalState.hasPendingCommitFailure) {
             worktreeCleanup = null;
             console.error(
               `\n  gnhf: worktree preserved at ${worktreePath}` +
