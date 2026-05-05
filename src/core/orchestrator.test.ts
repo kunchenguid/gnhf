@@ -1057,6 +1057,34 @@ describe("Orchestrator stop limits", () => {
     expect(mockResetHard).toHaveBeenCalled();
     expect(orchestrator.getState().hasPendingCommitFailure).toBe(false);
   });
+
+  it("preserves pending commit failure state when a repair iteration errors", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockRejectedValueOnce(new Error("network down")),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState().hasPendingCommitFailure).toBe(true);
+  });
 });
 
 describe("Orchestrator backoff behavior", () => {

@@ -682,7 +682,7 @@ ${this.pendingCommitFailure}
     learnings: string[],
     kind: "reported" | "error",
   ): IterationRecord {
-    this.pendingCommitFailure = null;
+    const hadPendingCommitFailure = this.pendingCommitFailure !== null;
     appendNotes(
       this.runInfo.notesPath,
       this.state.currentIteration,
@@ -690,7 +690,9 @@ ${this.pendingCommitFailure}
       [],
       toStringArray(learnings),
     );
-    resetHard(this.cwd);
+    if (!hadPendingCommitFailure) {
+      resetHard(this.cwd);
+    }
     this.state.failCount++;
     this.state.consecutiveFailures++;
     // Only hard errors (agent threw) escalate the backoff streak. Explicit
