@@ -547,7 +547,7 @@ program
   )
   .option(
     "--stop-when <condition>",
-    'End when the agent reports this condition; resumes reuse it, pass a new value to overwrite or "" to clear',
+    'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
   .option(
     "--prevent-sleep <mode>",
