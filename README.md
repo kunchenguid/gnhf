@@ -162,6 +162,7 @@ Together, `--current-branch --push` is useful for loose projects where you want 
 - Push failures abort the run after preserving the successful local commit.
 - gnhf never force-pushes or auto-pulls for this mode.
 - `--push` also works with the default `gnhf/` branch mode and sets `origin` as the upstream when needed.
+- Do not combine `--current-branch` with `--worktree`; gnhf exits with an error because those modes choose different working directories.
 
 ### Worktree Mode
 
