@@ -536,7 +536,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           elapsedMs,
           reason: this.pendingAbortReason,
         });
-        resetHard(this.cwd);
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
         return { type: "aborted", reason: this.pendingAbortReason };
       }
 

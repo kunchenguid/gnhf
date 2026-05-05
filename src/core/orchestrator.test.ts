@@ -1085,6 +1085,50 @@ describe("Orchestrator stop limits", () => {
     expect(mockResetHard).not.toHaveBeenCalled();
     expect(orchestrator.getState().hasPendingCommitFailure).toBe(true);
   });
+
+  it("preserves pending commit failure changes when repair hits token limit", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi
+        .fn()
+        .mockResolvedValueOnce(createSuccessResult("needs hook repair"))
+        .mockImplementationOnce(
+          (_prompt, _cwd, options) =>
+            new Promise<AgentResult>((_resolve, reject) => {
+              options?.signal?.addEventListener("abort", () => {
+                reject(new Error("Agent was aborted"));
+              });
+              options?.onUsage?.({
+                inputTokens: 11,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                cacheCreationTokens: 0,
+              });
+            }),
+        ),
+    };
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 10 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasPendingCommitFailure: true,
+    });
+  });
 });
 
 describe("Orchestrator backoff behavior", () => {
