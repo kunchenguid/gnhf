@@ -40,7 +40,7 @@ describe("renderExitSummary", () => {
       "opencode worked for 47m 12s on gnhf/refactor-auth-flow",
     );
     expect(summary).toContain(
-      "iterations      8 total       6 good       2 rolled back",
+      "iterations      8 total       6 good       2 failed",
     );
     expect(summary).toContain("tokens          12.4M in      96K out");
     expect(summary).toContain(

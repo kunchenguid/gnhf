@@ -173,7 +173,7 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
     : `${s.cyan(options.agentName)} worked for ${s.yellow(elapsed)} on ${s.magenta(options.branchName)}`;
   const cardContents = [title, `  ${subtitle}`];
   const cardWidth = resolveCardWidth(cardContents, options.terminalColumns);
-  const rolledBack = `${options.failCount} rolled back`;
+  const failed = `${options.failCount} failed`;
   const inputTokens = formatTokenCount(
     options.totalInputTokens,
     "in",
@@ -197,7 +197,7 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
     metricLine(s.dim("iterations"), [
       `${s.bold(String(options.iterations))} total`,
       s.green(`${options.successCount} good`),
-      stopped ? s.red(rolledBack) : s.yellow(rolledBack),
+      stopped ? s.red(failed) : s.yellow(failed),
     ]),
     metricLine(s.dim("tokens"), [s.bold(inputTokens), s.bold(outputTokens)]),
     metricLine(s.dim("branch diff"), [
