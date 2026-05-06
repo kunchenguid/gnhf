@@ -296,7 +296,7 @@ function meteorsStartingBefore(
   return meteors.filter((meteor) => rowOffset + meteor.y < maxStartRow);
 }
 
-function generateSideMeteorShower(
+export function generateSideMeteorShower(
   terminalWidth: number,
   sideWidth: number,
   height: number,
@@ -306,7 +306,7 @@ function generateSideMeteorShower(
   if (sideWidth <= 0 || height <= 0 || count <= 0) return [];
 
   const leftCount = Math.max(1, Math.ceil(count / 2));
-  const rightCount = Math.max(1, Math.floor(count / 2));
+  const rightCount = count - leftCount;
   const leftMeteors = generateMeteorShower(sideWidth, height, leftCount, seed);
   const rightXOffset = terminalWidth - sideWidth;
   const rightMeteors = generateMeteorShower(

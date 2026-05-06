@@ -12,6 +12,7 @@ import {
   buildFrame,
   buildFrameCells,
   buildContentCells,
+  generateSideMeteorShower,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
 import type {
@@ -974,7 +975,7 @@ describe("Renderer ctrl+c", () => {
 });
 
 describe("Renderer meteors", () => {
-  it("renders meteors beside the main content area", () => {
+  function renderContentSideText(meteorFrequency: number): string {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const state: OrchestratorState = {
@@ -1025,7 +1026,7 @@ describe("Renderer meteors", () => {
     });
     Object.defineProperty(process.stdout, "rows", {
       configurable: true,
-      value: 36,
+      value: 46,
     });
 
     try {
@@ -1035,7 +1036,7 @@ describe("Renderer meteors", () => {
         "claude",
         vi.fn(),
         {
-          meteorFrequency: 5,
+          meteorFrequency,
         },
       );
       renderer.start();
@@ -1047,12 +1048,13 @@ describe("Renderer meteors", () => {
       const frame = output.startsWith("\x1b[H") ? output.slice(3) : output;
       const lines = frame.split("\n").map(stripAnsi);
       const sideWidth = Math.floor((121 - 63) / 2);
+      const topHeight = Math.ceil((46 - 2 - 24) / 2);
       const contentSideText = lines
-        .slice(6, 28)
+        .slice(topHeight, topHeight + 24)
         .map((line) => `${line.slice(0, sideWidth)}${line.slice(-sideWidth)}`)
         .join("\n");
 
-      expect(contentSideText).toContain("╱");
+      return contentSideText;
     } finally {
       if (originalRows)
         Object.defineProperty(process.stdout, "rows", originalRows);
@@ -1064,6 +1066,16 @@ describe("Renderer meteors", () => {
       stdoutWrite.mockRestore();
       vi.useRealTimers();
     }
+  }
+
+  it("renders meteors beside the main content area", () => {
+    expect(renderContentSideText(5)).toContain("╱");
+  });
+
+  it("honors the lowest side meteor frequency count", () => {
+    const meteors = generateSideMeteorShower(121, 29, 44, 1, 102);
+
+    expect(meteors).toHaveLength(1);
   });
 });
 
