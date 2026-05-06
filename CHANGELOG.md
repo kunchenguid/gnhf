@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.38](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.37...gnhf-v0.1.38) (2026-05-06)
+
+
+### Bug Fixes
+
+* **cli:** resume same-prompt current-branch runs ([#137](https://github.com/kunchenguid/gnhf/issues/137)) ([0b6eccf](https://github.com/kunchenguid/gnhf/commit/0b6eccfa076868cc3477de2c79f36bbb4f1b0c56))
+
 ## [0.1.37](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.36...gnhf-v0.1.37) (2026-05-06)
 
 
