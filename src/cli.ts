@@ -66,6 +66,7 @@ const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
 ).version as string;
 const FORCE_EXIT_TIMEOUT_MS = 5_000;
+const MAX_METEOR_FREQUENCY = 5;
 const GNHF_REEXEC_STDIN_PROMPT = "GNHF_REEXEC_STDIN_PROMPT";
 const GNHF_REEXEC_STDIN_PROMPT_FILE = "GNHF_REEXEC_STDIN_PROMPT_FILE";
 const GNHF_REEXEC_STDIN_PROMPT_DIR_PREFIX = "gnhf-stdin-";
@@ -92,6 +93,16 @@ function parseNonNegativeInteger(value: string): number {
     throw new InvalidArgumentError("must be a safe integer");
   }
 
+  return parsed;
+}
+
+function parseMeteorFrequency(value: string): number {
+  const parsed = parseNonNegativeInteger(value);
+  if (parsed > MAX_METEOR_FREQUENCY) {
+    throw new InvalidArgumentError(
+      `must be between 0 and ${MAX_METEOR_FREQUENCY}`,
+    );
+  }
   return parsed;
 }
 
@@ -569,6 +580,12 @@ program
     "Push the current branch after each successful iteration",
     false,
   )
+  .option(
+    "--meteor-frequency <n>",
+    "Meteor frequency from 0 to 5 (0 disables, 3 is default)",
+    parseMeteorFrequency,
+    3,
+  )
   .option("--mock", "", false)
   .action(
     async (
@@ -582,6 +599,7 @@ program
         worktree: boolean;
         currentBranch: boolean;
         push: boolean;
+        meteorFrequency: number;
         mock: boolean;
       },
     ) => {
@@ -591,10 +609,11 @@ program
         const renderer = new Renderer(
           mock as unknown as Orchestrator,
           "let's minimize app startup latency without sacrificing any functionality",
-          "claude",
+          "codex",
           () => {
             mock.handleInterrupt();
           },
+          { meteorFrequency: options.meteorFrequency },
         );
         renderer.start();
         mock.start();
@@ -966,6 +985,7 @@ program
         prompt,
         config.agent,
         handleSigInt,
+        { meteorFrequency: options.meteorFrequency },
       );
       renderer.start();
 

@@ -205,6 +205,63 @@ describe("renderStarFieldLines", () => {
       .join("\n");
     expect(/[·✧⋆°]/.test(text)).toBe(true);
   });
+
+  it("adds a sparse meteor streak without overwhelming the star field", () => {
+    const text = renderStarFieldLines(42, 80, 8, 0).map(stripAnsi).join("\n");
+    const meteorCells = text.match(/╱/g)?.length ?? 0;
+
+    expect(meteorCells).toBeGreaterThan(0);
+    expect(meteorCells).toBeLessThanOrEqual(4);
+  });
+
+  it("disables meteors when frequency is zero", () => {
+    const text = renderStarFieldLines(42, 80, 8, 0, 0)
+      .map(stripAnsi)
+      .join("\n");
+
+    expect(text).not.toContain("╱");
+  });
+
+  it("increases meteor streaks when frequency is raised", () => {
+    const countCells = (frequency: number): number =>
+      [0, 500, 1000, 1500]
+        .map((now) =>
+          renderStarFieldLines(42, 80, 8, now, frequency)
+            .map(stripAnsi)
+            .join("\n"),
+        )
+        .reduce((total, text) => total + (text.match(/╱/g)?.length ?? 0), 0);
+    const quietCells = countCells(1);
+    const busyCells = countCells(3);
+
+    expect(busyCells).toBeGreaterThan(quietCells);
+  });
+
+  it("makes frequency 5 roughly twice as frequent as frequency 3", () => {
+    const countCells = (frequency: number): number =>
+      [
+        0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500,
+        6000, 6500, 7000, 7500, 8000,
+      ]
+        .map((now) =>
+          renderStarFieldLines(42, 120, 12, now, frequency)
+            .map(stripAnsi)
+            .join("\n"),
+        )
+        .reduce((total, text) => total + (text.match(/╱/g)?.length ?? 0), 0);
+    const mediumCells = countCells(3);
+    const highCells = countCells(5);
+
+    expect(highCells).toBeGreaterThanOrEqual(mediumCells * 2);
+  });
+
+  it("does not render meteor head glyphs", () => {
+    const text = renderStarFieldLines(42, 120, 12, 0, 5)
+      .map(stripAnsi)
+      .join("\n");
+
+    expect(text).not.toContain("✦");
+  });
 });
 
 describe("buildFrame", () => {
@@ -504,6 +561,108 @@ describe("buildFrame", () => {
     expect(
       frameLines.slice(0, availableHeight).map((line) => line.trim()),
     ).toEqual(contentRows);
+  });
+
+  it("renders quiet meteor streaks in background rows without changing row widths", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    const meteors = [
+      {
+        x: 10,
+        y: 3,
+        length: 4,
+        period: 10_000,
+        duration: 1_000,
+        phase: 0,
+      },
+    ];
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      0,
+      83,
+      36,
+      meteors,
+      [],
+      [],
+    );
+    const text = cells.map(rowToString).map(stripAnsi).join("\n");
+    const meteorCells = text.match(/╱/g)?.length ?? 0;
+
+    expect(meteorCells).toBe(4);
+    for (const row of cells) {
+      expect(row).toHaveLength(83);
+    }
+  });
+
+  it("does not start bottom meteors below the top three quarters of the screen", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    const bottomMeteors = [
+      {
+        x: 10,
+        y: 2,
+        length: 3,
+        period: 10_000,
+        duration: 1_000,
+        phase: 0,
+      },
+    ];
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      0,
+      83,
+      40,
+      [],
+      bottomMeteors,
+      [],
+    );
+    const text = cells.map(rowToString).map(stripAnsi).join("\n");
+
+    expect(text).not.toContain("╱");
   });
 });
 

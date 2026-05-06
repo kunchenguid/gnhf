@@ -1,5 +1,12 @@
 import process from "node:process";
-import { generateStarField, getStarState, type Star } from "./utils/stars.js";
+import {
+  generateMeteorShower,
+  generateStarField,
+  getMeteorTrail,
+  getStarState,
+  type Meteor,
+  type Star,
+} from "./utils/stars.js";
 import { getMoonPhase } from "./utils/moon.js";
 import { formatElapsed } from "./utils/time.js";
 import { formatTokens } from "./utils/tokens.js";
@@ -21,6 +28,8 @@ const CONTENT_WIDTH = 63;
 const MAX_PROMPT_LINES = 3;
 const BASE_CONTENT_ROWS = 24;
 const STAR_DENSITY = 0.035;
+const DEFAULT_METEOR_FREQUENCY = 3;
+const METEOR_SEED_OFFSET = 101;
 const TICK_MS = 200;
 const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
@@ -32,6 +41,10 @@ const GRACEFUL_STOP_HINT =
 const DONE_HINT = "[ctrl+c to exit]";
 
 export type RendererExitReason = "interrupted" | "stopped";
+
+export interface RendererOptions {
+  meteorFrequency?: number;
+}
 
 // ── ANSI helpers ─────────────────────────────────────────────
 
@@ -266,6 +279,23 @@ function starStyle(state: "bright" | "dim" | "hidden"): Style {
   return "normal";
 }
 
+function meteorCountForFrequency(frequency: number): number {
+  if (frequency <= 0) return 0;
+  if (frequency === 1) return 1;
+  if (frequency === 2) return 2;
+  if (frequency === 3) return 4;
+  if (frequency === 4) return 6;
+  return 28;
+}
+
+function meteorsStartingBefore(
+  meteors: Meteor[],
+  rowOffset: number,
+  maxStartRow: number,
+): Meteor[] {
+  return meteors.filter((meteor) => rowOffset + meteor.y < maxStartRow);
+}
+
 function placeStarsInCells(
   cells: Cell[],
   stars: Star[],
@@ -286,14 +316,38 @@ function placeStarsInCells(
   }
 }
 
+function placeMeteorsInCells(
+  cells: Cell[],
+  meteors: Meteor[],
+  row: number,
+  xMin: number,
+  xMax: number,
+  xOffset: number,
+  now: number,
+): void {
+  for (const meteor of meteors) {
+    for (const trail of getMeteorTrail(meteor, now)) {
+      if (trail.y !== row || trail.x < xMin || trail.x >= xMax) continue;
+      const localX = trail.x - xOffset;
+      cells[localX] = {
+        char: trail.char,
+        style: trail.state === "bright" ? "bold" : "dim",
+        width: 1,
+      };
+    }
+  }
+}
+
 function renderStarLineCells(
   stars: Star[],
+  meteors: Meteor[],
   width: number,
   y: number,
   now: number,
 ): Cell[] {
   const cells = emptyCells(width);
   placeStarsInCells(cells, stars, y, 0, width, 0, now);
+  placeMeteorsInCells(cells, meteors, y, 0, width, 0, now);
   return cells;
 }
 
@@ -302,17 +356,25 @@ export function renderStarFieldLines(
   width: number,
   height: number,
   now: number,
+  meteorFrequency = DEFAULT_METEOR_FREQUENCY,
 ): string[] {
   const stars = generateStarField(width, height, STAR_DENSITY, seed);
+  const meteors = generateMeteorShower(
+    width,
+    height,
+    meteorCountForFrequency(meteorFrequency),
+    seed + METEOR_SEED_OFFSET,
+  );
   const lines: string[] = [];
   for (let y = 0; y < height; y++) {
-    lines.push(rowToString(renderStarLineCells(stars, width, y, now)));
+    lines.push(rowToString(renderStarLineCells(stars, meteors, width, y, now)));
   }
   return lines;
 }
 
 function renderSideStarsCells(
   stars: Star[],
+  meteors: Meteor[],
   rowIndex: number,
   xOffset: number,
   sideWidth: number,
@@ -323,6 +385,15 @@ function renderSideStarsCells(
   placeStarsInCells(
     cells,
     stars,
+    rowIndex,
+    xOffset,
+    xOffset + sideWidth,
+    xOffset,
+    now,
+  );
+  placeMeteorsInCells(
+    cells,
+    meteors,
     rowIndex,
     xOffset,
     xOffset + sideWidth,
@@ -491,6 +562,9 @@ export function buildFrameCells(
   now: number,
   terminalWidth: number,
   terminalHeight: number,
+  topMeteors: Meteor[] = [],
+  bottomMeteors: Meteor[] = [],
+  sideMeteors: Meteor[] = [],
 ): Cell[][] {
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
@@ -512,6 +586,22 @@ export function buildFrameCells(
   const remaining = Math.max(0, availableHeight - contentCount);
   const topHeight = Math.max(0, Math.ceil(remaining / 2));
   const bottomHeight = remaining - topHeight;
+  const maxMeteorStartRow = Math.ceil(availableHeight * 0.75);
+  const visibleTopMeteors = meteorsStartingBefore(
+    topMeteors,
+    0,
+    maxMeteorStartRow,
+  );
+  const visibleSideMeteors = meteorsStartingBefore(
+    sideMeteors,
+    topHeight,
+    maxMeteorStartRow,
+  );
+  const visibleBottomMeteors = meteorsStartingBefore(
+    bottomMeteors,
+    topHeight + contentCount,
+    maxMeteorStartRow,
+  );
 
   const sideWidth = Math.max(
     0,
@@ -521,14 +611,24 @@ export function buildFrameCells(
   const frame: Cell[][] = [];
 
   for (let y = 0; y < topHeight; y++) {
-    frame.push(renderStarLineCells(topStars, terminalWidth, y, now));
+    frame.push(
+      renderStarLineCells(topStars, visibleTopMeteors, terminalWidth, y, now),
+    );
   }
 
   for (let i = 0; i < contentRows.length; i++) {
-    const left = renderSideStarsCells(sideStars, i, 0, sideWidth, now);
+    const left = renderSideStarsCells(
+      sideStars,
+      visibleSideMeteors,
+      i,
+      0,
+      sideWidth,
+      now,
+    );
     const center = centerLineCells(contentRows[i], CONTENT_WIDTH);
     const right = renderSideStarsCells(
       sideStars,
+      visibleSideMeteors,
       i,
       terminalWidth - sideWidth,
       sideWidth,
@@ -538,7 +638,15 @@ export function buildFrameCells(
   }
 
   for (let y = 0; y < bottomHeight; y++) {
-    frame.push(renderStarLineCells(bottomStars, terminalWidth, y, now));
+    frame.push(
+      renderStarLineCells(
+        bottomStars,
+        visibleBottomMeteors,
+        terminalWidth,
+        y,
+        now,
+      ),
+    );
   }
 
   frame.push(renderResumeHintCells(terminalWidth, state.interruptHint));
@@ -599,8 +707,11 @@ export class Renderer {
   private topStars: Star[] = [];
   private bottomStars: Star[] = [];
   private sideStars: Star[] = [];
+  private topMeteors: Meteor[] = [];
+  private bottomMeteors: Meteor[] = [];
   private cachedWidth = 0;
   private cachedHeight = 0;
+  private meteorFrequency: number;
   private prevCells: Cell[][] = [];
   private prevTitle: string | null = null;
   private titleSaved = false;
@@ -622,11 +733,16 @@ export class Renderer {
     prompt: string,
     agentName: string,
     onInterrupt: () => void,
+    options: RendererOptions = {},
   ) {
     this.orchestrator = orchestrator;
     this.prompt = prompt;
     this.agentName = agentName;
     this.onInterrupt = onInterrupt;
+    this.meteorFrequency = Math.max(
+      0,
+      Math.floor(options.meteorFrequency ?? DEFAULT_METEOR_FREQUENCY),
+    );
     this.state = orchestrator.getState();
     this.seedTop = Math.floor(Math.random() * 2147483646) + 1;
     this.seedBottom = Math.floor(Math.random() * 2147483646) + 1;
@@ -692,6 +808,7 @@ export class Renderer {
       const availableHeight = Math.max(0, h - 2);
       const remaining = Math.max(0, availableHeight - BASE_CONTENT_ROWS);
       const topHeight = Math.max(0, Math.ceil(remaining / 2));
+      const bottomHeight = Math.max(0, remaining - topHeight);
       const proximityRows = 8;
       const shrinkBig = (s: Star, nearContentRow: boolean): Star => {
         if (!nearContentRow || s.x < contentStart || s.x >= contentEnd)
@@ -713,6 +830,18 @@ export class Renderer {
         Math.max(BASE_CONTENT_ROWS, availableHeight),
         STAR_DENSITY,
         this.seedSide,
+      );
+      this.topMeteors = generateMeteorShower(
+        w,
+        topHeight,
+        topHeight > 0 ? meteorCountForFrequency(this.meteorFrequency) : 0,
+        this.seedTop + METEOR_SEED_OFFSET,
+      );
+      this.bottomMeteors = generateMeteorShower(
+        w,
+        bottomHeight,
+        bottomHeight > 0 ? meteorCountForFrequency(this.meteorFrequency) : 0,
+        this.seedBottom + METEOR_SEED_OFFSET,
       );
       return true;
     }
@@ -737,6 +866,8 @@ export class Renderer {
       now,
       w,
       h,
+      this.topMeteors,
+      this.bottomMeteors,
     );
 
     if (this.isFirstFrame || resized) {

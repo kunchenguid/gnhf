@@ -70,6 +70,7 @@ interface CliMockOverrides {
   readStdinText?: ReturnType<typeof vi.fn>;
   rendererWaitUntilExit?: ReturnType<typeof vi.fn>;
   rendererStop?: ReturnType<typeof vi.fn>;
+  rendererCtor?: ReturnType<typeof vi.fn>;
   startSleepPrevention?: ReturnType<typeof vi.fn>;
   telemetry?: {
     track: ReturnType<typeof vi.fn>;
@@ -147,6 +148,7 @@ async function runCliWithMocks(
   const rendererStop = overrides.rendererStop ?? vi.fn();
   const rendererWaitUntilExit =
     overrides.rendererWaitUntilExit ?? vi.fn(() => Promise.resolve());
+  const rendererCtor = overrides.rendererCtor ?? vi.fn();
   const orchestratorCtor = vi.fn();
 
   vi.resetModules();
@@ -216,8 +218,20 @@ async function runCliWithMocks(
       getState = orchestratorGetState;
     },
   }));
+  vi.doMock("./mock-orchestrator.js", () => ({
+    MockOrchestrator: class MockDemoOrchestrator {
+      start = vi.fn();
+      handleInterrupt = vi.fn();
+      on = vi.fn();
+      off = vi.fn();
+      getState = orchestratorGetState;
+    },
+  }));
   vi.doMock("./renderer.js", () => ({
     Renderer: class MockRenderer {
+      constructor(...args: unknown[]) {
+        (rendererCtor as (...args: unknown[]) => void)(...args);
+      }
       start = rendererStart;
       stop = rendererStop;
       waitUntilExit = rendererWaitUntilExit;
@@ -273,6 +287,7 @@ async function runCliWithMocks(
     setupRun,
     peekRunMetadata,
     orchestratorCtor,
+    rendererCtor,
     orchestratorGetState,
     orchestratorRequestGracefulStop,
     readStdinText,
@@ -1084,6 +1099,53 @@ describe("cli", () => {
       stopWhen: undefined,
       push: true,
     });
+  });
+
+  it("passes meteor frequency to the renderer", async () => {
+    const { rendererCtor } = await runCliWithMocks(
+      ["ship it", "--meteor-frequency", "3"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(rendererCtor).toHaveBeenCalledTimes(1);
+    expect(rendererCtor.mock.calls[0]?.[4]).toEqual({ meteorFrequency: 3 });
+  });
+
+  it("defaults meteor frequency to 3", async () => {
+    const { rendererCtor } = await runCliWithMocks(["ship it"], {
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      acpRegistryOverrides: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(rendererCtor).toHaveBeenCalledTimes(1);
+    expect(rendererCtor.mock.calls[0]?.[4]).toEqual({ meteorFrequency: 3 });
+  });
+
+  it("uses codex as the mock mode agent label", async () => {
+    const { loadConfig, rendererCtor } = await runCliWithMocks(["--mock"], {
+      agent: "claude",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      acpRegistryOverrides: {},
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(rendererCtor).toHaveBeenCalledTimes(1);
+    expect(rendererCtor.mock.calls[0]?.[2]).toBe("codex");
+    expect(rendererCtor.mock.calls[0]?.[4]).toEqual({ meteorFrequency: 3 });
   });
 
   it("runs on the current branch without creating a gnhf branch when --current-branch is set", async () => {
