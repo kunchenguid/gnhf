@@ -1,6 +1,6 @@
 {
   "name": "gnhf",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "description": "Before I go to bed, I tell my agents: good night, have fun",
   "type": "module",
   "bin": {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.37](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.36...gnhf-v0.1.37) (2026-05-06)
+
+
+### Features
+
+* **cli:** add configurable meteor frequency ([#135](https://github.com/kunchenguid/gnhf/issues/135)) ([785435d](https://github.com/kunchenguid/gnhf/commit/785435d8f9cfa02cdd547dc852ee635bc6f473f9))
+
 ## [0.1.36](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.35...gnhf-v0.1.36) (2026-05-05)
 
 
