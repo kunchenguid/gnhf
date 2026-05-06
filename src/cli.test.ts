@@ -65,6 +65,7 @@ interface CliMockOverrides {
   getBranchDiffStats?: ReturnType<typeof vi.fn>;
   peekRunMetadata?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
+  getLastIterationNumber?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
@@ -117,6 +118,9 @@ async function runCliWithMocks(
   let stdoutWriteCalls: unknown[][] = [];
   const setupRun = vi.fn(() => stubRunInfo);
   const peekRunMetadata = overrides.peekRunMetadata ?? vi.fn(() => stubRunInfo);
+  const resumeRun = overrides.resumeRun ?? vi.fn();
+  const getLastIterationNumber =
+    overrides.getLastIterationNumber ?? vi.fn(() => 0);
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -193,8 +197,8 @@ async function runCliWithMocks(
   vi.doMock("./core/run.js", () => ({
     setupRun,
     peekRunMetadata,
-    resumeRun: overrides.resumeRun ?? vi.fn(),
-    getLastIterationNumber: vi.fn(() => 0),
+    resumeRun,
+    getLastIterationNumber,
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
@@ -286,6 +290,8 @@ async function runCliWithMocks(
     createAgent,
     setupRun,
     peekRunMetadata,
+    resumeRun,
+    getLastIterationNumber,
     orchestratorCtor,
     rendererCtor,
     orchestratorGetState,
@@ -1172,6 +1178,53 @@ describe("cli", () => {
       { includeStopField: false },
     );
     expect(orchestratorCtor.mock.calls[0]?.[4]).toBe(process.cwd());
+  });
+
+  it("resumes the same-prompt run when --current-branch is set", async () => {
+    const originalCwd = process.cwd();
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-current-resume-"));
+    const runId = `ship-it-${createHash("sha256").update("ship it").digest("hex").slice(0, 6)}`;
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+    }));
+    const getLastIterationNumber = vi.fn(() => 2);
+
+    mkdirSync(join(tempDir, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+    process.chdir(tempDir);
+
+    try {
+      const effectiveTempDir = process.cwd();
+      const { setupRun, orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--current-branch"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          acpRegistryOverrides: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        { resumeRun, getLastIterationNumber },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(runId, effectiveTempDir, {
+        includeStopField: false,
+      });
+      expect(setupRun).not.toHaveBeenCalled();
+      expect(getLastIterationNumber).toHaveBeenCalledWith(
+        expect.objectContaining({ runId }),
+      );
+      expect(orchestratorCtor.mock.calls[0]?.[2]).toEqual(
+        expect.objectContaining({ runId }),
+      );
+      expect(orchestratorCtor.mock.calls[0]?.[5]).toBe(2);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects combining --current-branch and --worktree", async () => {

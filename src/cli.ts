@@ -218,6 +218,22 @@ function initializeNewBranch(
   return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
 }
 
+function promptRunId(prompt: string): string {
+  return slugifyPrompt(prompt).split("/")[1]!;
+}
+
+function resumeCurrentBranchRun(
+  prompt: string,
+  cwd: string,
+  schemaOptions: RunSchemaOptions,
+): RunInfo | null {
+  const runId = promptRunId(prompt);
+  if (!existsSync(join(cwd, ".gnhf", "runs", runId))) {
+    return null;
+  }
+  return resumeRun(runId, cwd, schemaOptions);
+}
+
 function initializeCurrentBranchRun(
   prompt: string,
   cwd: string,
@@ -225,10 +241,7 @@ function initializeCurrentBranchRun(
 ): RunInfo {
   ensureCleanWorkingTree(cwd);
   const baseCommit = getHeadCommit(cwd);
-  const runId = createRunIdWithSuffix(
-    slugifyPrompt(prompt).split("/")[1]!,
-    cwd,
-  );
+  const runId = createRunIdWithSuffix(promptRunId(prompt), cwd);
   return setupRun(runId, prompt, baseCommit, cwd, schemaOptions);
 }
 
@@ -764,7 +777,24 @@ program
           return;
         }
 
-        runInfo = initializeCurrentBranchRun(prompt, cwd, schemaOptions);
+        const existing = resumeCurrentBranchRun(
+          prompt,
+          cwd,
+          buildResumeSchemaOptions(options.stopWhen, effectiveCommitMessage),
+        );
+
+        if (existing) {
+          runInfo = existing;
+          effectiveStopWhen = existing.stopWhen;
+          effectiveCommitMessage = existing.commitMessage;
+          schemaOptions = buildSchemaOptions(
+            effectiveStopWhen,
+            effectiveCommitMessage,
+          );
+          startIteration = getLastIterationNumber(existing);
+        } else {
+          runInfo = initializeCurrentBranchRun(prompt, cwd, schemaOptions);
+        }
       } else if (onGnhfBranch) {
         const existingRunId = currentBranch.slice("gnhf/".length);
         const existingMetadata = peekRunMetadata(existingRunId, cwd);
