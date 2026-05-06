@@ -78,6 +78,24 @@ function buildStructuredResponse(summary) {
   };
 }
 
+function emitOverloadError(sessionId) {
+  // Reproduces the SSE event shape that surfaced in issue #141. The error
+  // arrives as a top-level (non-payload-wrapped) frame; the rest of the
+  // stream then falls silent without a session.idle.
+  const event = {
+    type: "error",
+    sequence_number: 2,
+    error: {
+      type: "service_unavailable_error",
+      code: "server_is_overloaded",
+      message: "Our servers are currently overloaded. Please try again later.",
+      param: null,
+    },
+  };
+  appendLog("error:overload", { sessionId });
+  broadcast(event);
+}
+
 function emitCompletedEvents(sessionId, summary) {
   const output = buildStructuredResponse(summary);
   broadcast({
@@ -252,6 +270,13 @@ const server = createServer(async (req, res) => {
       req.on("close", () => {
         appendLog("message:closed", { sessionId });
       });
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (process.env.GNHF_MOCK_OPENCODE_OVERLOAD === "1") {
+      emitOverloadError(sessionId);
       res.writeHead(204);
       res.end();
       return;

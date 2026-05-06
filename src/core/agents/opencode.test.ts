@@ -836,7 +836,7 @@ describe("OpenCodeAgent", () => {
     );
   });
 
-  it("rejects when no text part is returned", async () => {
+  it("rejects with 'OpenCode produced no final answer' when the stream ends with no structured output and no final_answer text", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -860,7 +860,171 @@ describe("OpenCodeAgent", () => {
       .mockResolvedValueOnce(jsonResponse(true));
 
     await expect(agent.run("test", "/repo")).rejects.toThrow(
-      "opencode returned no text output",
+      "OpenCode produced no final answer",
+    );
+  });
+
+  it("does not fall back to reasoning-phase text when no final_answer text was emitted", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-reasoning","type":"text","text":"**Writing a failing test**","metadata":{"openai":{"phase":"commentary"}}}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      "OpenCode produced no final answer",
+    );
+  });
+
+  it("does not fall back to echoed user-prompt text when no final_answer text was emitted", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    // Simulates OpenCode echoing the user prompt back as a part with no
+    // phase metadata. This used to leak into the fallback parse path and
+    // got reported as `Failed to parse opencode output:` (issue #141).
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-echo","type":"text","text":"please ship the feature"}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      "OpenCode produced no final answer",
+    );
+  });
+
+  it("prefers structured output from message.updated over final_answer text", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          // final_answer text would be unparseable on its own.
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-final","type":"text","text":"not json","metadata":{"openai":{"phase":"final_answer"}}}}}}\n\n',
+          // But message.updated with `info.structured` should win.
+          'data: {"directory":"/repo","payload":{"type":"message.updated","properties":{"sessionID":"session-123","info":{"id":"msg-1","role":"assistant","structured":{"success":true,"summary":"from-structured","key_changes_made":[],"key_learnings":[]},"tokens":{"input":1,"output":1,"cache":{"read":0,"write":0}}}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    const result = await agent.run("test", "/repo");
+    expect(result.output.summary).toBe("from-structured");
+  });
+
+  it("surfaces a top-level provider-overload error event as a clear retryable error", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    // Reproduces the SSE shape from issue #141: a top-level error frame
+    // with no payload wrapper.
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: ${JSON.stringify({
+            type: "error",
+            sequence_number: 2,
+            error: {
+              type: "service_unavailable_error",
+              code: "server_is_overloaded",
+              message:
+                "Our servers are currently overloaded. Please try again later.",
+              param: null,
+            },
+          })}\n\n`,
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      /OpenCode provider overloaded: Our servers are currently overloaded/,
+    );
+  });
+
+  it("does not throw a JSON parse error when an overload event arrives mid-stream alongside reasoning text", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-reasoning","type":"text","text":"**Writing a failing test**","metadata":{"openai":{"phase":"commentary"}}}}}}\n\n',
+          `data: ${JSON.stringify({
+            type: "error",
+            error: {
+              type: "service_unavailable_error",
+              code: "server_is_overloaded",
+              message: "Our servers are currently overloaded.",
+            },
+          })}\n\n`,
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    const error = await agent.run("test", "/repo").then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toMatch(/OpenCode provider overloaded/);
+    expect(error?.message).not.toMatch(/Failed to parse opencode output/);
+  });
+
+  it("surfaces a payload-wrapped session.error event as a clear error", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: ${JSON.stringify({
+            payload: {
+              type: "session.error",
+              properties: {
+                sessionID: "session-123",
+                error: {
+                  type: "service_unavailable_error",
+                  code: "server_is_overloaded",
+                  message: "wrapped overload",
+                },
+              },
+            },
+          })}\n\n`,
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      /OpenCode provider overloaded: wrapped overload/,
     );
   });
 

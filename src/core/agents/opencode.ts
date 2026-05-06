@@ -50,15 +50,25 @@ interface OpenCodeSessionResponse {
   id: string;
 }
 
+interface OpenCodeStreamErrorInfo {
+  type?: string;
+  code?: string;
+  message?: string;
+}
+
 interface OpenCodeStreamEvent {
   directory?: string;
+  type?: string;
+  error?: OpenCodeStreamErrorInfo;
   payload?: {
     type?: string;
+    error?: OpenCodeStreamErrorInfo;
     properties?: {
       sessionID?: string;
       field?: string;
       delta?: string;
       partID?: string;
+      error?: OpenCodeStreamErrorInfo;
       part?: {
         id?: string;
         messageID?: string;
@@ -79,6 +89,43 @@ interface OpenCodeStreamEvent {
       };
     };
   };
+}
+
+const RETRYABLE_PROVIDER_ERROR_CODES = new Set(["server_is_overloaded"]);
+const RETRYABLE_PROVIDER_ERROR_TYPES = new Set([
+  "service_unavailable_error",
+  "overloaded_error",
+]);
+
+function extractStreamError(
+  event: OpenCodeStreamEvent,
+): OpenCodeStreamErrorInfo | null {
+  if (event.type === "error" && event.error) {
+    return event.error;
+  }
+  const payload = event.payload;
+  if (!payload) return null;
+  if (payload.type === "error" || payload.type === "session.error") {
+    return payload.error ?? payload.properties?.error ?? null;
+  }
+  return null;
+}
+
+function isRetryableProviderError(error: OpenCodeStreamErrorInfo): boolean {
+  if (error.code && RETRYABLE_PROVIDER_ERROR_CODES.has(error.code)) return true;
+  if (error.type && RETRYABLE_PROVIDER_ERROR_TYPES.has(error.type)) return true;
+  return false;
+}
+
+function buildProviderErrorMessage(error: OpenCodeStreamErrorInfo): string {
+  const detail = error.message ?? error.type ?? error.code ?? "unknown error";
+  if (error.code === "server_is_overloaded") {
+    return `OpenCode provider overloaded: ${detail}`;
+  }
+  if (isRetryableProviderError(error)) {
+    return `OpenCode provider error: ${detail}`;
+  }
+  return `OpenCode provider error: ${detail}`;
 }
 
 interface OpenCodeDeps {
@@ -634,10 +681,10 @@ export class OpenCodeAgent implements Agent {
     };
     const usageByMessageId = new Map<string, TokenUsage>();
     const textParts = new Map<string, OpenCodeTextPartState>();
-    let lastText: string | null = null;
     let lastFinalAnswerText: string | null = null;
     let lastUsageSignature = "0:0:0:0";
     let structuredOutputFromSSE: AgentOutput | null = null;
+    let streamErrorInfo: OpenCodeStreamErrorInfo | null = null;
 
     // Telemetry: capture "what was happening on the stream right up until
     // the failure" so the debug log can answer questions like "did the
@@ -786,7 +833,10 @@ export class OpenCodeAgent implements Agent {
       textParts.set(partId, { text: nextText, phase });
       notePhase(phase);
       if (!trimmed) return;
-      lastText = nextText;
+      // Reasoning-phase text and echoed user-prompt text used to leak into
+      // the fallback parse path and got reported as JSON parse failures
+      // (issue #141). Only assistant final_answer text is a candidate for
+      // structured output - everything else is just transcript noise.
       if (phase === "final_answer") {
         lastFinalAnswerText = nextText;
       }
@@ -794,6 +844,19 @@ export class OpenCodeAgent implements Agent {
     };
 
     const handleEvent = (event: OpenCodeStreamEvent) => {
+      const errorInfo = extractStreamError(event);
+      if (errorInfo) {
+        streamErrorInfo = errorInfo;
+        appendDebugLog("opencode:stream:provider-error", {
+          sessionId,
+          type: errorInfo.type ?? null,
+          code: errorInfo.code ?? null,
+          message: errorInfo.message ?? null,
+          retryable: isRetryableProviderError(errorInfo),
+        });
+        return true;
+      }
+
       const payload = event.payload;
       const properties = payload?.properties;
       if (!properties || properties.sessionID !== sessionId) return false;
@@ -1005,24 +1068,25 @@ export class OpenCodeAgent implements Agent {
       };
     }
 
-    const outputText =
-      toNonEmptyString(lastFinalAnswerText) ?? toNonEmptyString(lastText);
+    if (streamErrorInfo) {
+      throw new Error(buildProviderErrorMessage(streamErrorInfo));
+    }
 
-    if (outputText === null) {
+    const finalOutputText = toNonEmptyString(lastFinalAnswerText);
+
+    if (finalOutputText === null) {
       appendDebugLog("opencode:output:missing", {
         sessionId,
         hasStructuredOutput: structuredOutputFromSSE !== null,
       });
-      throw new Error("opencode returned no text output");
+      throw new Error("OpenCode produced no final answer");
     }
-
-    const finalOutputText = outputText;
 
     try {
       const output = JSON.parse(finalOutputText) as AgentOutput;
       appendDebugLog("opencode:output:structured", {
         sessionId,
-        source: lastFinalAnswerText ? "final_answer" : "last_text",
+        source: "final_answer",
         outputTextLength: finalOutputText.length,
       });
       return {

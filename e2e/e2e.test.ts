@@ -335,6 +335,68 @@ describe("gnhf e2e", () => {
     expect(debugEvents).not.toContain("git:commit:no-verify-fallback");
   }, 30_000);
 
+  it("reports an OpenCode provider overload as a clear retryable error, not a JSON parse failure", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "trigger overload",
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "1",
+        "--prevent-sleep",
+        "off",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_OPENCODE_OVERLOAD: "1",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+
+    const debugLogPath = findRunLogPath(cwd);
+    const debugEntries = readJsonLines(debugLogPath);
+    const debugEvents = debugEntries.map((entry) => entry.event);
+
+    // The overload event must surface under its own debug-log category so
+    // future investigations land in the right place immediately.
+    expect(debugEvents).toContain("opencode:stream:provider-error");
+    const providerErrorEntry = debugEntries.find(
+      (entry) => entry.event === "opencode:stream:provider-error",
+    );
+    expect(providerErrorEntry?.code).toBe("server_is_overloaded");
+    expect(providerErrorEntry?.type).toBe("service_unavailable_error");
+    expect(providerErrorEntry?.retryable).toBe(true);
+
+    // The agent run must record the actual cause, not a JSON parse failure.
+    const agentRunErrorEntry = debugEntries.find(
+      (entry) => entry.event === "agent:run:error",
+    );
+    expect(agentRunErrorEntry).toBeDefined();
+    const agentError = agentRunErrorEntry?.error as
+      | { message?: string }
+      | undefined;
+    expect(agentError?.message).toContain("OpenCode provider overloaded");
+    expect(agentError?.message).not.toContain("Failed to parse opencode output");
+
+    // Iteration is recorded as an error (retryable) - which feeds the
+    // orchestrator's backoff streak rather than aborting the run.
+    expect(debugEvents).toContain("iteration:end");
+    const iterationEnd = debugEntries.find(
+      (entry) => entry.event === "iteration:end",
+    );
+    expect(iterationEnd?.success).toBe(false);
+  }, 30_000);
+
   it("reads the objective from stdin", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);
