@@ -386,7 +386,9 @@ describe("gnhf e2e", () => {
       | { message?: string }
       | undefined;
     expect(agentError?.message).toContain("OpenCode provider overloaded");
-    expect(agentError?.message).not.toContain("Failed to parse opencode output");
+    expect(agentError?.message).not.toContain(
+      "Failed to parse opencode output",
+    );
 
     // Iteration is recorded as an error (retryable) - which feeds the
     // orchestrator's backoff streak rather than aborting the run.
