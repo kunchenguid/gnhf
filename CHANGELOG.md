@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.40](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.39...gnhf-v0.1.40) (2026-05-06)
+
+
+### Bug Fixes
+
+* **agents:** filter unrelated OpenCode session errors ([#142](https://github.com/kunchenguid/gnhf/issues/142)) ([2093a4a](https://github.com/kunchenguid/gnhf/commit/2093a4a686b048d9a044840bc36b91154dda83f1))
+
 ## [0.1.39](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.38...gnhf-v0.1.39) (2026-05-06)
 
 
