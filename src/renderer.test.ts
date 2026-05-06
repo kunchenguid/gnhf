@@ -973,6 +973,100 @@ describe("Renderer ctrl+c", () => {
   });
 });
 
+describe("Renderer meteors", () => {
+  it("renders meteors beside the main content area", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date(0),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    const originalStdinTty = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const originalColumns = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "columns",
+    );
+    const originalRows = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "rows",
+    );
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+    Object.defineProperty(process.stdout, "columns", {
+      configurable: true,
+      value: 121,
+    });
+    Object.defineProperty(process.stdout, "rows", {
+      configurable: true,
+      value: 36,
+    });
+
+    try {
+      const renderer = new Renderer(
+        orchestrator,
+        "ship it",
+        "claude",
+        vi.fn(),
+        {
+          meteorFrequency: 5,
+        },
+      );
+      renderer.start();
+      renderer.stop();
+
+      const output = stdoutWrite.mock.calls
+        .map((args: unknown[]) => String(args[0]))
+        .join("");
+      const frame = output.startsWith("\x1b[H") ? output.slice(3) : output;
+      const lines = frame.split("\n").map(stripAnsi);
+      const sideWidth = Math.floor((121 - 63) / 2);
+      const contentSideText = lines
+        .slice(6, 28)
+        .map((line) => `${line.slice(0, sideWidth)}${line.slice(-sideWidth)}`)
+        .join("\n");
+
+      expect(contentSideText).toContain("╱");
+    } finally {
+      if (originalRows)
+        Object.defineProperty(process.stdout, "rows", originalRows);
+      if (originalColumns)
+        Object.defineProperty(process.stdout, "columns", originalColumns);
+      if (originalStdinTty)
+        Object.defineProperty(process.stdin, "isTTY", originalStdinTty);
+      random.mockRestore();
+      stdoutWrite.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("Renderer terminal title", () => {
   const escape = String.fromCharCode(27);
   const bell = String.fromCharCode(7);

@@ -296,6 +296,29 @@ function meteorsStartingBefore(
   return meteors.filter((meteor) => rowOffset + meteor.y < maxStartRow);
 }
 
+function generateSideMeteorShower(
+  terminalWidth: number,
+  sideWidth: number,
+  height: number,
+  count: number,
+  seed: number,
+): Meteor[] {
+  if (sideWidth <= 0 || height <= 0 || count <= 0) return [];
+
+  const leftCount = Math.max(1, Math.ceil(count / 2));
+  const rightCount = Math.max(1, Math.floor(count / 2));
+  const leftMeteors = generateMeteorShower(sideWidth, height, leftCount, seed);
+  const rightXOffset = terminalWidth - sideWidth;
+  const rightMeteors = generateMeteorShower(
+    sideWidth,
+    height,
+    rightCount,
+    seed + 1,
+  ).map((meteor) => ({ ...meteor, x: meteor.x + rightXOffset }));
+
+  return [...leftMeteors, ...rightMeteors];
+}
+
 function placeStarsInCells(
   cells: Cell[],
   stars: Star[],
@@ -709,6 +732,7 @@ export class Renderer {
   private sideStars: Star[] = [];
   private topMeteors: Meteor[] = [];
   private bottomMeteors: Meteor[] = [];
+  private sideMeteors: Meteor[] = [];
   private cachedWidth = 0;
   private cachedHeight = 0;
   private meteorFrequency: number;
@@ -831,6 +855,14 @@ export class Renderer {
         STAR_DENSITY,
         this.seedSide,
       );
+      const sideWidth = Math.max(0, Math.floor((w - CONTENT_WIDTH) / 2));
+      this.sideMeteors = generateSideMeteorShower(
+        w,
+        sideWidth,
+        Math.max(BASE_CONTENT_ROWS, availableHeight),
+        meteorCountForFrequency(this.meteorFrequency),
+        this.seedSide + METEOR_SEED_OFFSET,
+      );
       this.topMeteors = generateMeteorShower(
         w,
         topHeight,
@@ -868,6 +900,7 @@ export class Renderer {
       h,
       this.topMeteors,
       this.bottomMeteors,
+      this.sideMeteors,
     );
 
     if (this.isFirstFrame || resized) {
