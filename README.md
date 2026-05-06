@@ -203,6 +203,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                  | `false`                |
 | `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                         | `false`                |
 | `--push`                 | Push the current branch after each successful iteration                                                | `false`                |
+| `--meteor-frequency <n>` | Set TUI meteor frequency from 0 to 5 (`0` disables meteors)                                            | `3`                    |
 | `--version`              | Show version                                                                                           |                        |
 
 ## Configuration
