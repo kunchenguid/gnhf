@@ -58,6 +58,7 @@ interface CliMockOverrides {
   getCurrentBranch?: ReturnType<typeof vi.fn>;
   getRepoRootDir?: ReturnType<typeof vi.fn>;
   createBranch?: ReturnType<typeof vi.fn>;
+  ensureCleanWorkingTree?: ReturnType<typeof vi.fn>;
   createWorktree?: ReturnType<typeof vi.fn>;
   removeWorktree?: ReturnType<typeof vi.fn>;
   listWorktreePaths?: ReturnType<typeof vi.fn>;
@@ -121,6 +122,7 @@ async function runCliWithMocks(
   const resumeRun = overrides.resumeRun ?? vi.fn();
   const getLastIterationNumber =
     overrides.getLastIterationNumber ?? vi.fn(() => 0);
+  const ensureCleanWorkingTree = overrides.ensureCleanWorkingTree ?? vi.fn();
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -171,7 +173,7 @@ async function runCliWithMocks(
         : { value: String(err) },
   }));
   vi.doMock("./core/git.js", () => ({
-    ensureCleanWorkingTree: vi.fn(),
+    ensureCleanWorkingTree,
     createBranch: overrides.createBranch ?? vi.fn(),
     getHeadCommit: vi.fn(() => "abc123"),
     getCurrentBranch: overrides.getCurrentBranch ?? vi.fn(() => "main"),
@@ -1221,6 +1223,46 @@ describe("cli", () => {
         expect.objectContaining({ runId }),
       );
       expect(orchestratorCtor.mock.calls[0]?.[5]).toBe(2);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("requires a clean working tree before resuming a current-branch run", async () => {
+    const originalCwd = process.cwd();
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-current-resume-"));
+    const runId = `ship-it-${createHash("sha256").update("ship it").digest("hex").slice(0, 6)}`;
+    const ensureCleanWorkingTree = vi.fn();
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+    }));
+
+    mkdirSync(join(tempDir, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+    process.chdir(tempDir);
+
+    try {
+      const effectiveTempDir = process.cwd();
+      await runCliWithMocks(
+        ["ship it", "--current-branch"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          acpRegistryOverrides: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        { ensureCleanWorkingTree, resumeRun },
+      );
+
+      expect(ensureCleanWorkingTree).toHaveBeenCalledWith(effectiveTempDir);
+      expect(resumeRun).toHaveBeenCalledWith(runId, effectiveTempDir, {
+        includeStopField: false,
+      });
     } finally {
       process.chdir(originalCwd);
       rmSync(tempDir, { recursive: true, force: true });

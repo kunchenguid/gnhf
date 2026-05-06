@@ -231,6 +231,7 @@ function resumeCurrentBranchRun(
   if (!existsSync(join(cwd, ".gnhf", "runs", runId))) {
     return null;
   }
+  ensureCleanWorkingTree(cwd);
   return resumeRun(runId, cwd, schemaOptions);
 }
 
