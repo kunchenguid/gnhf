@@ -159,6 +159,7 @@ Pass `--current-branch` to run on the branch you are already on instead of creat
 Pass `--push` to push the current branch after each successful iteration.
 Together, `--current-branch --push` is useful for loose projects where you want a deployed or locally watched branch to update throughout the run.
 
+- Re-running the same prompt with `--current-branch` resumes the existing `.gnhf/runs/<runId>/` history on a clean working tree and continues iteration numbering.
 - Push failures abort the run after preserving the successful local commit.
 - gnhf never force-pushes or auto-pulls for this mode.
 - `--push` also works with the default `gnhf/` branch mode and sets `origin` as the upstream when needed.
@@ -276,7 +277,7 @@ You can also pass a raw custom ACP server command directly as a quoted `acp:` sp
 
 - Omit it to keep the default `gnhf <iteration>: <summary>` format.
 - Set `preset: conventional` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
-- The resolved commit-message convention is saved per run, so resuming a `gnhf/` branch keeps the original subject format even if `config.yml` changes later.
+- The resolved commit-message convention is saved per run, so resuming keeps the original subject format even if `config.yml` changes later.
 
 ### Custom Agent Paths
 
