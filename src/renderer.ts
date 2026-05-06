@@ -859,7 +859,7 @@ export class Renderer {
       this.sideMeteors = generateSideMeteorShower(
         w,
         sideWidth,
-        Math.max(BASE_CONTENT_ROWS, availableHeight),
+        Math.min(BASE_CONTENT_ROWS, availableHeight),
         meteorCountForFrequency(this.meteorFrequency),
         this.seedSide + METEOR_SEED_OFFSET,
       );

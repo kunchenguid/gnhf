@@ -975,7 +975,10 @@ describe("Renderer ctrl+c", () => {
 });
 
 describe("Renderer meteors", () => {
-  function renderContentSideText(meteorFrequency: number): string {
+  function renderContentSideText(
+    meteorFrequency: number,
+    terminalHeight = 46,
+  ): string {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const state: OrchestratorState = {
@@ -1026,7 +1029,7 @@ describe("Renderer meteors", () => {
     });
     Object.defineProperty(process.stdout, "rows", {
       configurable: true,
-      value: 46,
+      value: terminalHeight,
     });
 
     try {
@@ -1048,9 +1051,21 @@ describe("Renderer meteors", () => {
       const frame = output.startsWith("\x1b[H") ? output.slice(3) : output;
       const lines = frame.split("\n").map(stripAnsi);
       const sideWidth = Math.floor((121 - 63) / 2);
-      const topHeight = Math.ceil((46 - 2 - 24) / 2);
+      const availableHeight = terminalHeight - 2;
+      const contentRows = buildContentCells(
+        "ship it",
+        "claude",
+        state,
+        "0s",
+        0,
+        availableHeight,
+      );
+      while (contentRows.length < Math.min(24, availableHeight)) {
+        contentRows.push([]);
+      }
+      const topHeight = Math.ceil((availableHeight - contentRows.length) / 2);
       const contentSideText = lines
-        .slice(topHeight, topHeight + 24)
+        .slice(topHeight, topHeight + contentRows.length)
         .map((line) => `${line.slice(0, sideWidth)}${line.slice(-sideWidth)}`)
         .join("\n");
 
@@ -1070,6 +1085,10 @@ describe("Renderer meteors", () => {
 
   it("renders meteors beside the main content area", () => {
     expect(renderContentSideText(5)).toContain("╱");
+  });
+
+  it("keeps low-frequency side meteors visible on tall terminals", () => {
+    expect(renderContentSideText(1, 100)).toContain("╱");
   });
 
   it("honors the lowest side meteor frequency count", () => {
