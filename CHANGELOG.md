@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.39](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.38...gnhf-v0.1.39) (2026-05-06)
+
+
+### Features
+
+* **renderer:** render meteors beside content ([#139](https://github.com/kunchenguid/gnhf/issues/139)) ([6538a2a](https://github.com/kunchenguid/gnhf/commit/6538a2af397876f1531e593ef4c067626f6181e8))
+
 ## [0.1.38](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.37...gnhf-v0.1.38) (2026-05-06)
 
 
