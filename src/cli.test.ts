@@ -129,7 +129,7 @@ async function runCliWithMocks(
   const orchestratorGetState =
     overrides.orchestratorGetState ??
     vi.fn(() => ({
-      status: "running" as const,
+      status: "completed" as const,
       gracefulStopRequested: false,
       currentIteration: 0,
       totalInputTokens: 0,
