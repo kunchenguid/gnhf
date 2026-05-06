@@ -159,6 +159,7 @@ Pass `--current-branch` to run on the branch you are already on instead of creat
 Pass `--push` to push the current branch after each successful iteration.
 Together, `--current-branch --push` is useful for loose projects where you want a deployed or locally watched branch to update throughout the run.
 
+- Re-running the same prompt with `--current-branch` resumes the existing `.gnhf/runs/<runId>/` history on a clean working tree and continues iteration numbering.
 - Push failures abort the run after preserving the successful local commit.
 - gnhf never force-pushes or auto-pulls for this mode.
 - `--push` also works with the default `gnhf/` branch mode and sets `origin` as the upstream when needed.
