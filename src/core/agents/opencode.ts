@@ -99,6 +99,7 @@ const RETRYABLE_PROVIDER_ERROR_TYPES = new Set([
 
 function extractStreamError(
   event: OpenCodeStreamEvent,
+  sessionId: string,
 ): OpenCodeStreamErrorInfo | null {
   if (event.type === "error" && event.error) {
     return event.error;
@@ -106,6 +107,7 @@ function extractStreamError(
   const payload = event.payload;
   if (!payload) return null;
   if (payload.type === "error" || payload.type === "session.error") {
+    if (payload.properties?.sessionID !== sessionId) return null;
     return payload.error ?? payload.properties?.error ?? null;
   }
   return null;
@@ -844,7 +846,7 @@ export class OpenCodeAgent implements Agent {
     };
 
     const handleEvent = (event: OpenCodeStreamEvent) => {
-      const errorInfo = extractStreamError(event);
+      const errorInfo = extractStreamError(event, sessionId);
       if (errorInfo) {
         streamErrorInfo = errorInfo;
         appendDebugLog("opencode:stream:provider-error", {

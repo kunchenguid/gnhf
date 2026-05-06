@@ -1028,6 +1028,39 @@ describe("OpenCodeAgent", () => {
     );
   });
 
+  it("ignores payload-wrapped session.error events for other sessions", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: ${JSON.stringify({
+            payload: {
+              type: "session.error",
+              properties: {
+                sessionID: "other-session",
+                error: {
+                  type: "service_unavailable_error",
+                  code: "server_is_overloaded",
+                  message: "other session overload",
+                },
+              },
+            },
+          })}\n\n`,
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-final","type":"text","text":"{\\"success\\":true,\\"summary\\":\\"done\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}","metadata":{"openai":{"phase":"final_answer"}}}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    const result = await agent.run("test", "/repo");
+    expect(result.output.summary).toBe("done");
+  });
+
   it("force terminates opencode if shutdown exceeds the timeout", async () => {
     vi.useFakeTimers();
     const proc = createMockProcess();
