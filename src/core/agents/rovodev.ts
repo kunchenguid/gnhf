@@ -7,11 +7,12 @@ import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import type {
   Agent,
-  AgentOutput,
+  AgentOutputSchema,
   AgentResult,
   AgentRunOptions,
   TokenUsage,
 } from "./types.js";
+import { validateAgentOutput } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
 import { parseAgentJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
@@ -759,8 +760,18 @@ export class RovoDevAgent implements Agent {
       sessionId,
       outputTextLength: finalText.length,
     });
+    const schema = JSON.parse(
+      readFileSync(this.schemaPath, "utf-8"),
+    ) as AgentOutputSchema;
+    let output;
+    try {
+      output = validateAgentOutput(parsed, schema);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to parse rovodev output: ${message}`);
+    }
     return {
-      output: parsed as AgentOutput,
+      output,
       usage,
     };
   }

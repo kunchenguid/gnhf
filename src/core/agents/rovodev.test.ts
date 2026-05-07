@@ -441,6 +441,36 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("rejects when extracted JSON does not match the output schema", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            'data: {"index":0,"part":{"content":"Here is a detail: {\\"success\\":true}","part_kind":"text"},"event_kind":"part_start"}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      "Failed to parse rovodev output: summary is required",
+    );
+  });
+
   it("recovers JSON when rovodev streams a prose preamble before the JSON (issue #144)", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
