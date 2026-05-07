@@ -65,25 +65,37 @@ export function tryExtractBalancedObject(
  * Look for a balanced JSON object inside `text`, preferring the rightmost one
  * (since the agent is supposed to end the message with the structured answer).
  */
-export function extractLastJsonObject(text: string): string | null {
+export function extractLastJsonObject(
+  text: string,
+  accepts?: (value: unknown) => boolean,
+): string | null {
   let cursor = text.lastIndexOf("{");
   while (cursor >= 0) {
     const candidate = tryExtractBalancedObject(text, cursor);
-    if (candidate !== null) return candidate;
+    if (candidate !== null) {
+      if (!accepts) return candidate;
+      try {
+        if (accepts(JSON.parse(candidate))) return candidate;
+      } catch {}
+    }
     cursor = text.lastIndexOf("{", cursor - 1);
   }
   return null;
 }
 
-export function parseAgentJson(text: string): unknown | null {
+export function parseAgentJson(
+  text: string,
+  accepts?: (value: unknown) => boolean,
+): unknown | null {
   const cleaned = stripJsonFences(text);
   if (!cleaned) return null;
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    if (!accepts || accepts(parsed)) return parsed;
   } catch {
     // fall through to extraction
   }
-  const extracted = extractLastJsonObject(cleaned);
+  const extracted = extractLastJsonObject(cleaned, accepts);
   if (!extracted) return null;
   try {
     return JSON.parse(extracted);

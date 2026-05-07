@@ -59,6 +59,24 @@ describe("extractLastJsonObject", () => {
     const text = 'good {"a":1} bad {"b":';
     expect(extractLastJsonObject(text)).toBe('{"a":1}');
   });
+
+  it("continues scanning when the rightmost parsed object is rejected", () => {
+    const text =
+      'final {"success":true,"summary":"mentions {}","key_changes_made":[],"key_learnings":[]} trailing';
+
+    expect(
+      extractLastJsonObject(text, (value) =>
+        Boolean(
+          value &&
+            typeof value === "object" &&
+            "success" in value &&
+            "summary" in value,
+        ),
+      ),
+    ).toBe(
+      '{"success":true,"summary":"mentions {}","key_changes_made":[],"key_learnings":[]}',
+    );
+  });
 });
 
 describe("parseAgentJson", () => {

@@ -743,8 +743,27 @@ export class RovoDevAgent implements Agent {
       throw new Error("rovodev returned no text output");
     }
 
-    const parsed = parseAgentJson(finalText);
+    const schema = JSON.parse(
+      readFileSync(this.schemaPath, "utf-8"),
+    ) as AgentOutputSchema;
+    const parsed = parseAgentJson(finalText, (value) => {
+      try {
+        validateAgentOutput(value, schema);
+        return true;
+      } catch {
+        return false;
+      }
+    });
     if (parsed === null) {
+      const fallbackParsed = parseAgentJson(finalText);
+      if (fallbackParsed !== null) {
+        try {
+          validateAgentOutput(fallbackParsed, schema);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to parse rovodev output: ${message}`);
+        }
+      }
       const parseError = new SyntaxError(
         "rovodev output did not contain a parseable JSON object",
       );
@@ -760,9 +779,6 @@ export class RovoDevAgent implements Agent {
       sessionId,
       outputTextLength: finalText.length,
     });
-    const schema = JSON.parse(
-      readFileSync(this.schemaPath, "utf-8"),
-    ) as AgentOutputSchema;
     let output;
     try {
       output = validateAgentOutput(parsed, schema);
