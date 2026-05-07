@@ -111,6 +111,22 @@ describe("parseAgentJson", () => {
     expect(parseAgentJson(text)).toEqual({ step: 2 });
   });
 
+  it("does not extract nested objects after a parsed top-level object is rejected", () => {
+    const text =
+      '{"success":true,"summary":{"success":true,"summary":"nested","key_changes_made":[],"key_learnings":[]},"key_changes_made":[],"key_learnings":[]}';
+
+    expect(
+      parseAgentJson(text, (value) =>
+        Boolean(
+          value &&
+            typeof value === "object" &&
+            "summary" in value &&
+            typeof value.summary === "string",
+        ),
+      ),
+    ).toBeNull();
+  });
+
   it("returns null for unparseable text", () => {
     expect(parseAgentJson("just prose, no json here")).toBeNull();
   });

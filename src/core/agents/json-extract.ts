@@ -92,6 +92,7 @@ export function parseAgentJson(
   try {
     const parsed = JSON.parse(cleaned);
     if (!accepts || accepts(parsed)) return parsed;
+    return null;
   } catch {
     // fall through to extraction
   }
