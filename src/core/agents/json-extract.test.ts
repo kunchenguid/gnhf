@@ -68,9 +68,9 @@ describe("extractLastJsonObject", () => {
       extractLastJsonObject(text, (value) =>
         Boolean(
           value &&
-            typeof value === "object" &&
-            "success" in value &&
-            "summary" in value,
+          typeof value === "object" &&
+          "success" in value &&
+          "summary" in value,
         ),
       ),
     ).toBe(
@@ -119,9 +119,9 @@ describe("parseAgentJson", () => {
       parseAgentJson(text, (value) =>
         Boolean(
           value &&
-            typeof value === "object" &&
-            "summary" in value &&
-            typeof value.summary === "string",
+          typeof value === "object" &&
+          "summary" in value &&
+          typeof value.summary === "string",
         ),
       ),
     ).toBeNull();

@@ -760,7 +760,8 @@ export class RovoDevAgent implements Agent {
         try {
           validateAgentOutput(fallbackParsed, schema);
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           throw new Error(`Failed to parse rovodev output: ${message}`);
         }
       }

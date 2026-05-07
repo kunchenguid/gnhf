@@ -76,7 +76,9 @@ export function extractLastJsonObject(
       if (!accepts) return candidate;
       try {
         if (accepts(JSON.parse(candidate))) return candidate;
-      } catch {}
+      } catch {
+        // Keep scanning earlier objects when a candidate is not valid JSON.
+      }
     }
     cursor = text.lastIndexOf("{", cursor - 1);
   }
