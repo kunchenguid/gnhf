@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.41](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.40...gnhf-v0.1.41) (2026-05-07)
+
+
+### Bug Fixes
+
+* **agents:** recover schema-valid agent JSON output ([#145](https://github.com/kunchenguid/gnhf/issues/145)) ([b5ffc2d](https://github.com/kunchenguid/gnhf/commit/b5ffc2dde57b27199c43aae29849a7c07416fbe6))
+
 ## [0.1.40](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.39...gnhf-v0.1.40) (2026-05-06)
 
 
