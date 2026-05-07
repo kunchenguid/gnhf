@@ -441,6 +441,43 @@ describe("RovoDevAgent", () => {
     );
   });
 
+  it("recovers JSON when rovodev streams a prose preamble before the JSON (issue #144)", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const finalContent =
+      'BUILD SUCCESS confirms the Java changes are valid.\\n\\n{\\"success\\": true, \\"summary\\": \\"x\\", \\"key_changes_made\\": [], \\"key_learnings\\": []}';
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            `data: {"index":0,"part":{"content":"${finalContent}","part_kind":"text"},"event_kind":"part_start"}`,
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    const result = await agent.run("test", "/repo");
+    expect(result.output).toEqual({
+      success: true,
+      summary: "x",
+      key_changes_made: [],
+      key_learnings: [],
+    });
+  });
+
   it("treats text separated by tool activity as distinct message segments", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

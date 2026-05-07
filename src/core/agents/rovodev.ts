@@ -13,6 +13,7 @@ import type {
   TokenUsage,
 } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
+import { parseAgentJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface RovoDevRequestUsageEvent {
@@ -55,6 +56,7 @@ function buildSystemPrompt(schema: string): string {
     "When you finish, reply with only valid JSON.",
     "Do not wrap the JSON in markdown fences.",
     "Do not include any prose before or after the JSON.",
+    "Your final assistant message must contain the JSON object only - no preamble, no commentary, no build-status lines, nothing else.",
     `The JSON must match this schema exactly: ${schema}`,
   ].join(" ");
 }
@@ -740,27 +742,27 @@ export class RovoDevAgent implements Agent {
       throw new Error("rovodev returned no text output");
     }
 
-    try {
-      const output = JSON.parse(finalText) as AgentOutput;
-      appendDebugLog("rovodev:output:parsed", {
-        sessionId,
-        outputTextLength: finalText.length,
-      });
-      return {
-        output,
-        usage,
-      };
-    } catch (error) {
+    const parsed = parseAgentJson(finalText);
+    if (parsed === null) {
+      const parseError = new SyntaxError(
+        "rovodev output did not contain a parseable JSON object",
+      );
       appendDebugLog("rovodev:output:parse-error", {
         sessionId,
         outputTextLength: finalText.length,
         outputTextSample: finalText.slice(0, 512),
-        error: serializeError(error),
+        error: serializeError(parseError),
       });
-      throw new Error(
-        `Failed to parse rovodev output: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      throw new Error(`Failed to parse rovodev output: ${parseError.message}`);
     }
+    appendDebugLog("rovodev:output:parsed", {
+      sessionId,
+      outputTextLength: finalText.length,
+    });
+    return {
+      output: parsed as AgentOutput,
+      usage,
+    };
   }
 
   private async shutdownServer(): Promise<void> {
