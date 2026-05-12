@@ -92,6 +92,7 @@ npm install -g gnhf
 ```sh
 git clone https://github.com/kunchenguid/gnhf.git
 cd gnhf
+corepack enable
 pnpm install
 pnpm run build
 pnpm link --global
