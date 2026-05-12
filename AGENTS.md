@@ -9,17 +9,17 @@ This file provides guidance to agents1 when working with code in this repository
 ## Commands
 
 ```sh
-npm run build          # tsdown bundle → dist/cli.mjs (the published binary)
-npm run dev            # tsdown --watch
-npm run lint           # ESLint on src
-npm run format         # Prettier on src (format:check for CI)
-npm run typecheck      # tsc -p tsconfig.typecheck.json --noEmit
-npm test               # build, then vitest run (all tests)
-npm run test:e2e       # build, then vitest run e2e/
-npm run test:coverage  # vitest with coverage, excludes e2e/
+pnpm run build          # tsdown bundle -> dist/cli.mjs (the published binary)
+pnpm run dev            # tsdown --watch
+pnpm run lint           # ESLint on src
+pnpm run format         # Prettier on src (format:check for CI)
+pnpm run typecheck      # tsc -p tsconfig.typecheck.json --noEmit
+pnpm test               # build, then vitest run (all tests)
+pnpm run test:e2e       # build, then vitest run e2e/
+pnpm run test:coverage  # vitest with coverage, excludes e2e/
 ```
 
-Run a single test file: `npx vitest run src/core/orchestrator.test.ts`. Filter by name: `npx vitest run -t "name substring"`. Unit tests live next to source as `*.test.ts`; e2e tests live under `e2e/` and shell out to the built `dist/cli.mjs` against a mock `opencode` server in `e2e/fixtures/`, so they require a prior build (`npm test` and `npm run test:e2e` do this automatically). Add new e2e tests as `e2e/*.test.ts` so they're picked up by the directory glob in both scripts.
+Run a single test file: `pnpm exec vitest run src/core/orchestrator.test.ts`. Filter by name: `pnpm exec vitest run -t "name substring"`. Unit tests live next to source as `*.test.ts`; e2e tests live under `e2e/` and shell out to the built `dist/cli.mjs` against a mock `opencode` server in `e2e/fixtures/`, so they require a prior build (`pnpm test` and `pnpm run test:e2e` do this automatically). Add new e2e tests as `e2e/*.test.ts` so they're picked up by the directory glob in both scripts.
 
 CI (`.github/workflows/ci.yml`) runs lint, format:check, typecheck, and test on Ubuntu/macOS/Windows with Node 24 - keep all four green. Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
 

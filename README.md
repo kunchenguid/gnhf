@@ -92,9 +92,9 @@ npm install -g gnhf
 ```sh
 git clone https://github.com/kunchenguid/gnhf.git
 cd gnhf
-npm install
-npm run build
-npm link
+pnpm install
+pnpm run build
+pnpm link --global
 ```
 
 ## Agent Skill
@@ -332,12 +332,12 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). Human-authored PRs targeting `main` must be opened via `git push no-mistakes` so the required `Require no-mistakes` check passes.
 
 ```sh
-npm run build          # Build with tsdown
-npm run dev            # Watch mode
-npm test               # Build, then run all tests (vitest)
-npm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
-npm run lint           # ESLint
-npm run format         # Prettier
+pnpm run build          # Build with tsdown
+pnpm run dev            # Watch mode
+pnpm test               # Build, then run all tests (vitest)
+pnpm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
+pnpm run lint           # ESLint
+pnpm run format         # Prettier
 ```
 
 ## Star History

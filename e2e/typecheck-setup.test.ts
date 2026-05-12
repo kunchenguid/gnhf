@@ -24,6 +24,6 @@ describe("typecheck setup", () => {
       "utf8",
     );
 
-    expect(workflow).toContain("npm run typecheck");
+    expect(workflow).toMatch(/^\s*- run: pnpm run typecheck$/m);
   });
 });
