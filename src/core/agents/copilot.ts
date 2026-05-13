@@ -4,11 +4,13 @@ import {
   buildAgentOutputSchema,
   validateAgentOutput,
   type Agent,
+  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
+import { parseAgentJson } from "./json-extract.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
@@ -144,12 +146,6 @@ function buildCopilotArgs(
   ];
 }
 
-function stripJsonFence(text: string): string {
-  const trimmed = text.trim();
-  const match = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
-  return match?.[1]?.trim() ?? trimmed;
-}
-
 function numberField(
   usage: Record<string, unknown>,
   names: string[],
@@ -194,6 +190,32 @@ function usageFromRecord(usage: Record<string, unknown>): TokenUsage | null {
     cacheReadTokens: cacheReadTokens ?? 0,
     cacheCreationTokens: cacheCreationTokens ?? 0,
   };
+}
+
+function parseCopilotOutput(
+  text: string,
+  schema: AgentOutputSchema,
+): AgentOutput {
+  const parsed = parseAgentJson(text, (value) => {
+    try {
+      validateAgentOutput(value, schema);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (parsed !== null) {
+    return validateAgentOutput(parsed, schema);
+  }
+
+  const fallbackParsed = parseAgentJson(text);
+  if (fallbackParsed !== null) {
+    return validateAgentOutput(fallbackParsed, schema);
+  }
+
+  throw new SyntaxError(
+    "copilot output did not contain a parseable JSON object",
+  );
 }
 
 export class CopilotAgent implements Agent {
@@ -285,10 +307,7 @@ export class CopilotAgent implements Agent {
         }
 
         try {
-          const output = validateAgentOutput(
-            JSON.parse(stripJsonFence(lastAgentMessage)),
-            this.schema,
-          );
+          const output = parseCopilotOutput(lastAgentMessage, this.schema);
           resolve({ output, usage: cumulative });
         } catch (err) {
           reject(

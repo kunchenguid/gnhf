@@ -836,6 +836,54 @@ describe("OpenCodeAgent", () => {
     );
   });
 
+  it("recovers JSON when final_answer text has a prose preamble", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-final","type":"text","text":"Good - all tests pass.\\n\\n{\\"success\\":true,\\"summary\\":\\"done\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}","metadata":{"openai":{"phase":"final_answer"}}}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).resolves.toMatchObject({
+      output: {
+        success: true,
+        summary: "done",
+      },
+    });
+  });
+
+  it("recovers fenced JSON when final_answer text has prose before the fence", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"directory":"/repo","payload":{"type":"message.part.updated","properties":{"sessionID":"session-123","part":{"id":"part-final","type":"text","text":"Done.\\n\\n```json\\n{\\"success\\":true,\\"summary\\":\\"done\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}\\n```","metadata":{"openai":{"phase":"final_answer"}}}}}}\n\n',
+          'data: {"directory":"/repo","payload":{"type":"session.idle","properties":{"sessionID":"session-123"}}}\n\n',
+        ]),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await expect(agent.run("test", "/repo")).resolves.toMatchObject({
+      output: {
+        success: true,
+        summary: "done",
+      },
+    });
+  });
+
   it("rejects with 'OpenCode produced no final answer' when the stream ends with no structured output and no final_answer text", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

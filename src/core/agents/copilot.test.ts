@@ -205,6 +205,52 @@ describe("CopilotAgent", () => {
     });
   });
 
+  it("recovers JSON when copilot prepends prose before the final object", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "assistant.message",
+      data: {
+        content:
+          'Good - all tests pass.\n\n{"success":true,"summary":"ok","key_changes_made":[],"key_learnings":[]}',
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: {
+        success: true,
+        summary: "ok",
+      },
+    });
+  });
+
+  it("recovers fenced JSON when copilot writes prose before the fence", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "assistant.message",
+      data: {
+        content:
+          'Done.\n\n```json\n{"success":true,"summary":"ok","key_changes_made":[],"key_learnings":[]}\n```',
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: {
+        success: true,
+        summary: "ok",
+      },
+    });
+  });
+
   it("includes should_fully_stop in the prompt contract when the schema requires it", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
