@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.42](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.41...gnhf-v0.1.42) (2026-05-13)
+
+
+### Bug Fixes
+
+* **agents:** recover copilot and opencode JSON output ([#149](https://github.com/kunchenguid/gnhf/issues/149)) ([55d2c39](https://github.com/kunchenguid/gnhf/commit/55d2c399f35b7c3da80d5328e988121d630fbc07))
+
 ## [0.1.41](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.40...gnhf-v0.1.41) (2026-05-07)
 
 
