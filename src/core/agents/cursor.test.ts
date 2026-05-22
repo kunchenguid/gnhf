@@ -288,23 +288,29 @@ describe("CursorAgent", () => {
     });
     proc.emit("close", 0);
 
-    await expect(promise).resolves.toEqual({
-      output: {
-        success: true,
-        summary: "ok",
-        key_changes_made: [],
-        key_learnings: [],
-      },
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      },
+    const result = await promise;
+    expect(result.output).toEqual({
+      success: true,
+      summary: "ok",
+      key_changes_made: [],
+      key_learnings: [],
     });
+    // Without authoritative usage on the result event, the resolved usage is
+    // the running estimate: prompt-token estimate as input + char-derived
+    // estimate of all assistant text as output, flagged estimated:true.
+    expect(result.usage.estimated).toBe(true);
+    expect(result.usage.inputTokens).toBeGreaterThan(0);
+    expect(result.usage.outputTokens).toBeGreaterThan(0);
+    expect(result.usage.cacheReadTokens).toBe(0);
+    expect(result.usage.cacheCreationTokens).toBe(0);
     expect(onMessage).toHaveBeenCalledWith("Reading files...");
     expect(onMessage).toHaveBeenCalledWith(finalOutput());
-    expect(onUsage).not.toHaveBeenCalled();
+    // Seed estimate, two assistant events, and the final result event all
+    // trigger onUsage callbacks while the run is in flight.
+    expect(onUsage).toHaveBeenCalled();
+    for (const call of onUsage.mock.calls) {
+      expect(call[0].estimated).toBe(true);
+    }
   });
 
   it("captures token usage from the terminal result event and forwards it via onUsage", async () => {
@@ -344,7 +350,9 @@ describe("CursorAgent", () => {
         cacheCreationTokens: 8,
       },
     });
-    expect(onUsage).toHaveBeenCalledTimes(1);
+    // The terminal result event graduates the running estimate to the
+    // authoritative numbers and the final onUsage call drops the estimated
+    // flag - earlier calls during the run are still flagged as estimates.
     expect(onUsage).toHaveBeenLastCalledWith({
       inputTokens: 12,
       outputTokens: 34,
@@ -379,10 +387,15 @@ describe("CursorAgent", () => {
         cacheCreationTokens: 0,
       },
     });
-    expect(onUsage).toHaveBeenCalledTimes(1);
+    expect(onUsage).toHaveBeenLastCalledWith({
+      inputTokens: 5,
+      outputTokens: 9,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
   });
 
-  it("ignores an empty usage object on the result event", async () => {
+  it("keeps live estimates when the result event carries an empty usage object", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const onUsage = vi.fn();
@@ -400,18 +413,16 @@ describe("CursorAgent", () => {
     });
     proc.emit("close", 0);
 
-    await expect(promise).resolves.toMatchObject({
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      },
-    });
-    expect(onUsage).not.toHaveBeenCalled();
+    const result = await promise;
+    // Empty usage gives us no authoritative numbers, so the resolved usage
+    // remains the running estimate (still marked estimated:true).
+    expect(result.usage.estimated).toBe(true);
+    expect(result.usage.inputTokens).toBeGreaterThan(0);
+    expect(onUsage).toHaveBeenCalled();
+    expect(onUsage.mock.calls.at(-1)?.[0].estimated).toBe(true);
   });
 
-  it("ignores usage carried on an errored result event", async () => {
+  it("does not graduate estimates to authoritative numbers on an errored result event", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const onUsage = vi.fn();
@@ -429,7 +440,85 @@ describe("CursorAgent", () => {
     proc.emit("close", 0);
 
     await expect(promise).rejects.toThrow("cursor reported error");
-    expect(onUsage).not.toHaveBeenCalled();
+    // We still seed and update estimates during the run, but no callback
+    // ever drops the estimated flag because the result event was an error.
+    expect(onUsage).toHaveBeenCalled();
+    for (const call of onUsage.mock.calls) {
+      expect(call[0].estimated).toBe(true);
+    }
+  });
+
+  it("seeds an initial prompt-only usage estimate before any events arrive", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+    const agent = new CursorAgent();
+
+    agent.run("test prompt", "/work/dir", { onUsage });
+
+    expect(onUsage).toHaveBeenCalledTimes(1);
+    const first = onUsage.mock.calls[0]![0];
+    expect(first.estimated).toBe(true);
+    expect(first.inputTokens).toBeGreaterThan(0);
+    expect(first.outputTokens).toBe(0);
+  });
+
+  it("grows the live input estimate when tool calls are reported", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+    const agent = new CursorAgent();
+
+    agent.run("test prompt", "/work/dir", { onUsage });
+    const baseline = onUsage.mock.calls[0]![0].inputTokens as number;
+
+    emitJson(proc, {
+      type: "tool_call",
+      subtype: "started",
+      call_id: "call-1",
+      session_id: "sess-1",
+    });
+    emitJson(proc, {
+      type: "tool_call",
+      subtype: "completed",
+      call_id: "call-1",
+      session_id: "sess-1",
+    });
+
+    const afterStart = onUsage.mock.calls.at(-1)![0];
+    expect(afterStart.inputTokens).toBeGreaterThan(baseline);
+    expect(afterStart.estimated).toBe(true);
+    // `completed` events should not double-count toward the input estimate.
+    expect(onUsage.mock.calls.length).toBe(2);
+  });
+
+  it("grows the live output estimate as thinking deltas stream in", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+    const agent = new CursorAgent();
+
+    agent.run("test prompt", "/work/dir", { onUsage });
+    const baselineOutput = onUsage.mock.calls[0]![0].outputTokens as number;
+    expect(baselineOutput).toBe(0);
+
+    emitJson(proc, {
+      type: "thinking",
+      subtype: "delta",
+      text: "Reasoning through the problem space step by step.",
+      session_id: "sess-1",
+    });
+    emitJson(proc, {
+      type: "thinking",
+      subtype: "completed",
+      session_id: "sess-1",
+    });
+
+    const afterDelta = onUsage.mock.calls.at(-1)![0];
+    expect(afterDelta.outputTokens).toBeGreaterThan(0);
+    expect(afterDelta.estimated).toBe(true);
+    // `completed` thinking events without `text` should not trigger updates.
+    expect(onUsage.mock.calls.length).toBe(2);
   });
 
   it("falls back to the terminal result event when no assistant messages were emitted", async () => {

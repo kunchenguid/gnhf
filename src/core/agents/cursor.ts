@@ -29,6 +29,21 @@ interface CursorAssistantEvent {
   session_id?: string;
 }
 
+interface CursorThinkingEvent {
+  type: "thinking";
+  subtype?: string;
+  text?: string;
+  timestamp_ms?: number;
+  session_id?: string;
+}
+
+interface CursorToolCallEvent {
+  type: "tool_call";
+  subtype: "started" | "completed";
+  call_id?: string;
+  session_id?: string;
+}
+
 interface CursorResultUsage {
   inputTokens?: number;
   outputTokens?: number;
@@ -45,7 +60,28 @@ interface CursorResultEvent {
   usage?: CursorResultUsage;
 }
 
-type CursorEvent = CursorAssistantEvent | CursorResultEvent | { type: string };
+type CursorEvent =
+  | CursorAssistantEvent
+  | CursorThinkingEvent
+  | CursorToolCallEvent
+  | CursorResultEvent
+  | { type: string };
+
+// Rough character-to-token heuristic. cursor-agent only emits authoritative
+// token usage on the terminal `result` event (and not always), so this gives
+// the renderer a non-zero, roughly proportional number while the run is in
+// flight. Replaced with real numbers as soon as the result event arrives.
+function estimateTokens(charCount: number): number {
+  if (charCount <= 0) return 0;
+  return Math.ceil(charCount / 4);
+}
+
+// Per-tool-call input-cost heuristic. Each tool result (file contents,
+// shell output, edit confirmation) feeds back into the model's context as
+// input on the next round, so the tool-call count dominates real input
+// usage in practice. 2000 covers a mix of large reads and small bash/edit
+// invocations - matches the heuristic ACP uses for the same reason.
+const ESTIMATED_TOKENS_PER_TOOL_CALL = 2000;
 
 interface CursorAgentDeps {
   bin?: string;
@@ -292,22 +328,68 @@ export class CursorAgent implements Agent {
       let lastAssistantText: string | null = null;
       let resultText: string | null = null;
       let resultErrored = false;
-      // cursor-agent reports per-run usage only on the terminal result event,
-      // so we start at zero and overwrite once we see the result.
-      const cumulative: TokenUsage = {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
+      // Tracks whether we have authoritative usage numbers from a terminal
+      // `result.usage` event. Until then, every onUsage callback is flagged
+      // estimated:true so the renderer prefixes the display with "~".
+      let authoritativeUsage: TokenUsage | null = null;
+      let agentOutputChars = 0;
+      let toolCallCount = 0;
+      const promptTokenEstimate = estimateTokens(
+        buildCursorPrompt(prompt, this.schema).length,
+      );
+
+      const emitUsage = () => {
+        if (authoritativeUsage) {
+          onUsage?.({ ...authoritativeUsage });
+          return;
+        }
+        const usage: TokenUsage = {
+          inputTokens:
+            promptTokenEstimate +
+            toolCallCount * ESTIMATED_TOKENS_PER_TOOL_CALL,
+          outputTokens: estimateTokens(agentOutputChars),
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          estimated: true,
+        };
+        onUsage?.(usage);
       };
+
+      // Seed the renderer with the prompt-only estimate so token counters
+      // are non-zero as soon as the iteration starts, before any deltas.
+      emitUsage();
 
       parseJSONLStream<CursorEvent>(child.stdout!, logStream, (event) => {
         if (event.type === "assistant") {
           const text = textFromAssistantEvent(event as CursorAssistantEvent);
           if (text !== null) {
             lastAssistantText = text;
+            agentOutputChars += text.length;
             const visible = text.trim();
             if (visible) onMessage?.(visible);
+            emitUsage();
+          }
+          return;
+        }
+
+        if (event.type === "thinking") {
+          const next = event as CursorThinkingEvent;
+          // cursor-agent streams reasoning as `thinking` deltas. Counting
+          // their characters toward output tokens keeps the renderer moving
+          // during long pre-tool-call thinking phases instead of frozen at
+          // the prompt-only estimate.
+          if (next.subtype === "delta" && typeof next.text === "string") {
+            agentOutputChars += next.text.length;
+            emitUsage();
+          }
+          return;
+        }
+
+        if (event.type === "tool_call") {
+          const next = event as CursorToolCallEvent;
+          if (next.subtype === "started") {
+            toolCallCount += 1;
+            emitUsage();
           }
           return;
         }
@@ -323,12 +405,9 @@ export class CursorAgent implements Agent {
           }
           const usage = readResultUsage(next.usage);
           if (usage) {
-            cumulative.inputTokens = usage.inputTokens;
-            cumulative.outputTokens = usage.outputTokens;
-            cumulative.cacheReadTokens = usage.cacheReadTokens;
-            cumulative.cacheCreationTokens = usage.cacheCreationTokens;
-            onUsage?.({ ...cumulative });
+            authoritativeUsage = usage;
           }
+          emitUsage();
         }
       });
 
@@ -351,7 +430,18 @@ export class CursorAgent implements Agent {
 
           try {
             const output = parseCursorOutput(candidate, this.schema);
-            resolve({ output, usage: cumulative });
+            const usage: TokenUsage = authoritativeUsage
+              ? { ...authoritativeUsage }
+              : {
+                  inputTokens:
+                    promptTokenEstimate +
+                    toolCallCount * ESTIMATED_TOKENS_PER_TOOL_CALL,
+                  outputTokens: estimateTokens(agentOutputChars),
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                  estimated: true,
+                };
+            resolve({ output, usage });
           } catch (err) {
             reject(
               new Error(
