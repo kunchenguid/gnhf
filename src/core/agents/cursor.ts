@@ -422,7 +422,7 @@ export class CursorAgent implements Agent {
             return;
           }
 
-          const candidate = lastAssistantText ?? resultText;
+          const candidate = resultText ?? lastAssistantText;
           if (!candidate) {
             reject(new Error("cursor returned no agent message"));
             return;

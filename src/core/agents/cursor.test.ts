@@ -544,6 +544,29 @@ describe("CursorAgent", () => {
     });
   });
 
+  it("prefers the terminal result when assistant events stream JSON deltas", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent();
+    const output = finalOutput({ summary: "from result" });
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, assistantEvent(output.slice(0, 20)));
+    emitJson(proc, assistantEvent(output.slice(20)));
+    emitJson(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: output,
+      session_id: "sess-1",
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "from result" },
+    });
+  });
+
   it("concatenates multi-block assistant content into the final message", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
