@@ -297,19 +297,22 @@ describe("CursorAgent", () => {
     });
     // Without authoritative usage on the result event, the resolved usage is
     // the running estimate: prompt-token estimate as input + char-derived
-    // estimate of all assistant text as output, flagged estimated:true.
-    expect(result.usage.estimated).toBe(true);
+    // estimate of all assistant text as output.
     expect(result.usage.inputTokens).toBeGreaterThan(0);
     expect(result.usage.outputTokens).toBeGreaterThan(0);
     expect(result.usage.cacheReadTokens).toBe(0);
     expect(result.usage.cacheCreationTokens).toBe(0);
+    expect(result.usage.estimated).toBeUndefined();
     expect(onMessage).toHaveBeenCalledWith("Reading files...");
     expect(onMessage).toHaveBeenCalledWith(finalOutput());
     // Seed estimate, two assistant events, and the final result event all
-    // trigger onUsage callbacks while the run is in flight.
+    // trigger onUsage callbacks while the run is in flight. None should set
+    // the estimated flag - cursor matches the display convention of the
+    // other native agents (claude, codex, copilot, ...) and reports usage
+    // without a "~" qualifier.
     expect(onUsage).toHaveBeenCalled();
     for (const call of onUsage.mock.calls) {
-      expect(call[0].estimated).toBe(true);
+      expect(call[0].estimated).toBeUndefined();
     }
   });
 
@@ -415,14 +418,14 @@ describe("CursorAgent", () => {
 
     const result = await promise;
     // Empty usage gives us no authoritative numbers, so the resolved usage
-    // remains the running estimate (still marked estimated:true).
-    expect(result.usage.estimated).toBe(true);
+    // remains the running estimate.
     expect(result.usage.inputTokens).toBeGreaterThan(0);
+    expect(result.usage.estimated).toBeUndefined();
     expect(onUsage).toHaveBeenCalled();
-    expect(onUsage.mock.calls.at(-1)?.[0].estimated).toBe(true);
+    expect(onUsage.mock.calls.at(-1)?.[0].estimated).toBeUndefined();
   });
 
-  it("does not graduate estimates to authoritative numbers on an errored result event", async () => {
+  it("falls back to live estimates on an errored result event", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const onUsage = vi.fn();
@@ -440,11 +443,11 @@ describe("CursorAgent", () => {
     proc.emit("close", 0);
 
     await expect(promise).rejects.toThrow("cursor reported error");
-    // We still seed and update estimates during the run, but no callback
-    // ever drops the estimated flag because the result event was an error.
+    // We still seed and update estimates during the run; the errored result
+    // does not get adopted as authoritative usage.
     expect(onUsage).toHaveBeenCalled();
     for (const call of onUsage.mock.calls) {
-      expect(call[0].estimated).toBe(true);
+      expect(call[0].estimated).toBeUndefined();
     }
   });
 
@@ -458,9 +461,9 @@ describe("CursorAgent", () => {
 
     expect(onUsage).toHaveBeenCalledTimes(1);
     const first = onUsage.mock.calls[0]![0];
-    expect(first.estimated).toBe(true);
     expect(first.inputTokens).toBeGreaterThan(0);
     expect(first.outputTokens).toBe(0);
+    expect(first.estimated).toBeUndefined();
   });
 
   it("grows the live input estimate when tool calls are reported", async () => {
@@ -487,7 +490,7 @@ describe("CursorAgent", () => {
 
     const afterStart = onUsage.mock.calls.at(-1)![0];
     expect(afterStart.inputTokens).toBeGreaterThan(baseline);
-    expect(afterStart.estimated).toBe(true);
+    expect(afterStart.estimated).toBeUndefined();
     // `completed` events should not double-count toward the input estimate.
     expect(onUsage.mock.calls.length).toBe(2);
   });
@@ -516,7 +519,7 @@ describe("CursorAgent", () => {
 
     const afterDelta = onUsage.mock.calls.at(-1)![0];
     expect(afterDelta.outputTokens).toBeGreaterThan(0);
-    expect(afterDelta.estimated).toBe(true);
+    expect(afterDelta.estimated).toBeUndefined();
     // `completed` thinking events without `text` should not trigger updates.
     expect(onUsage.mock.calls.length).toBe(2);
   });
