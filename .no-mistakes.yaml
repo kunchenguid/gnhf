@@ -1,5 +1,5 @@
 agent: codex
 
 commands:
-  test: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; pnpm test"
-  lint: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; pnpm run lint && pnpm run format:check && pnpm run typecheck"
+  test: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; CI=true pnpm install --frozen-lockfile && pnpm test"
+  lint: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; CI=true pnpm install --frozen-lockfile && pnpm run lint && pnpm run format:check && pnpm run typecheck"
