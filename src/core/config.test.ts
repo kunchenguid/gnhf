@@ -35,6 +35,7 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#   claude: /path/to/custom-claude",
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
+    "#   cursor: /path/to/custom-cursor-agent",
     "#   pi: /path/to/custom-pi",
     "",
     "# Native agent CLI arg overrides (optional)",
@@ -49,6 +50,9 @@ const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
     "#   copilot:",
     "#     - --model",
     "#     - gpt-5.4",
+    "#   cursor:",
+    "#     - --model",
+    "#     - gpt-5",
     "#   pi:",
     "#     - --provider",
     "#     - openai-codex",
@@ -320,6 +324,9 @@ describe("loadConfig", () => {
         "  copilot:",
         "    - --model",
         "    - gpt-5.4",
+        "  cursor:",
+        "    - --model",
+        "    - gpt-5",
         "  pi:",
         "    - --provider",
         "    - openai-codex",
@@ -339,6 +346,7 @@ describe("loadConfig", () => {
       rovodev: ["--profile", "work"],
       opencode: ["--model", "gpt-5"],
       copilot: ["--model", "gpt-5.4"],
+      cursor: ["--model", "gpt-5"],
       pi: [
         "--provider",
         "openai-codex",
@@ -471,6 +479,44 @@ describe("loadConfig", () => {
       /agentArgsOverride\.pi\[0\].*managed by gnhf/,
     );
   });
+
+  it("allows safe agentArgsOverride.cursor flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  cursor:\n    - --model\n    - gpt-5\n    - --force\n    - --trust\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      cursor: ["--model", "gpt-5", "--force", "--trust"],
+    });
+  });
+
+  it.each([
+    "-p",
+    "--print",
+    "--output-format",
+    "--output-format=text",
+    "--stream-partial-output",
+    "--resume",
+    "--resume=chat-id",
+    "--continue",
+    "--workspace",
+    "--workspace=/repo",
+    "--api-key",
+    "--api-key=secret",
+  ])(
+    "throws when agentArgsOverride.cursor contains reserved flag %s",
+    (flag) => {
+      mockReadFileSync.mockReturnValue(
+        `agentArgsOverride:\n  cursor:\n    - ${flag}\n`,
+      );
+
+      expect(() => loadConfig()).toThrow(
+        /agentArgsOverride\.cursor\[0\].*managed by gnhf/,
+      );
+    },
+  );
 
   it("reads acpRegistryOverrides from config", () => {
     mockReadFileSync.mockReturnValue(

@@ -6,6 +6,10 @@ import type { WriteStream } from "node:fs";
  * Wire stderr collection, spawn-error handling, and the common close-handler
  * prefix (logStream.end + non-zero exit code rejection) for a child process.
  * Calls `onSuccess` only when the process exits with code 0.
+ *
+ * Pass `classifyExitError` to upgrade specific stderr patterns to a custom
+ * error (such as `PermanentAgentError`) on non-zero exits. Return `null` from
+ * the classifier to keep the default `${agent} exited with code ${code}` error.
  */
 export function setupChildProcessHandlers(
   child: ChildProcess,
@@ -13,6 +17,7 @@ export function setupChildProcessHandlers(
   logStream: WriteStream | null,
   reject: (err: Error) => void,
   onSuccess: () => void,
+  classifyExitError?: (stderr: string, defaultMessage: string) => Error | null,
 ): void {
   let stderr = "";
 
@@ -27,7 +32,9 @@ export function setupChildProcessHandlers(
   child.on("close", (code) => {
     logStream?.end();
     if (code !== 0) {
-      reject(new Error(`${agentName} exited with code ${code}: ${stderr}`));
+      const defaultMessage = `${agentName} exited with code ${code}: ${stderr}`;
+      const classified = classifyExitError?.(stderr, defaultMessage) ?? null;
+      reject(classified ?? new Error(defaultMessage));
       return;
     }
     onSuccess();
