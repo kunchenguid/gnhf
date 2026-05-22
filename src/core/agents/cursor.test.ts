@@ -567,6 +567,28 @@ describe("CursorAgent", () => {
     });
   });
 
+  it("accumulates assistant event deltas when the result event has no text", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent();
+    const output = finalOutput({ summary: "from assistant deltas" });
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, assistantEvent(output.slice(0, 20)));
+    emitJson(proc, assistantEvent(output.slice(20)));
+    emitJson(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "sess-1",
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "from assistant deltas" },
+    });
+  });
+
   it("concatenates multi-block assistant content into the final message", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

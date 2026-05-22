@@ -325,7 +325,7 @@ export class CursorAgent implements Agent {
         return;
       }
 
-      let lastAssistantText: string | null = null;
+      let assistantText = "";
       let resultText: string | null = null;
       let resultErrored = false;
       // Tracks whether we have authoritative usage numbers from a terminal
@@ -363,7 +363,7 @@ export class CursorAgent implements Agent {
         if (event.type === "assistant") {
           const text = textFromAssistantEvent(event as CursorAssistantEvent);
           if (text !== null) {
-            lastAssistantText = text;
+            assistantText += text;
             agentOutputChars += text.length;
             const visible = text.trim();
             if (visible) onMessage?.(visible);
@@ -422,7 +422,7 @@ export class CursorAgent implements Agent {
             return;
           }
 
-          const candidate = resultText ?? lastAssistantText;
+          const candidate = resultText ?? (assistantText || null);
           if (!candidate) {
             reject(new Error("cursor returned no agent message"));
             return;
