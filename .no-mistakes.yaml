@@ -1,0 +1,5 @@
+agent: codex
+
+commands:
+  test: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; pnpm test"
+  lint: "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; pnpm run lint && pnpm run format:check && pnpm run typecheck"
