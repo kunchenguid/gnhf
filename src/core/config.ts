@@ -176,6 +176,7 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "--continue" ||
         arg === "--workspace" ||
         arg.startsWith("--workspace=") ||
+        arg === "-a" ||
         arg === "--api-key" ||
         arg.startsWith("--api-key=")
       );

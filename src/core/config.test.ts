@@ -503,6 +503,7 @@ describe("loadConfig", () => {
     "--continue",
     "--workspace",
     "--workspace=/repo",
+    "-a",
     "--api-key",
     "--api-key=secret",
   ])(
