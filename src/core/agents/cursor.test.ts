@@ -297,22 +297,22 @@ describe("CursorAgent", () => {
     });
     // Without authoritative usage on the result event, the resolved usage is
     // the running estimate: prompt-token estimate as input + char-derived
-    // estimate of all assistant text as output.
+    // estimate of all assistant text as output, flagged as estimated so the
+    // renderer prefixes the totals with "~".
     expect(result.usage.inputTokens).toBeGreaterThan(0);
     expect(result.usage.outputTokens).toBeGreaterThan(0);
     expect(result.usage.cacheReadTokens).toBe(0);
     expect(result.usage.cacheCreationTokens).toBe(0);
-    expect(result.usage.estimated).toBeUndefined();
+    expect(result.usage.estimated).toBe(true);
     expect(onMessage).toHaveBeenCalledWith("Reading files...");
     expect(onMessage).toHaveBeenCalledWith(finalOutput());
     // Seed estimate, two assistant events, and the final result event all
-    // trigger onUsage callbacks while the run is in flight. None should set
-    // the estimated flag - cursor matches the display convention of the
-    // other native agents (claude, codex, copilot, ...) and reports usage
-    // without a "~" qualifier.
+    // trigger onUsage callbacks while the run is in flight. None of them
+    // carry authoritative usage, so they should all be flagged estimated so
+    // the renderer surfaces them with a "~" prefix.
     expect(onUsage).toHaveBeenCalled();
     for (const call of onUsage.mock.calls) {
-      expect(call[0].estimated).toBeUndefined();
+      expect(call[0].estimated).toBe(true);
     }
   });
 
@@ -418,11 +418,12 @@ describe("CursorAgent", () => {
 
     const result = await promise;
     // Empty usage gives us no authoritative numbers, so the resolved usage
-    // remains the running estimate.
+    // remains the running estimate and stays flagged so the renderer prefixes
+    // it with "~".
     expect(result.usage.inputTokens).toBeGreaterThan(0);
-    expect(result.usage.estimated).toBeUndefined();
+    expect(result.usage.estimated).toBe(true);
     expect(onUsage).toHaveBeenCalled();
-    expect(onUsage.mock.calls.at(-1)?.[0].estimated).toBeUndefined();
+    expect(onUsage.mock.calls.at(-1)?.[0].estimated).toBe(true);
   });
 
   it("falls back to live estimates on an errored result event", async () => {
@@ -444,10 +445,11 @@ describe("CursorAgent", () => {
 
     await expect(promise).rejects.toThrow("cursor reported error");
     // We still seed and update estimates during the run; the errored result
-    // does not get adopted as authoritative usage.
+    // does not get adopted as authoritative usage, so each call stays
+    // flagged estimated for the renderer.
     expect(onUsage).toHaveBeenCalled();
     for (const call of onUsage.mock.calls) {
-      expect(call[0].estimated).toBeUndefined();
+      expect(call[0].estimated).toBe(true);
     }
   });
 
@@ -463,7 +465,7 @@ describe("CursorAgent", () => {
     const first = onUsage.mock.calls[0]![0];
     expect(first.inputTokens).toBeGreaterThan(0);
     expect(first.outputTokens).toBe(0);
-    expect(first.estimated).toBeUndefined();
+    expect(first.estimated).toBe(true);
   });
 
   it("grows the live input estimate when tool calls are reported", async () => {
@@ -490,7 +492,7 @@ describe("CursorAgent", () => {
 
     const afterStart = onUsage.mock.calls.at(-1)![0];
     expect(afterStart.inputTokens).toBeGreaterThan(baseline);
-    expect(afterStart.estimated).toBeUndefined();
+    expect(afterStart.estimated).toBe(true);
     // `completed` events should not double-count toward the input estimate.
     expect(onUsage.mock.calls.length).toBe(2);
   });
@@ -519,7 +521,7 @@ describe("CursorAgent", () => {
 
     const afterDelta = onUsage.mock.calls.at(-1)![0];
     expect(afterDelta.outputTokens).toBeGreaterThan(0);
-    expect(afterDelta.estimated).toBeUndefined();
+    expect(afterDelta.estimated).toBe(true);
     // `completed` thinking events without `text` should not trigger updates.
     expect(onUsage.mock.calls.length).toBe(2);
   });

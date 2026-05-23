@@ -330,9 +330,9 @@ export class CursorAgent implements Agent {
       let resultErrored = false;
       // Tracks whether we have authoritative usage numbers from a terminal
       // `result.usage` event. Until then, onUsage callbacks carry running
-      // heuristic estimates so the renderer is never stuck at zero, but we
-      // do not flag them estimated:true so the display matches the other
-      // native agents that report whatever their CLI gives them.
+      // heuristic estimates flagged `estimated: true` so the renderer
+      // prefixes the numbers with `~`, matching how ACP surfaces its own
+      // prompt/tool-call heuristics.
       let authoritativeUsage: TokenUsage | null = null;
       let agentOutputChars = 0;
       let toolCallCount = 0;
@@ -352,6 +352,7 @@ export class CursorAgent implements Agent {
           outputTokens: estimateTokens(agentOutputChars),
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
+          estimated: true,
         });
       };
 
@@ -439,6 +440,7 @@ export class CursorAgent implements Agent {
                   outputTokens: estimateTokens(agentOutputChars),
                   cacheReadTokens: 0,
                   cacheCreationTokens: 0,
+                  estimated: true,
                 };
             resolve({ output, usage });
           } catch (err) {
