@@ -116,6 +116,58 @@ describe("setupChildProcessHandlers", () => {
     expect(logStream.end).toHaveBeenCalledTimes(1);
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
+
+  it("lets the optional classifier replace the default non-zero exit error", () => {
+    const child = createMockChild();
+    const reject = vi.fn();
+    const onSuccess = vi.fn();
+    const sentinel = new Error("classified failure");
+
+    setupChildProcessHandlers(
+      child as never,
+      "cursor",
+      null,
+      reject,
+      onSuccess,
+      (stderr, defaultMessage) => {
+        expect(stderr).toBe("invalid model: foo");
+        expect(defaultMessage).toBe(
+          "cursor exited with code 1: invalid model: foo",
+        );
+        return sentinel;
+      },
+    );
+
+    child.stderr.emit("data", Buffer.from("invalid model: foo"));
+    child.emit("close", 1);
+
+    expect(reject).toHaveBeenCalledTimes(1);
+    expect(reject).toHaveBeenCalledWith(sentinel);
+  });
+
+  it("falls back to the default error when the classifier returns null", () => {
+    const child = createMockChild();
+    const reject = vi.fn();
+    const onSuccess = vi.fn();
+    const classifier = vi.fn(() => null);
+
+    setupChildProcessHandlers(
+      child as never,
+      "cursor",
+      null,
+      reject,
+      onSuccess,
+      classifier,
+    );
+
+    child.stderr.emit("data", Buffer.from("transient blip"));
+    child.emit("close", 1);
+
+    expect(classifier).toHaveBeenCalledTimes(1);
+    expect(reject).toHaveBeenCalledWith(
+      new Error("cursor exited with code 1: transient blip"),
+    );
+  });
 });
 
 describe("setupAbortHandler", () => {

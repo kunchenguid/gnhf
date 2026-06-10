@@ -12,6 +12,7 @@ export const AGENT_NAMES = [
   "rovodev",
   "opencode",
   "copilot",
+  "cursor",
   "pi",
 ] as const;
 
@@ -162,6 +163,22 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "--share" ||
         arg.startsWith("--share=") ||
         arg === "--share-gist"
+      );
+    case "cursor":
+      return (
+        arg === "-p" ||
+        arg === "--print" ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--stream-partial-output" ||
+        arg === "--resume" ||
+        arg.startsWith("--resume=") ||
+        arg === "--continue" ||
+        arg === "--workspace" ||
+        arg.startsWith("--workspace=") ||
+        arg === "-a" ||
+        arg === "--api-key" ||
+        arg.startsWith("--api-key=")
       );
     case "pi":
       return (
@@ -523,6 +540,7 @@ function serializeConfig(config: Config): string {
     "#   claude: /path/to/custom-claude",
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
+    "#   cursor: /path/to/custom-cursor-agent",
     "#   pi: /path/to/custom-pi",
     "",
     "# Native agent CLI arg overrides (optional)",
@@ -537,6 +555,9 @@ function serializeConfig(config: Config): string {
     "#   copilot:",
     "#     - --model",
     "#     - gpt-5.4",
+    "#   cursor:",
+    "#     - --model",
+    "#     - gpt-5",
     "#   pi:",
     "#     - --provider",
     "#     - openai-codex",

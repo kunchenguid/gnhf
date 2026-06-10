@@ -48,7 +48,7 @@ You wake up to a branch full of clean work and a log of everything that happened
 - **Long running** — each iteration is committed on success, rolled back on failure except commit failures preserved for repair, with sensible retries; retryable hard agent errors back off exponentially while agent-reported failures continue immediately
 - **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then clear or restore it on exit depending on terminal support; token totals prefixed with `~` are estimates
 - **Exit summary**: every run ends with a permanent summary covering elapsed time, branch, iterations, tokens, branch diff stats, local notes/log paths, and review commands
-- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or ACP targets out of the box
+- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Cursor Agent CLI, Pi, or ACP targets out of the box
 
 ## Quick Start
 
@@ -203,7 +203,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 | Flag                     | Description                                                                                            | Default                |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `pi`, or `acp:<target-or-command>`) | config file (`claude`) |
+| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `cursor`, `pi`, or `acp:<target-or-command>`) | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                                                       | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                              | unlimited              |
 | `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume     | unlimited              |
@@ -219,7 +219,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 Config lives at `~/.gnhf/config.yml`:
 
 ```yaml
-# Agent to use by default (claude, codex, rovodev, opencode, copilot, pi, or acp:<target-or-command>)
+# Agent to use by default (claude, codex, rovodev, opencode, copilot, cursor, pi, or acp:<target-or-command>)
 agent: claude
 
 # Custom paths to native agent binaries (optional)
@@ -227,6 +227,7 @@ agent: claude
 #   claude: /path/to/custom-claude
 #   codex: /path/to/custom-codex
 #   copilot: /path/to/custom-copilot
+#   cursor: /path/to/custom-cursor-agent
 #   pi: /path/to/custom-pi
 
 # Native agent CLI arg overrides (optional)
@@ -240,6 +241,9 @@ agent: claude
 #   copilot:
 #     - --model
 #     - gpt-5.4
+#   cursor:
+#     - --model
+#     - gpt-5
 #   pi:
 #     - --provider
 #     - openai-codex
@@ -271,14 +275,14 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
 
-`agentArgsOverride.<name>` lets you pass through extra CLI flags for native agents (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, or `pi`).
+`agentArgsOverride.<name>` lets you pass through extra CLI flags for native agents (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `cursor`, or `pi`).
 ACP targets do not support path or arg overrides in this version.
 Use `acpRegistryOverrides` to map `acp:<target>` names to custom spawn commands for local, forked, or beta ACP agents.
 You can also pass a raw custom ACP server command directly as a quoted `acp:` spec, for example `gnhf --agent 'acp:./bin/dev-acp --profile ci' "fix the tests"`.
 
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
-- For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
-- Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` specifically, `--api-key` is also blocked; configure the Pi API key via Pi's own config or the environment variable it reads, not via `agentArgsOverride`.
+- For `codex`, `claude`, `copilot`, and `cursor`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
+- Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` and `cursor`, `--api-key` is also blocked; configure the agent's API key via its own config or environment variable, not via `agentArgsOverride`.
 
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
@@ -295,6 +299,7 @@ agentPathOverride:
   claude: ~/bin/claude-code-switch
   codex: /usr/local/bin/my-codex-wrapper
   copilot: ~/bin/copilot-wrapper
+  cursor: ~/bin/cursor-agent-wrapper
   pi: ~/bin/pi-wrapper
 ```
 
@@ -316,13 +321,14 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 
 ## Agents
 
-`gnhf` supports six native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target-or-command>` specs.
+`gnhf` supports seven native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target-or-command>` specs.
 
 | Agent              | Flag                              | Requirements                                                                                                                                                                        | Notes                                                                                                                                                                                                                                                                                                       |
 | ------------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code        | `--agent claude`                  | Install Anthropic's `claude` CLI and sign in first.                                                                                                                                 | `gnhf` invokes `claude` directly in non-interactive mode. After Claude emits a successful structured result, `gnhf` treats that result as final and shuts down any lingering Claude process tree after a short grace period.                                                                                |
 | Codex              | `--agent codex`                   | Install OpenAI's `codex` CLI and sign in first.                                                                                                                                     | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                                                                                               |
 | GitHub Copilot CLI | `--agent copilot`                 | Install GitHub Copilot CLI and sign in first.                                                                                                                                       | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.                                                                                           |
+| Cursor Agent CLI   | `--agent cursor`                  | Install Cursor's `cursor-agent` CLI and sign in first (requires an active Cursor subscription).                                                                                     | `gnhf` invokes `cursor-agent -p --output-format stream-json --force --trust` in non-interactive mode, appends the final output schema to the prompt, and parses the terminal `result.result` text as JSON when available, falling back to assistant text for older streams. Per-iteration token usage is read from the terminal `result` event's `usage` field when available; older builds without that field keep live heuristic estimates. |
 | Pi                 | `--agent pi`                      | Install the `pi` CLI and configure a usable provider/model first.                                                                                                                   | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                                                                                                          |
 | Rovo Dev           | `--agent rovodev`                 | Install Atlassian's `acli` and authenticate it with Rovo Dev first.                                                                                                                 | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                                                                                                      |
 | OpenCode           | `--agent opencode`                | Install `opencode` and configure at least one usable model provider first.                                                                                                          | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.                                                                                            |

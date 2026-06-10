@@ -21,6 +21,7 @@ const TEST_AGENT_NAMES = [
   "rovodev",
   "opencode",
   "copilot",
+  "cursor",
   "pi",
 ];
 const TEST_IS_AGENT_SPEC = (name: string) => {
