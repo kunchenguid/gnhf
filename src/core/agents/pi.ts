@@ -4,6 +4,7 @@ import {
   buildAgentOutputSchema,
   validateAgentOutput,
   type Agent,
+  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
@@ -14,6 +15,7 @@ import {
   setupAbortHandler,
   setupChildProcessHandlers,
 } from "./stream-utils.js";
+import { parseAgentJson } from "./json-extract.js";
 
 interface PiAgentDeps {
   bin?: string;
@@ -90,6 +92,27 @@ function buildPiPrompt(prompt: string, schema: AgentOutputSchema): string {
 When the iteration is complete, your final assistant response must be only valid JSON matching this JSON Schema. Do not wrap it in Markdown fences. Do not include prose before or after the JSON object.
 
 ${JSON.stringify(schema, null, 2)}`;
+}
+
+function parsePiOutput(text: string, schema: AgentOutputSchema): AgentOutput {
+  const parsed = parseAgentJson(text, (value) => {
+    try {
+      validateAgentOutput(value, schema);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (parsed !== null) {
+    return validateAgentOutput(parsed, schema);
+  }
+
+  const fallbackParsed = parseAgentJson(text);
+  if (fallbackParsed !== null) {
+    return validateAgentOutput(fallbackParsed, schema);
+  }
+
+  throw new SyntaxError("output did not contain a parseable JSON object");
 }
 
 function buildPiArgs(extraArgs?: string[]): string[] {
@@ -382,28 +405,19 @@ export class PiAgent implements Agent {
           return;
         }
 
-        let parsed: unknown;
+        let output: AgentOutput;
         try {
-          parsed = JSON.parse(finalText);
+          output = parsePiOutput(finalText, this.schema);
         } catch (err) {
-          reject(
-            new Error(
-              `Failed to parse pi output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
+          const message =
+            err instanceof SyntaxError
+              ? `Failed to parse pi output: ${err.message}`
+              : `Invalid pi output: ${err instanceof Error ? err.message : err}`;
+          reject(new Error(message));
           return;
         }
 
-        try {
-          const output = validateAgentOutput(parsed, this.schema);
-          resolve({ output, usage: lastEmittedUsage });
-        } catch (err) {
-          reject(
-            new Error(
-              `Invalid pi output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
-        }
+        resolve({ output, usage: lastEmittedUsage });
       });
     });
   }

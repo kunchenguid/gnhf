@@ -389,6 +389,33 @@ describe("PiAgent", () => {
     await expect(promise).rejects.toThrow("Failed to parse pi output");
   });
 
+  it("recovers JSON that follows a prose summary", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new PiAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content:
+          "Iteration 3 complete. Built the foundation from scratch.\n\n" +
+          JSON.stringify({
+            success: true,
+            summary: "ok",
+            key_changes_made: [],
+            key_learnings: [],
+          }),
+      },
+    });
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output.success).toBe(true);
+    expect(result.output.summary).toBe("ok");
+  });
+
   it("rejects invalid output shape", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
