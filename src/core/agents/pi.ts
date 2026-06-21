@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
-  validateAgentOutput,
+  parseAgentOutput,
   type Agent,
   type AgentOutput,
   type AgentOutputSchema,
@@ -15,7 +15,6 @@ import {
   setupAbortHandler,
   setupChildProcessHandlers,
 } from "./stream-utils.js";
-import { parseAgentJson } from "./json-extract.js";
 
 interface PiAgentDeps {
   bin?: string;
@@ -92,27 +91,6 @@ function buildPiPrompt(prompt: string, schema: AgentOutputSchema): string {
 When the iteration is complete, your final assistant response must be only valid JSON matching this JSON Schema. Do not wrap it in Markdown fences. Do not include prose before or after the JSON object.
 
 ${JSON.stringify(schema, null, 2)}`;
-}
-
-function parsePiOutput(text: string, schema: AgentOutputSchema): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError("output did not contain a parseable JSON object");
 }
 
 function buildPiArgs(extraArgs?: string[]): string[] {
@@ -407,7 +385,7 @@ export class PiAgent implements Agent {
 
         let output: AgentOutput;
         try {
-          output = parsePiOutput(finalText, this.schema);
+          output = parseAgentOutput(finalText, this.schema, "pi");
         } catch (err) {
           const message =
             err instanceof SyntaxError

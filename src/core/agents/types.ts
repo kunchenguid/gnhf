@@ -1,3 +1,5 @@
+import { parseAgentJson } from "./json-extract.js";
+
 export interface AgentOutput {
   success: boolean;
   summary: string;
@@ -76,6 +78,33 @@ export function validateAgentOutput(
   }
 
   return value as unknown as AgentOutput;
+}
+
+export function parseAgentOutput(
+  text: string,
+  schema: AgentOutputSchema,
+  agentLabel: string,
+): AgentOutput {
+  const parsed = parseAgentJson(text, (value) => {
+    try {
+      validateAgentOutput(value, schema);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (parsed !== null) {
+    return validateAgentOutput(parsed, schema);
+  }
+
+  const fallbackParsed = parseAgentJson(text);
+  if (fallbackParsed !== null) {
+    return validateAgentOutput(fallbackParsed, schema);
+  }
+
+  throw new SyntaxError(
+    `${agentLabel} output did not contain a parseable JSON object`,
+  );
 }
 
 export interface AgentOutputCommitField {
