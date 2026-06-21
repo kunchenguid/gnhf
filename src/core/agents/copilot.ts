@@ -2,15 +2,13 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
-  validateAgentOutput,
+  parseAgentOutput,
   type Agent,
-  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
-import { parseAgentJson } from "./json-extract.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
@@ -192,32 +190,6 @@ function usageFromRecord(usage: Record<string, unknown>): TokenUsage | null {
   };
 }
 
-function parseCopilotOutput(
-  text: string,
-  schema: AgentOutputSchema,
-): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError(
-    "copilot output did not contain a parseable JSON object",
-  );
-}
-
 export class CopilotAgent implements Agent {
   name = "copilot";
 
@@ -307,7 +279,11 @@ export class CopilotAgent implements Agent {
         }
 
         try {
-          const output = parseCopilotOutput(lastAgentMessage, this.schema);
+          const output = parseAgentOutput(
+            lastAgentMessage,
+            this.schema,
+            "copilot",
+          );
           resolve({ output, usage: cumulative });
         } catch (err) {
           reject(
