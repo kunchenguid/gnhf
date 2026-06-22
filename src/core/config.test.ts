@@ -103,6 +103,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -126,6 +127,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -150,6 +152,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -208,6 +211,7 @@ describe("loadConfig", () => {
       },
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -243,6 +247,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -258,6 +263,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -273,6 +279,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -288,6 +295,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -296,6 +304,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -314,9 +323,6 @@ describe("loadConfig", () => {
         "  rovodev:",
         "    - --profile",
         "    - work",
-        "  opencode:",
-        "    - --model",
-        "    - gpt-5",
         "  copilot:",
         "    - --model",
         "    - gpt-5.4",
@@ -337,7 +343,6 @@ describe("loadConfig", () => {
       claude: ["--model", "sonnet"],
       codex: ["-m", "gpt-5.4"],
       rovodev: ["--profile", "work"],
-      opencode: ["--model", "gpt-5"],
       copilot: ["--model", "gpt-5.4"],
       pi: [
         "--provider",
@@ -359,6 +364,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
@@ -375,6 +381,7 @@ describe("loadConfig", () => {
       agentPathOverride: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      agentModel: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     });
