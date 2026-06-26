@@ -531,6 +531,38 @@ describe("ClaudeAgent", () => {
     });
   });
 
+  it("surfaces the API error from the stdout result event on a non-zero exit", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    // Claude Code reports an API / model error as a stdout `result` event
+    // (is_error + api_error_status + result), writes nothing to stderr, then
+    // exits non-zero. The real cause must reach the rejection, not just the code.
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      api_error_status: 400,
+      result:
+        "API Error (claude-opus-4-8): 400 The provided model identifier is invalid.",
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    });
+
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toThrow(
+      "The provided model identifier is invalid",
+    );
+  });
+
   it("calls onUsage on assistant events", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

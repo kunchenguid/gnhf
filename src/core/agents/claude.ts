@@ -32,6 +32,10 @@ interface ClaudeResultEvent {
   type: "result";
   subtype: string;
   is_error?: boolean;
+  // Claude Code surfaces API / model errors HERE on stdout (not stderr): `result`
+  // is the human-readable message, `api_error_status` the HTTP status code.
+  result?: string;
+  api_error_status?: number;
   total_cost_usd: number;
   usage: {
     input_tokens: number;
@@ -391,9 +395,26 @@ export class ClaudeAgent implements Agent {
         }
         logStream?.end();
         if (code !== 0 && !closedAfterFinalCleanup) {
-          const detail = `claude exited with code ${code}: ${stderr}`;
+          // Claude Code writes API / model errors to STDOUT as a `result` event
+          // (is_error / api_error_status / result), not to stderr. So on a non-zero
+          // exit stderr is usually empty and the real cause lives in the captured
+          // result event. Surface it so the failure is diagnosable (e.g. an invalid
+          // --model or a 400 from the provider) instead of a bare exit code.
+          const apiError = resultEvent ?? finalStructuredResultEvent;
+          const apiMessage =
+            apiError?.result ??
+            (apiError?.is_error
+              ? `claude reported an error${
+                  apiError.api_error_status
+                    ? ` (HTTP ${apiError.api_error_status})`
+                    : ""
+                }`
+              : "");
+          const reason =
+            stderr.trim() || apiMessage || "(no stderr or result message)";
+          const detail = `claude exited with code ${code}: ${reason}`;
           reject(
-            isPermanentClaudeError(stderr)
+            isPermanentClaudeError(stderr) || isPermanentClaudeError(apiMessage)
               ? new PermanentAgentError(
                   "claude credit balance too low - see gnhf.log",
                   detail,
