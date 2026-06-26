@@ -231,6 +231,9 @@ agent: claude
 
 # Native agent CLI arg overrides (optional)
 # agentArgsOverride:
+#   claude:
+#     - --model
+#     - claude-opus-4-8         # provider-specific: see the model note below
 #   codex:
 #     - -m
 #     - gpt-5.4
@@ -279,6 +282,7 @@ You can also pass a raw custom ACP server command directly as a quoted `acp:` sp
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
 - Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` specifically, `--api-key` is also blocked; configure the Pi API key via Pi's own config or the environment variable it reads, not via `agentArgsOverride`.
+- `claude` (Claude Code) receives no `--model` from `gnhf` by default, so it uses whatever model Claude Code itself resolves from its saved default (`~/.claude/settings.json`) against the active provider. That model id is provider-specific: the first-party / subscription API wants the bare id (for example `claude-opus-4-8`), while AWS Bedrock and Vertex want the inference-profile form (for example `us.anthropic.claude-opus-4-8`). If the saved default does not match the provider the launching shell points at (for example with `CLAUDE_CODE_USE_BEDROCK=1` set), `claude` exits with an API error. Pin it explicitly via `agentArgsOverride.claude` (shown above) so a `/model` change or a different launching terminal cannot silently switch it.
 
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 
