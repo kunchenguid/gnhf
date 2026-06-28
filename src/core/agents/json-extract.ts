@@ -1,10 +1,11 @@
 /**
  * Helpers for pulling a JSON object out of an agent's final assistant message.
  *
- * Agents are instructed to return JSON only, but several (rovodev, ACP targets)
- * sometimes prepend prose or wrap the JSON in markdown fences. These helpers
- * recover the structured payload in those cases without changing behaviour for
- * the well-formed pure-JSON path.
+ * Agents are instructed to return JSON only, but several (copilot, opencode, pi,
+ * rovodev, ACP targets) sometimes prepend prose or wrap the JSON in markdown
+ * fences. These helpers recover the structured payload in those cases without
+ * changing behaviour for the well-formed pure-JSON path. copilot, opencode, and
+ * pi reach these helpers via the shared `parseAgentOutput` in `types.ts`.
  */
 
 export function stripJsonFences(text: string): string {
