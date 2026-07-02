@@ -695,6 +695,7 @@ program
       let effectiveCwd = cwd;
       let worktreePath: string | null = null;
       let worktreeCleanup: (() => void) | null = null;
+      let getOrchestratorState: (() => ReturnType<Orchestrator["getState"]>) | null = null;
 
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
@@ -765,11 +766,25 @@ program
           // Ensure worktree cleanup runs even if die() or process.exit() is
           // called before reaching the normal cleanup block (e.g. orchestrator
           // crash to .catch to die to process.exit(1)).
+          // However, preserve worktrees that already have commits — the
+          // normal preservation block (worktreeCleanup = null) may not have
+          // run yet when force-shutdown or timeout triggers process.exit().
           const exitCleanup = worktreeCleanup;
           process.on("exit", () => {
-            if (worktreeCleanup === exitCleanup) {
-              exitCleanup();
+            if (worktreeCleanup !== exitCleanup) return;
+            try {
+              const state = getOrchestratorState?.();
+              if (
+                state &&
+                (state.commitCount > 0 || state.hasPendingCommitFailure)
+              ) {
+                return;
+              }
+            } catch {
+              // Orchestrator not yet created or already torn down — safe to
+              // clean up since no iteration could have committed anything.
             }
+            exitCleanup();
           });
         }
       } else if (options.currentBranch) {
@@ -980,6 +995,7 @@ program
           ...(options.push ? { push: true } : {}),
         },
       );
+      getOrchestratorState = () => orchestrator.getState();
       let shutdownSignal: NodeJS.Signals | null = null;
       let forceShutdownRequested = false;
 

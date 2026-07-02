@@ -3214,6 +3214,60 @@ describe("cli", () => {
     expect(removeWorktree).not.toHaveBeenCalled();
   });
 
+  it("does not remove a worktree with commits when exit handler fires before preservation block", async () => {
+    const removeWorktree = vi.fn();
+    const exitHandlers: (() => void)[] = [];
+    const processOnSpy = vi.spyOn(process, "on");
+    processOnSpy.mockImplementation(((event: string, handler: () => void) => {
+      if (event === "exit") {
+        exitHandlers.push(handler);
+      }
+      return process;
+    }) as typeof process.on);
+
+    try {
+      await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          acpRegistryOverrides: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          removeWorktree,
+          orchestratorGetState: vi.fn(() => ({
+            status: "completed" as const,
+            gracefulStopRequested: false,
+            currentIteration: 2,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            commitCount: 3,
+            iterations: [],
+            successCount: 2,
+            failCount: 0,
+            consecutiveFailures: 0,
+            startTime: new Date("2026-01-01T00:00:00Z"),
+            waitingUntil: null,
+            lastMessage: null,
+          })),
+        },
+      );
+
+      // Simulate what happens on force-shutdown: exit handlers fire
+      // before the normal preservation block nulls out worktreeCleanup
+      for (const handler of exitHandlers) {
+        handler();
+      }
+
+      expect(removeWorktree).not.toHaveBeenCalled();
+    } finally {
+      processOnSpy.mockRestore();
+    }
+  });
+
   it("resumes a preserved suffixed worktree instead of creating another one", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
     const repoRoot = join(tempDir, "repo");
