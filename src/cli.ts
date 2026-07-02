@@ -695,7 +695,9 @@ program
       let effectiveCwd = cwd;
       let worktreePath: string | null = null;
       let worktreeCleanup: (() => void) | null = null;
-      let getOrchestratorState: (() => ReturnType<Orchestrator["getState"]>) | null = null;
+      let getOrchestratorState:
+        | (() => ReturnType<Orchestrator["getState"]>)
+        | null = null;
 
       const currentBranch = getCurrentBranch(cwd);
       const onGnhfBranch = currentBranch.startsWith("gnhf/");
