@@ -1065,6 +1065,11 @@ program
           console.error(
             `\n  gnhf: shutdown timed out after ${FORCE_EXIT_TIMEOUT_MS / 1000}s, forcing exit\n`,
           );
+          // Preserve worktree on forced exit — the normal commitCount check
+          // at line ~1152 never runs from this code path.
+          if (worktreePath) {
+            worktreeCleanup = null;
+          }
           process.exit(getSignalExitCode(shutdownSignal ?? "SIGINT"));
         }
       } finally {
