@@ -77,10 +77,9 @@ function terminateGeminiProcess(
       return;
     } catch {
       // Fall back
+      child.kill("SIGTERM");
     }
   }
-
-  child.kill("SIGTERM");
 }
 
 function buildGeminiPrompt(prompt: string, schema: AgentOutputSchema): string {
@@ -143,6 +142,11 @@ export class GeminiAgent implements Agent {
     const { onUsage, onMessage, signal, logPath } = options ?? {};
 
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new Error("Agent was aborted"));
+        return;
+      }
+
       const logStream = logPath ? createWriteStream(logPath) : null;
       const fullPrompt = buildGeminiPrompt(prompt, this.schema);
       const child = spawn(this.bin, buildGeminiArgs(fullPrompt, this.extraArgs), {
@@ -153,13 +157,9 @@ export class GeminiAgent implements Agent {
         env: process.env,
       });
 
-      if (
-        setupAbortHandler(signal, child, reject, () =>
-          terminateGeminiProcess(child, this.platform),
-        )
-      ) {
-        return;
-      }
+      setupAbortHandler(signal, child, reject, () =>
+        terminateGeminiProcess(child, this.platform),
+      );
 
       let assistantText = "";
       let finalUsage: TokenUsage | null = null;
