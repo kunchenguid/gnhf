@@ -205,8 +205,16 @@ export class GeminiAgent implements Agent {
         let parsed: unknown;
         try {
           // Attempt to extract json from possible markdown fences just in case
-          const jsonMatch = finalText.match(/```json\s*([\s\S]*?)\s*```/);
-          const textToParse = jsonMatch ? jsonMatch[1] : finalText;
+          const jsonMatch = finalText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          let textToParse = jsonMatch ? jsonMatch[1] : finalText;
+          
+          if (!jsonMatch) {
+            const firstBrace = textToParse.indexOf('{');
+            const lastBrace = textToParse.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+              textToParse = textToParse.substring(firstBrace, lastBrace + 1);
+            }
+          }
           parsed = JSON.parse(textToParse);
         } catch (err) {
           reject(
