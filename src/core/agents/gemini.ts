@@ -168,11 +168,15 @@ export class GeminiAgent implements Agent {
       parseJSONLStream<JsonRecord>(child.stdout!, logStream, (event) => {
         if (!isRecord(event)) return;
 
-        if (event.type === "message" && event.role === "assistant" && typeof event.content === "string") {
-          assistantText += event.content;
-          if (event.delta) {
-             const visible = event.content.trim();
-             if (visible) onMessage?.(visible);
+        if (event.type === "message") {
+          if (event.role === "assistant" && typeof event.content === "string") {
+            assistantText += event.content;
+            if (event.delta) {
+              const visible = event.content.trim();
+              if (visible) onMessage?.(visible);
+            }
+          } else if (event.role !== "assistant") {
+            assistantText = "";
           }
         }
 
@@ -205,14 +209,32 @@ export class GeminiAgent implements Agent {
         let parsed: unknown;
         try {
           // Attempt to extract json from possible markdown fences just in case
-          const jsonMatch = finalText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-          let textToParse = jsonMatch ? jsonMatch[1] : finalText;
+          // Extract the last markdown fence to handle multiple turns correctly
+          const jsonMatches = [...finalText.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g)];
+          let textToParse = finalText;
           
-          if (!jsonMatch) {
-            const firstBrace = textToParse.indexOf('{');
-            const lastBrace = textToParse.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-              textToParse = textToParse.substring(firstBrace, lastBrace + 1);
+          if (jsonMatches.length > 0) {
+            textToParse = jsonMatches[jsonMatches.length - 1][1];
+          } else {
+            const lastEndBrace = textToParse.lastIndexOf('}');
+            if (lastEndBrace !== -1) {
+              const textBeforeBrace = textToParse.substring(0, lastEndBrace + 1);
+              const matchingStartBrace = textBeforeBrace.lastIndexOf('{');
+              if (matchingStartBrace !== -1 && lastEndBrace > matchingStartBrace) {
+                // Keep moving back to find the outermost start brace for the last object
+                let balance = 0;
+                let startBrace = lastEndBrace;
+                for (let i = lastEndBrace; i >= 0; i--) {
+                  if (textToParse[i] === '}') balance++;
+                  else if (textToParse[i] === '{') balance--;
+                  
+                  if (balance === 0) {
+                    startBrace = i;
+                    break;
+                  }
+                }
+                textToParse = textToParse.substring(startBrace, lastEndBrace + 1);
+              }
             }
           }
           parsed = JSON.parse(textToParse);
