@@ -14,6 +14,7 @@ import {
   setupAbortHandler,
   setupChildProcessHandlers,
 } from "./stream-utils.js";
+import { parseAgentJson } from "./json-extract.js";
 
 interface GeminiAgentDeps {
   bin?: string;
@@ -206,42 +207,11 @@ export class GeminiAgent implements Agent {
           return;
         }
 
-        let parsed: unknown;
-        try {
-          // Attempt to extract json from possible markdown fences just in case
-          // Extract the last markdown fence to handle multiple turns correctly
-          const jsonMatches = [...finalText.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g)];
-          let textToParse = finalText;
-          
-          if (jsonMatches.length > 0) {
-            textToParse = jsonMatches[jsonMatches.length - 1][1];
-          } else {
-            const lastEndBrace = textToParse.lastIndexOf('}');
-            if (lastEndBrace !== -1) {
-              const textBeforeBrace = textToParse.substring(0, lastEndBrace + 1);
-              const matchingStartBrace = textBeforeBrace.lastIndexOf('{');
-              if (matchingStartBrace !== -1 && lastEndBrace > matchingStartBrace) {
-                // Keep moving back to find the outermost start brace for the last object
-                let balance = 0;
-                let startBrace = lastEndBrace;
-                for (let i = lastEndBrace; i >= 0; i--) {
-                  if (textToParse[i] === '}') balance++;
-                  else if (textToParse[i] === '{') balance--;
-                  
-                  if (balance === 0) {
-                    startBrace = i;
-                    break;
-                  }
-                }
-                textToParse = textToParse.substring(startBrace, lastEndBrace + 1);
-              }
-            }
-          }
-          parsed = JSON.parse(textToParse);
-        } catch (err) {
+        let parsed = parseAgentJson(finalText);
+        if (parsed === null) {
           reject(
             new Error(
-              `Failed to parse gemini output: ${err instanceof Error ? err.message : err}\nOutput was: ${finalText.substring(0, 200)}`,
+              `Failed to parse gemini output as JSON.\nOutput was: ${finalText.substring(0, 200)}`,
             ),
           );
           return;
