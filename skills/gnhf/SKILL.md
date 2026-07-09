@@ -60,7 +60,7 @@ Known shape:
 
 ```bash
 gnhf \
-  --agent <claude|codex|rovodev|opencode|copilot|pi|acp:<target>> \
+  --agent <claude|codex|gemini|rovodev|opencode|copilot|pi|acp:<target>> \
   --max-iterations <n> \
   --stop-when "<observable completion condition>" \
   --prevent-sleep on \
@@ -149,7 +149,7 @@ Do not ask what to review first. Reconstruct state:
 git status --short
 git branch --show-current
 git log --oneline --decorate --max-count=20
-pgrep -fl 'gnhf|claude|codex|copilot|opencode|rovodev' || true
+pgrep -fl 'gnhf|claude|codex|gemini|copilot|opencode|rovodev' || true
 ```
 
 Inspect likely GNHF branches, notes, logs, terminal sessions, and changed files. If a GNHF process is still running, report that first.
@@ -161,6 +161,7 @@ Report mode, agent, branch, status, changes, verification, stop-condition result
 - `copilot`: explicit GitHub Copilot CLI request or local Copilot config.
 - `codex`: repo-aware code work or review-heavy tasks.
 - `claude`: reasoning-heavy implementation or prose-heavy planning when configured.
+- `gemini`: explicit Gemini CLI request or general-purpose instruction-following.
 - `pi`: explicit Pi request or local Pi configuration.
 - `opencode` / `rovodev`: explicit request or repo-specific setup.
 - `acp:<target>`: explicit ACP target request, or when the user wants to drive a custom ACP-compatible agent through GNHF.

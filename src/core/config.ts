@@ -9,6 +9,7 @@ import { InvalidConfigError } from "./config-errors.js";
 export const AGENT_NAMES = [
   "claude",
   "codex",
+  "gemini",
   "rovodev",
   "opencode",
   "copilot",
@@ -119,6 +120,17 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg.startsWith("--output-format=") ||
         arg === "--json-schema" ||
         arg.startsWith("--json-schema=")
+      );
+    case "gemini":
+      return (
+        arg === "-y" ||
+        arg === "--yolo" ||
+        arg === "-o" ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "-p" ||
+        arg === "--prompt" ||
+        arg.startsWith("--prompt=")
       );
     case "codex":
       return (

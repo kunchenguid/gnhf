@@ -122,6 +122,30 @@ function createMockOpencodeEnv(
   };
 }
 
+function createMockGeminiEnv(
+  temp: TempCleanup,
+  configYaml: string,
+): { env: NodeJS.ProcessEnv; mockLogPath: string; workspaceDir: string } {
+  const home = temp.mkdir("home");
+  const workspaceDir = temp.mkdir("workspace");
+  mkdirSync(join(home, ".gnhf"), { recursive: true });
+  writeFileSync(join(home, ".gnhf", "config.yml"), configYaml, "utf-8");
+  const logDir = temp.mkdir("logs");
+  const mockLogPath = join(logDir, "mock-gemini.jsonl");
+  return {
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+      GNHF_MOCK_GEMINI_LOG_PATH: mockLogPath,
+      GNHF_MOCK_GEMINI_WORKSPACE: workspaceDir,
+    },
+    mockLogPath,
+    workspaceDir,
+  };
+}
+
 async function withTemp<T>(fn: (temp: TempCleanup) => Promise<T>): Promise<T> {
   const temp = new TempCleanup();
   try {
@@ -193,6 +217,27 @@ describe.concurrent("gnhf e2e cli", () => {
       expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
       const mockLog = readFileSync(mockLogPath, "utf-8");
       expect(mockLog).toContain('"event":"server:start"');
+    });
+  }, 30_000);
+
+  it("uses config.agent gemini when configured", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const { env, mockLogPath } = createMockGeminiEnv(temp, "agent: gemini\n");
+      // Let's point the repo to the mock workspace directory for testing purposes so gemini modifier works on the repo
+      // Wait, the gemini mock script is writing to process.env.GNHF_MOCK_GEMINI_WORKSPACE. We can just set it to cwd.
+      env.GNHF_MOCK_GEMINI_WORKSPACE = cwd;
+
+      const result = await runCli(
+        cwd,
+        ["fix tests", "--max-iterations", "1"],
+        env,
+      );
+
+      expect(result.code).toBe(0);
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+      const mockLog = readFileSync(mockLogPath, "utf-8");
+      expect(mockLog).toContain('"event":"gemini:start"');
     });
   }, 30_000);
 

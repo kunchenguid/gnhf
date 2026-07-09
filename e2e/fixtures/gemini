@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+import fs from 'fs';
+
+if (process.env.GNHF_MOCK_GEMINI_LOG_PATH) {
+  fs.appendFileSync(process.env.GNHF_MOCK_GEMINI_LOG_PATH, JSON.stringify({ event: "gemini:start", args: process.argv }) + "\n");
+}
+
+const lines = [
+  { type: "message", role: "assistant", content: "I will help you.", delta: true },
+  { type: "message", role: "assistant", content: "```json\n{\"success\": true, \"summary\": \"mocked gemini complete\", \"key_changes_made\": [], \"key_learnings\": []}\n```\n", delta: true },
+  { type: "result", status: "success", stats: { input_tokens: 15, output_tokens: 25, cached: 5 } }
+];
+
+for (const line of lines) {
+  console.log(JSON.stringify(line));
+}
+
+if (process.env.GNHF_MOCK_GEMINI_WORKSPACE) {
+  fs.appendFileSync(process.env.GNHF_MOCK_GEMINI_WORKSPACE + "/README.md", "- gemini change\n");
+}
