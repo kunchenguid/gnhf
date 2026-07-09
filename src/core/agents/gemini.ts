@@ -111,9 +111,11 @@ function toTokenUsage(stats: JsonRecord | undefined): TokenUsage | null {
   if (!stats) return null;
 
   return {
-    inputTokens: (typeof stats.input_tokens === "number" ? stats.input_tokens : 0),
-    outputTokens: (typeof stats.output_tokens === "number" ? stats.output_tokens : 0),
-    cacheReadTokens: (typeof stats.cached === "number" ? stats.cached : 0),
+    inputTokens:
+      typeof stats.input_tokens === "number" ? stats.input_tokens : 0,
+    outputTokens:
+      typeof stats.output_tokens === "number" ? stats.output_tokens : 0,
+    cacheReadTokens: typeof stats.cached === "number" ? stats.cached : 0,
     cacheCreationTokens: 0,
   };
 }
@@ -149,13 +151,17 @@ export class GeminiAgent implements Agent {
 
       const logStream = logPath ? createWriteStream(logPath) : null;
       const fullPrompt = buildGeminiPrompt(prompt, this.schema);
-      const child = spawn(this.bin, buildGeminiArgs(fullPrompt, this.extraArgs), {
-        cwd,
-        detached: this.platform !== "win32",
-        shell: shouldUseWindowsShell(this.bin, this.platform),
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      });
+      const child = spawn(
+        this.bin,
+        buildGeminiArgs(fullPrompt, this.extraArgs),
+        {
+          cwd,
+          detached: this.platform !== "win32",
+          shell: shouldUseWindowsShell(this.bin, this.platform),
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        },
+      );
 
       setupAbortHandler(signal, child, reject, () =>
         terminateGeminiProcess(child, this.platform),
@@ -187,11 +193,14 @@ export class GeminiAgent implements Agent {
           if (event.status === "success" && isRecord(event.stats)) {
             finalUsage = toTokenUsage(event.stats);
             if (finalUsage) {
-               onUsage?.(finalUsage);
+              onUsage?.(finalUsage);
             }
           } else if (event.status === "error") {
-             hasError = true;
-             errorDetails = typeof event.error === "string" ? event.error : JSON.stringify(event.error);
+            hasError = true;
+            errorDetails =
+              typeof event.error === "string"
+                ? event.error
+                : JSON.stringify(event.error);
           }
         }
       });
@@ -209,7 +218,7 @@ export class GeminiAgent implements Agent {
           return;
         }
 
-        let parsed = parseAgentJson(finalText);
+        const parsed = parseAgentJson(finalText);
         if (parsed === null) {
           reject(
             new Error(
@@ -221,7 +230,15 @@ export class GeminiAgent implements Agent {
 
         try {
           const output = validateAgentOutput(parsed, this.schema);
-          resolve({ output, usage: finalUsage ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 } });
+          resolve({
+            output,
+            usage: finalUsage ?? {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+          });
         } catch (err) {
           reject(
             new Error(

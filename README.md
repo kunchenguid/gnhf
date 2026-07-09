@@ -201,18 +201,18 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ### Flags
 
-| Flag                     | Description                                                                                            | Default                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ | ---------------------- |
+| Flag                     | Description                                                                                                      | Default                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | `--agent <agent>`        | Agent to use (`claude`, `codex`, `gemini`, `rovodev`, `opencode`, `copilot`, `pi`, or `acp:<target-or-command>`) | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                                                       | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                              | unlimited              |
-| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume     | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                     | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                  | `false`                |
-| `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                         | `false`                |
-| `--push`                 | Push the current branch after each successful iteration                                                | `false`                |
-| `--meteor-frequency <n>` | Set TUI meteor frequency from 0 to 5 (`0` disables meteors)                                            | `3`                    |
-| `--version`              | Show version                                                                                           |                        |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                                                                 | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                                        | unlimited              |
+| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume               | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                               | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                            | `false`                |
+| `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                                   | `false`                |
+| `--push`                 | Push the current branch after each successful iteration                                                          | `false`                |
+| `--meteor-frequency <n>` | Set TUI meteor frequency from 0 to 5 (`0` disables meteors)                                                      | `3`                    |
+| `--version`              | Show version                                                                                                     |                        |
 
 ## Configuration
 

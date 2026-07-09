@@ -223,10 +223,7 @@ describe.concurrent("gnhf e2e cli", () => {
   it("uses config.agent gemini when configured", async () => {
     await withTemp(async (temp) => {
       const cwd = createRepo(temp);
-      const { env, mockLogPath, workspaceDir } = createMockGeminiEnv(
-        temp,
-        "agent: gemini\n",
-      );
+      const { env, mockLogPath } = createMockGeminiEnv(temp, "agent: gemini\n");
       // Let's point the repo to the mock workspace directory for testing purposes so gemini modifier works on the repo
       // Wait, the gemini mock script is writing to process.env.GNHF_MOCK_GEMINI_WORKSPACE. We can just set it to cwd.
       env.GNHF_MOCK_GEMINI_WORKSPACE = cwd;
