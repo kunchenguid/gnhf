@@ -10,6 +10,7 @@ import { AcpAgent } from "./acp.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
+import { GeminiAgent } from "./gemini.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -54,6 +55,12 @@ export function createAgent(
       return new CodexAgent(runInfo.schemaPath, {
         bin: pathOverride,
         extraArgs: agentArgsOverride,
+      });
+    case "gemini":
+      return new GeminiAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+        schema,
       });
     case "copilot":
       return new CopilotAgent({
