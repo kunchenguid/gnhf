@@ -173,12 +173,14 @@ export class GeminiAgent implements Agent {
           if (event.role === "assistant" && typeof event.content === "string") {
             assistantText += event.content;
             if (event.delta) {
-              const visible = event.content.trim();
+              const visible = assistantText.trim();
               if (visible) onMessage?.(visible);
             }
           } else if (event.role !== "assistant") {
             assistantText = "";
           }
+        } else if (event.type === "tool_use" || event.type === "tool_result") {
+          assistantText = "";
         }
 
         if (event.type === "result") {
