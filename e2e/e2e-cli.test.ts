@@ -185,9 +185,9 @@ describe.concurrent("gnhf e2e cli", () => {
       );
 
       expect(result.code).toBe(0);
-      expect(
-        readFileSync(join(home, ".gnhf", "config.yml"), "utf-8"),
-      ).toBe(bootstrapConfigGolden);
+      expect(readFileSync(join(home, ".gnhf", "config.yml"), "utf-8")).toBe(
+        bootstrapConfigGolden,
+      );
     });
   }, 15_000);
 
