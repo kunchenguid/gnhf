@@ -4,7 +4,11 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent in a loop inside a git repo; the supported-agent roster is owned by the README's "Agents" table. Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration. Failure and rollback semantics are owned by the README's "How It Works" section. Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent in a loop inside a git repo.
+The supported-agent roster is owned by the README's [Agents](./README.md#agents) table.
+Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration.
+Failure and rollback semantics are owned by the README's [How It Works](./README.md#how-it-works) section.
+Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
 
 ## Commands
 

@@ -217,7 +217,8 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 ## Configuration
 
 Config lives at `~/.gnhf/config.yml`.
-If the file does not exist yet, `gnhf` creates it on first run from the resolved configuration.
+If the file does not exist yet, `gnhf` creates it on first run with its defaults.
+A supplied `--agent` is written as the default agent.
 With the default configuration, it has this exact content:
 
 <!-- This block mirrors src/core/bootstrap-config.golden.yml and is pinned to it by src/core/bootstrap-config.test.ts; update both together. -->

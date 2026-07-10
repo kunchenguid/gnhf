@@ -158,7 +158,7 @@ Report mode, agent, branch, status, changes, verification, stop-condition result
 
 ## Agent
 
-The supported `--agent` roster comes from `gnhf --help`; the Agents table in the GNHF README owns per-agent requirements. Do not hard-code the roster.
+The supported `--agent` roster comes from `gnhf --help`; the [Agents table](../../README.md#agents) in the GNHF README owns per-agent requirements. Do not hard-code the roster.
 
 - Default to the agent the user explicitly requested, or the one already configured and authenticated locally.
 - `codex`: repo-aware code work or review-heavy tasks.
