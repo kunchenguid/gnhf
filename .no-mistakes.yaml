@@ -1,0 +1,7 @@
+# Per-repo no-mistakes overrides.
+
+# Keep pipeline test evidence (transcripts, screenshots, fixture homes) out of
+# this repo; it stays in a temp dir instead and can be linked from PR bodies.
+test:
+  evidence:
+    store_in_repo: false
