@@ -17,6 +17,10 @@ const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
 const packageVersion = JSON.parse(
   readFileSync(join(repoRoot, "package.json"), "utf-8"),
 ).version as string;
+const bootstrapConfigGolden = readFileSync(
+  join(repoRoot, "src", "core", "bootstrap-config.golden.yml"),
+  "utf-8",
+);
 
 interface RunResult {
   code: number | null;
@@ -153,6 +157,37 @@ describe.concurrent("gnhf e2e cli", () => {
       expect(result.stderr).toContain(
         'gnhf: This command must be run inside a Git repository. Change into a repo or run "git init" first.',
       );
+    });
+  }, 15_000);
+
+  it("bootstraps the exact configuration documented for a new user", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const home = temp.mkdir("home");
+      const env = {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        GNHF_TELEMETRY: "0",
+      };
+
+      const result = await runCli(
+        cwd,
+        [
+          "verify bootstrap configuration",
+          "--current-branch",
+          "--max-iterations",
+          "0",
+          "--prevent-sleep",
+          "off",
+        ],
+        env,
+      );
+
+      expect(result.code).toBe(0);
+      expect(
+        readFileSync(join(home, ".gnhf", "config.yml"), "utf-8"),
+      ).toBe(bootstrapConfigGolden);
     });
   }, 15_000);
 

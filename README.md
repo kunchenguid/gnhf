@@ -36,7 +36,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/splash.png" alt="gnhf — Good Night, Have Fun" width="800">
+  <img src="docs/splash.png" alt="gnhf - Good Night, Have Fun" width="800">
 </p>
 
 Never wake up empty-handed.
@@ -201,23 +201,24 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ### Flags
 
-| Flag                     | Description                                                                                            | Default                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ | ---------------------- |
-| `--agent <agent>`        | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)                 | config file (`claude`) |
-| `--max-iterations <n>`   | Abort after `n` total iterations                                                                       | unlimited              |
-| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                              | unlimited              |
-| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume     | unlimited              |
-| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                     | config file (`on`)     |
-| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                                  | `false`                |
-| `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                         | `false`                |
-| `--push`                 | Push the current branch after each successful iteration                                                | `false`                |
-| `--meteor-frequency <n>` | Set TUI meteor frequency from 0 to 5 (`0` disables meteors)                                            | `3`                    |
-| `--version`              | Show version                                                                                           |                        |
+| Flag                     | Description                                                                                        | Default                |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | ---------------------- |
+| `--agent <agent>`        | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)              | config file (`claude`) |
+| `--max-iterations <n>`   | Abort after `n` total iterations                                                                   | unlimited              |
+| `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                          | unlimited              |
+| `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume | unlimited              |
+| `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                 | config file (`on`)     |
+| `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                              | `false`                |
+| `--current-branch`       | Run on the current branch instead of creating a `gnhf/` branch                                     | `false`                |
+| `--push`                 | Push the current branch after each successful iteration                                            | `false`                |
+| `--meteor-frequency <n>` | Set TUI meteor frequency from 0 to 5 (`0` disables meteors)                                        | `3`                    |
+| `--version`              | Show version                                                                                       |                        |
 
 ## Configuration
 
 Config lives at `~/.gnhf/config.yml`.
-If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults, with this exact content:
+If the file does not exist yet, `gnhf` creates it on first run from the resolved configuration.
+With the default configuration, it has this exact content:
 
 <!-- This block mirrors src/core/bootstrap-config.golden.yml and is pinned to it by src/core/bootstrap-config.test.ts; update both together. -->
 
