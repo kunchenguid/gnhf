@@ -41,14 +41,14 @@
 
 Never wake up empty-handed.
 
-gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.com/karpathy/autoresearch)-style orchestrator that keeps your agents running while you sleep — each iteration makes one small, committed, documented change towards an objective.
+gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.com/karpathy/autoresearch)-style orchestrator that keeps your agents running while you sleep - each iteration makes one small, committed, documented change towards an objective.
 You wake up to a branch full of clean work and a log of everything that happened.
 
-- **Dead simple** — one command starts an autonomous loop that runs until you request stop or a configured runtime cap is reached
-- **Long running** — each iteration is committed on success, rolled back on failure except commit failures preserved for repair, with sensible retries; retryable hard agent errors back off exponentially while agent-reported failures continue immediately
-- **Live terminal title** — interactive runs keep your terminal title updated with live status, token totals, and commit count, then clear or restore it on exit depending on terminal support; token totals prefixed with `~` are estimates
-- **Exit summary**: every run ends with a permanent summary covering elapsed time, branch, iterations, tokens, branch diff stats, local notes/log paths, and review commands
-- **Agent-agnostic**: works with Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or ACP targets out of the box
+- **Dead simple** - one command starts an autonomous loop that runs until you request stop or a configured runtime cap is reached
+- **Long running** - each iteration is committed on success and rolled back on failure, with sensible retries; [How It Works](#how-it-works) has the full failure-handling rules
+- **Live terminal title** - interactive runs keep your terminal title updated with live status, token totals, and commit count, then clear or restore it on exit depending on terminal support; token totals prefixed with `~` are estimates
+- **Exit summary** - every run ends with a permanent summary covering elapsed time, branch, iterations, tokens, branch diff stats, local notes/log paths, and review commands
+- **Agent-agnostic** - works with the popular coding agent CLIs plus any ACP target out of the box; see [Agents](#agents) for the roster
 
 ## Quick Start
 
@@ -156,9 +156,9 @@ After installing from npm, the skill is available under the installed package di
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
 - **Exit summary** - after shutdown cleanup, gnhf prints a permanent stdout summary with the final branch, elapsed time, iteration and token totals, branch diff stats, notes/debug-log paths, and review commands
-- **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
-- **Local run metadata** — gnhf stores prompt, notes, stop conditions, and commit-message convention metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
-- **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
+- **Shared memory** - the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
+- **Local run metadata** - gnhf stores prompt, notes, stop conditions, and commit-message convention metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
+- **Resume support** - run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
 
 ### Live Branch Mode
 
@@ -174,7 +174,7 @@ Together, `--current-branch --push` is useful for loose projects where you want 
 
 ### Worktree Mode
 
-Pass `--worktree` to run each agent in an isolated [git worktree](https://git-scm.com/docs/git-worktree). This lets you launch multiple agents on the same repo simultaneously — each gets its own working directory and branch without interfering with the others or your main checkout.
+Pass `--worktree` to run each agent in an isolated [git worktree](https://git-scm.com/docs/git-worktree). This lets you launch multiple agents on the same repo simultaneously - each gets its own working directory and branch without interfering with the others or your main checkout.
 
 ```
 <repo>/                              ← your repo (unchanged)
@@ -203,7 +203,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 | Flag                     | Description                                                                                            | Default                |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ | ---------------------- |
-| `--agent <agent>`        | Agent to use (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, `pi`, or `acp:<target-or-command>`) | config file (`claude`) |
+| `--agent <agent>`        | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)                 | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                                                       | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                              | unlimited              |
 | `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume     | unlimited              |
@@ -216,13 +216,19 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 
 ## Configuration
 
-Config lives at `~/.gnhf/config.yml`:
+Config lives at `~/.gnhf/config.yml`.
+If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults, with this exact content:
+
+<!-- This block mirrors src/core/bootstrap-config.golden.yml and is pinned to it by src/core/bootstrap-config.test.ts; update both together. -->
 
 ```yaml
-# Agent to use by default (claude, codex, rovodev, opencode, copilot, pi, or acp:<target-or-command>)
+# Agent to use by default: native agent name or acp:<target-or-command>
 agent: claude
 
 # Custom paths to native agent binaries (optional)
+# Paths may be absolute, bare executable names on PATH,
+# ~-prefixed, or relative to this config directory.
+# Note: rovodev overrides must point to an acli-compatible binary.
 # agentPathOverride:
 #   claude: /path/to/custom-claude
 #   codex: /path/to/custom-codex
@@ -230,6 +236,7 @@ agent: claude
 #   pi: /path/to/custom-pi
 
 # Native agent CLI arg overrides (optional)
+# ACP targets do not support path or arg overrides.
 # agentArgsOverride:
 #   codex:
 #     - -m
@@ -249,13 +256,15 @@ agent: claude
 #     - high
 
 # Custom ACP target commands (optional)
+# Maps acp:<target> names to spawn commands. Useful for naming a
+# local or beta build of an ACP agent.
 # acpRegistryOverrides:
 #   my-fork: "/usr/local/bin/my-claude-code-fork --acp"
 #   staging: "node /opt/staging/agent.mjs"
 
 # Commit message convention (optional)
 # Defaults to: gnhf <iteration>: <summary>
-# Use the conventional preset for semantic-release compatible headers:
+# Use Conventional Commits semantic-release headers:
 # commitMessage:
 #   preset: conventional
 
@@ -266,12 +275,10 @@ maxConsecutiveFailures: 3
 preventSleep: true
 ```
 
-If the file does not exist yet, `gnhf` creates it on first run using the resolved defaults.
-
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
 The iteration and token caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
 
-`agentArgsOverride.<name>` lets you pass through extra CLI flags for native agents (`claude`, `codex`, `rovodev`, `opencode`, `copilot`, or `pi`).
+`agentArgsOverride.<name>` lets you pass through extra CLI flags for any native agent in the [Agents](#agents) table.
 ACP targets do not support path or arg overrides in this version.
 Use `acpRegistryOverrides` to map `acp:<target>` names to custom spawn commands for local, forked, or beta ACP agents.
 You can also pass a raw custom ACP server command directly as a quoted `acp:` spec, for example `gnhf --agent 'acp:./bin/dev-acp --profile ci' "fix the tests"`.
@@ -330,16 +337,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 
 ## Development
 
-If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). Human-authored PRs targeting `main` must be opened via `git push no-mistakes` so the required `Require no-mistakes` check passes.
-
-```sh
-pnpm run build          # Build with tsdown
-pnpm run dev            # Watch mode
-pnpm test               # Build, then run all tests (vitest)
-pnpm run test:e2e       # Build, then run end-to-end tests against the mock opencode executable
-pnpm run lint           # ESLint
-pnpm run format         # Prettier
-```
+If you want to contribute changes back to this repo, see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the workflow, the dev commands, and repo conventions. Human-authored PRs targeting `main` must be opened via `git push no-mistakes` so the required `Require no-mistakes` check passes.
 
 ## Star History
 

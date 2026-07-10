@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import yaml from "js-yaml";
 
@@ -22,61 +23,18 @@ const mockWriteFileSync = vi.mocked(writeFileSync);
 const HOME = "/mock-home";
 const CONFIG_DIR = join(HOME, ".gnhf");
 const CONFIG_PATH = join(CONFIG_DIR, "config.yml");
+// Golden copy of the bootstrap template written on first run. Read via
+// node:fs/promises because node:fs is mocked in this file. README's
+// Configuration block is pinned to the same golden file by
+// bootstrap-config.test.ts, so all three surfaces cannot drift apart.
+const GOLDEN_BOOTSTRAP_CONFIG = (
+  await readFile(
+    new URL("./bootstrap-config.golden.yml", import.meta.url),
+    "utf-8",
+  )
+).replace(/\r\n/g, "\n");
 const BOOTSTRAP_CONFIG_TEMPLATE = (agent: string) =>
-  [
-    "# Agent to use by default: native agent name or acp:<target-or-command>",
-    `agent: ${agent}`,
-    "",
-    "# Custom paths to native agent binaries (optional)",
-    "# Paths may be absolute, bare executable names on PATH,",
-    "# ~-prefixed, or relative to this config directory.",
-    "# Note: rovodev overrides must point to an acli-compatible binary.",
-    "# agentPathOverride:",
-    "#   claude: /path/to/custom-claude",
-    "#   codex: /path/to/custom-codex",
-    "#   copilot: /path/to/custom-copilot",
-    "#   pi: /path/to/custom-pi",
-    "",
-    "# Native agent CLI arg overrides (optional)",
-    "# ACP targets do not support path or arg overrides.",
-    "# agentArgsOverride:",
-    "#   codex:",
-    "#     - -m",
-    "#     - gpt-5.4",
-    "#     - -c",
-    '#     - model_reasoning_effort="high"',
-    "#     - --full-auto",
-    "#   copilot:",
-    "#     - --model",
-    "#     - gpt-5.4",
-    "#   pi:",
-    "#     - --provider",
-    "#     - openai-codex",
-    "#     - --model",
-    "#     - gpt-5.5",
-    "#     - --thinking",
-    "#     - high",
-    "",
-    "# Custom ACP target commands (optional)",
-    "# Maps acp:<target> names to spawn commands. Useful for naming a",
-    "# local or beta build of an ACP agent.",
-    "# acpRegistryOverrides:",
-    '#   my-fork: "/usr/local/bin/my-claude-code-fork --acp"',
-    '#   staging: "node /opt/staging/agent.mjs"',
-    "",
-    "# Commit message convention (optional)",
-    "# Defaults to: gnhf <iteration>: <summary>",
-    "# Use Conventional Commits semantic-release headers:",
-    "# commitMessage:",
-    "#   preset: conventional",
-    "",
-    "# Abort after this many consecutive failures",
-    "maxConsecutiveFailures: 3",
-    "",
-    "# Prevent the machine from sleeping during a run",
-    "preventSleep: true",
-    "",
-  ].join("\n");
+  GOLDEN_BOOTSTRAP_CONFIG.replace("\nagent: claude\n", `\nagent: ${agent}\n`);
 
 describe("loadConfig", () => {
   beforeEach(() => {

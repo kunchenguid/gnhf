@@ -60,7 +60,7 @@ Known shape:
 
 ```bash
 gnhf \
-  --agent <claude|codex|rovodev|opencode|copilot|pi|acp:<target>> \
+  --agent <agent> \
   --max-iterations <n> \
   --stop-when "<observable completion condition>" \
   --prevent-sleep on \
@@ -158,12 +158,12 @@ Report mode, agent, branch, status, changes, verification, stop-condition result
 
 ## Agent
 
-- `copilot`: explicit GitHub Copilot CLI request or local Copilot config.
+The supported `--agent` roster comes from `gnhf --help`; the Agents table in the GNHF README owns per-agent requirements. Do not hard-code the roster.
+
+- Default to the agent the user explicitly requested, or the one already configured and authenticated locally.
 - `codex`: repo-aware code work or review-heavy tasks.
 - `claude`: reasoning-heavy implementation or prose-heavy planning when configured.
-- `pi`: explicit Pi request or local Pi configuration.
-- `opencode` / `rovodev`: explicit request or repo-specific setup.
-- `acp:<target>`: explicit ACP target request, or when the user wants to drive a custom ACP-compatible agent through GNHF.
+- `acp:<target>`: when the user wants to drive a custom ACP-compatible agent through GNHF.
 
 ## Safety
 

@@ -1,27 +1,14 @@
 # AGENTS.md
 
-This file provides guidance to agents1 when working with code in this repository.
+This file provides guidance to agents when working with code in this repository.
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent (Claude Code, Codex, Rovo Dev, OpenCode, GitHub Copilot CLI, Pi, or an ACP target) in a loop inside a git repo. Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration. Failures get `git reset --hard` except commit failures, which preserve uncommitted work for repair; retryable hard agent errors trigger exponential backoff, and permanent agent errors abort immediately. Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent in a loop inside a git repo; the supported-agent roster is owned by the README's "Agents" table. Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration. Failure and rollback semantics are owned by the README's "How It Works" section. Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
 
 ## Commands
 
-```sh
-pnpm run build          # tsdown bundle -> dist/cli.mjs (the published binary)
-pnpm run dev            # tsdown --watch
-pnpm run lint           # ESLint on src
-pnpm run format         # Prettier on src (format:check for CI)
-pnpm run typecheck      # tsc -p tsconfig.typecheck.json --noEmit
-pnpm test               # build, then vitest run (all tests)
-pnpm run test:e2e       # build, then vitest run e2e/
-pnpm run test:coverage  # vitest with coverage, excludes e2e/
-```
-
-Run a single test file: `pnpm exec vitest run src/core/orchestrator.test.ts`. Filter by name: `pnpm exec vitest run -t "name substring"`. Unit tests live next to source as `*.test.ts`; e2e tests live under `e2e/` and shell out to the built `dist/cli.mjs` against a mock `opencode` server in `e2e/fixtures/`, so they require a prior build (`pnpm test` and `pnpm run test:e2e` do this automatically). Add new e2e tests as `e2e/*.test.ts` so they're picked up by the directory glob in both scripts.
-
-CI (`.github/workflows/ci.yml`) runs lint, format:check, typecheck, and test on Ubuntu/macOS/Windows with Node 24 - keep all four green. Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
+`package.json` scripts are the source of truth for build/test/lint commands; the "Developing" section in [CONTRIBUTING.md](./CONTRIBUTING.md) documents them plus single-test invocation, the e2e prior-build requirement, and the CI matrix - keep all CI jobs green. `pnpm test` builds and then runs all tests. Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
 
 ## Architecture
 
@@ -30,7 +17,7 @@ Entry point is `src/cli.ts`. It parses flags with commander, resolves config, ha
 ### Run lifecycle (the critical flow)
 
 1. `cli.ts` decides one of four modes: new branch, resume an existing `gnhf/<slug>` branch, `--current-branch`, or `--worktree` (creates a sibling `<repo>-gnhf-worktrees/<slug>/` checkout). New branch and worktree runs probe numeric suffixes such as `gnhf/<slug>-1` and `<repo>-gnhf-worktrees/<slug>-1/` on collisions; current-branch runs first resume an exact same-prompt `.gnhf/runs/<runId>/` on a clean working tree, otherwise they probe `.gnhf/runs/<runId>-1/` metadata collisions without creating a branch; worktree mode also resumes preserved suffixed worktrees before creating a new one. When resuming with a different prompt, it asks whether to update `prompt.md` and continue the existing run history, start a new branch, or quit; if stdin is piped, that confirmation comes from the controlling terminal before any sleep-prevention re-exec. `setupRun`/`resumeRun` in `src/core/run.ts` create `.gnhf/runs/<runId>/` with `prompt.md`, `notes.md`, `output-schema.json`, `base-commit`, optional `stop-when`, `commit-message`, and `gnhf.log`, and add `.gnhf/runs/` to `.git/info/exclude` so run metadata stays local.
-2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), add commit-repair instructions when a prior `git commit` failed, call `agent.run(...)`, then on success `commitAll` + append to `notes.md` and optionally `pushCurrentBranch`; on failure `resetHard` unless a pending commit failure is preserving uncommitted work for repair. `commitAll` throws `CommitFailedError` on commit failure, logs `git:commit:failed`, and records the commit output in `notes.md` so the next iteration can repair the workspace. Push failures abort after preserving the successful local commit. Agent-reported failures continue immediately, retryable thrown agent errors increment the backoff streak, and `PermanentAgentError` aborts immediately after rollback with `lastAgentError` set for the renderer unless a pending commit failure is preserving work. Three consecutive failures abort. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), `--stop-when` (post-iteration, honored on both successful and failed iterations when the agent sets `should_fully_stop` in its output, except after commit failures until repair work is committed), and `--push` post-success publishing.
+2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), add commit-repair instructions when a prior `git commit` failed, call `agent.run(...)`, then on success `commitAll` + append to `notes.md` and optionally `pushCurrentBranch`; on failure `resetHard` unless a pending commit failure is preserving uncommitted work for repair. The user-visible failure/rollback contract lives in the README's "How It Works"; in code, `commitAll` throws `CommitFailedError`, logs `git:commit:failed`, and records the commit output in `notes.md` so the next iteration can repair the workspace, retryable thrown agent errors increment the backoff streak, and `PermanentAgentError` aborts after rollback with `lastAgentError` set for the renderer. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), `--stop-when` (post-iteration via the agent's `should_fully_stop` output, deferred while a commit failure awaits repair), and `--push` post-success publishing.
 3. `Renderer` (`src/renderer.ts` + `src/renderer-diff.ts`) is a cell-based TUI using the alt screen buffer. `cli.ts` enters/exits alt screen around it. The renderer subscribes to orchestrator events, diffs frames to minimize writes, and updates the terminal title live. `MockOrchestrator` (`src/mock-orchestrator.ts`) drives the renderer offline via `--mock` for demos/testing.
 4. Shutdown path: `SIGINT` routes through `orchestrator.handleInterrupt()`. The first press requests a graceful stop, letting the current iteration finish or ending backoff early; the second press force-stops via `orchestrator.stop()`. `SIGTERM` force-stops immediately. `cli.ts` only keeps the done screen open for aborted runs; graceful stops exit once shutdown cleanup finishes. If it's a `--worktree` run with zero commits and no pending commit failure, the worktree is removed; otherwise it's preserved and the path is printed. After cleanup, `cli.ts` collects final branch/diff stats via `src/core/git.ts` and writes the permanent stdout summary rendered by `src/core/exit-summary.ts`, including an uncommitted-work warning when a commit failure is still pending.
 
@@ -71,3 +58,10 @@ Build-time defaults are injected via `tsdown.config.ts`'s `define` from `GNHF_UM
 - Unit tests co-located as `*.test.ts`; e2e tests under `e2e/`. Prefer e2e (new or existing) for behavior that crosses a process/IO boundary - CLI flags, config loading, git, agent spawning, stdout - since these match how the product is actually used and have proven less brittle than mock-heavy unit tests in this codebase. Unit-test pure helpers (schema builders, prompt templates, formatters) where speed and failure localization are worth more than realism. Use TDD for bugfixes and new features.
 - Error paths matter - `debug-log.ts` writes JSONL lifecycle events to `.gnhf/runs/<id>/gnhf.log` with full `error.cause` chains. Prefer `appendDebugLog("category:event", {...})` over ad-hoc logging.
 - No em dashes ("-"). No auto-added Claude co-author lines in commits.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
