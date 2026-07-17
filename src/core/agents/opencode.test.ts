@@ -240,6 +240,40 @@ describe("OpenCodeAgent", () => {
     expect(agent.name).toBe("opencode");
   });
 
+  it("bounds each health check with a per-request timeout so a hanging fetch honors the readiness deadline", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const requestSignals: Array<AbortSignal | undefined> = [];
+    fetchMock.mockImplementation((_url, init?: RequestInit) => {
+      const signal = init?.signal ?? undefined;
+      requestSignals.push(signal);
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => reject(signal.reason ?? new Error("aborted")),
+          { once: true },
+        );
+      });
+    });
+
+    const bounded = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      healthCheckDeadlineMs: 300,
+      healthCheckRequestTimeoutMs: 40,
+    });
+
+    await expect(bounded.run("test prompt", tempDir)).rejects.toThrow(
+      /Timed out waiting for opencode serve to become ready/,
+    );
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(
+      requestSignals.every((signal) => signal instanceof AbortSignal),
+    ).toBe(true);
+  });
+
   it("strips OpenCode server auth env vars from the spawned child", async () => {
     process.env.OPENCODE_SERVER_USERNAME = "local-user";
     process.env.OPENCODE_SERVER_PASSWORD = "local-pass";
