@@ -269,9 +269,9 @@ describe("OpenCodeAgent", () => {
     );
 
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
-    expect(requestSignals.every((signal) => signal instanceof AbortSignal)).toBe(
-      true,
-    );
+    expect(
+      requestSignals.every((signal) => signal instanceof AbortSignal),
+    ).toBe(true);
   });
 
   it("strips OpenCode server auth env vars from the spawned child", async () => {
