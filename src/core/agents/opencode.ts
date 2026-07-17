@@ -635,9 +635,10 @@ export class OpenCodeAgent implements Agent {
       }
 
       try {
+        const perRequestSignal = withTimeoutSignal(signal, 5_000);
         const response = await this.fetchFn(`${server.baseUrl}/global/health`, {
           method: "GET",
-          signal,
+          signal: perRequestSignal,
         });
         if (response.ok) return;
       } catch (error) {
