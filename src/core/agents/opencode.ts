@@ -141,6 +141,8 @@ interface OpenCodeDeps {
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
   spawn?: typeof spawn;
+  healthCheckDeadlineMs?: number;
+  healthCheckRequestTimeoutMs?: number;
 }
 
 interface OpenCodeServer {
@@ -186,6 +188,9 @@ type MessageRequestResult =
 const BLANKET_PERMISSION_RULESET = [
   { permission: "*", pattern: "*", action: "allow" },
 ] as const;
+
+const DEFAULT_HEALTH_CHECK_DEADLINE_MS = 30_000;
+const DEFAULT_HEALTH_CHECK_REQUEST_TIMEOUT_MS = 5_000;
 
 function buildStructuredOutputFormat(schema: AgentOutputSchema) {
   return {
@@ -351,6 +356,8 @@ export class OpenCodeAgent implements Agent {
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
   private spawnFn: typeof spawn;
+  private healthCheckDeadlineMs: number;
+  private healthCheckRequestTimeoutMs: number;
   private server: OpenCodeServer | null = null;
   private closingPromise: Promise<void> | null = null;
 
@@ -364,6 +371,11 @@ export class OpenCodeAgent implements Agent {
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
     this.spawnFn = deps.spawn ?? spawn;
+    this.healthCheckDeadlineMs =
+      deps.healthCheckDeadlineMs ?? DEFAULT_HEALTH_CHECK_DEADLINE_MS;
+    this.healthCheckRequestTimeoutMs =
+      deps.healthCheckRequestTimeoutMs ??
+      DEFAULT_HEALTH_CHECK_REQUEST_TIMEOUT_MS;
   }
 
   async run(
@@ -609,7 +621,7 @@ export class OpenCodeAgent implements Agent {
     server: OpenCodeServer,
     signal?: AbortSignal,
   ): Promise<void> {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + this.healthCheckDeadlineMs;
     let spawnErrorMessage: string | null = null;
 
     server.child.once("error", (error) => {
@@ -635,7 +647,10 @@ export class OpenCodeAgent implements Agent {
       }
 
       try {
-        const perRequestSignal = withTimeoutSignal(signal, 5_000);
+        const perRequestSignal = withTimeoutSignal(
+          signal,
+          this.healthCheckRequestTimeoutMs,
+        );
         const response = await this.fetchFn(`${server.baseUrl}/global/health`, {
           method: "GET",
           signal: perRequestSignal,
