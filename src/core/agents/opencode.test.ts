@@ -1235,4 +1235,94 @@ describe("OpenCodeAgent", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
   });
+
+  it("retries the health check when a request rejects with a per-request timeout error", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockImplementationOnce(() => {
+        // Simulate a health request that times out: reject exactly the way
+        // fetch does when aborted by AbortSignal.timeout (a TimeoutError, whose
+        // name is not "AbortError"), so it must not be treated as a fatal abort.
+        return Promise.reject(
+          new DOMException("The operation timed out", "TimeoutError"),
+        );
+      })
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    const result = await agent.run("test prompt", "/repo");
+
+    expect(result.output.summary).toBe("done");
+    // The timed-out request must be retried, not treated as a fatal abort.
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8765/global/health",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8765/global/health",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("recovers from a hung health check by aborting it after the per-request timeout", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockImplementationOnce((_url: unknown, opts: RequestInit) => {
+        // Model a genuinely hung request: it only settles if something aborts
+        // the signal. Pre-fix the signal was undefined, so this never resolved.
+        return new Promise((_resolve, reject) => {
+          const sig = opts.signal ?? undefined;
+          if (!sig) return;
+          sig.addEventListener("abort", () => reject(sig.reason), {
+            once: true,
+          });
+        });
+      })
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(jsonResponse({ id: "session-123" }))
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", { input: 1, output: 1, read: 0, write: 0 }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        finalMessageResponse("done", {
+          input: 1,
+          output: 1,
+          read: 0,
+          write: 0,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    const result = await agent.run("test prompt", "/repo");
+
+    expect(result.output.summary).toBe("done");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:8765/global/health",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:8765/global/health",
+    );
+  }, 15_000);
 });
