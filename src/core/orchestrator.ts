@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import {
   PermanentAgentError,
+  RateLimitAgentError,
   type Agent,
   type AgentOutput,
   type TokenUsage,
@@ -80,6 +81,15 @@ export interface RunLimits {
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
 
+// Resume a rate-limited run a little after the provider-reported reset so
+// clock skew or a still-warming limiter doesn't waste the retry.
+const RATE_LIMIT_RESUME_BUFFER_MS = 60_000;
+// Fallback wait when the reset time is missing or already past, escalating
+// per consecutive rate-limited attempt so a stale reset time can't spin the
+// loop, and bounded so recovery is never far away.
+const RATE_LIMIT_MIN_WAIT_MS = 60_000;
+const RATE_LIMIT_MAX_FALLBACK_WAIT_MS = 30 * 60_000;
+
 type RunIterationResult =
   | {
       type: "completed";
@@ -88,7 +98,8 @@ type RunIterationResult =
       abortReason?: string;
     }
   | { type: "stopped" }
-  | { type: "aborted"; reason: string };
+  | { type: "aborted"; reason: string }
+  | { type: "rate-limited"; resumeAt: Date | null; message: string };
 
 export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private config: Config;
@@ -104,6 +115,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private pendingAbortReason: string | null = null;
   private pendingCommitFailure: string | null = null;
   private activeIterationTokensEstimated = false;
+  private consecutiveRateLimitWaits = 0;
   private loopDone = false;
   private stoppedEventEmitted = false;
 
@@ -319,6 +331,45 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           break;
         }
 
+        if (result.type === "rate-limited") {
+          this.consecutiveRateLimitWaits++;
+          const waitMs = this.computeRateLimitWaitMs(result.resumeAt);
+          // The attempt did no work; retry under the same iteration number so
+          // rate-limit waits don't consume --max-iterations or the
+          // consecutive-failure budget.
+          this.state.currentIteration--;
+          this.state.status = "waiting";
+          this.state.waitingUntil = new Date(Date.now() + waitMs);
+          this.emit("state", this.getState());
+
+          appendDebugLog("rate-limit:wait:start", {
+            iteration: this.state.currentIteration + 1,
+            message: result.message,
+            resumeAt: result.resumeAt?.toISOString() ?? null,
+            waitMs,
+            consecutiveRateLimitWaits: this.consecutiveRateLimitWaits,
+          });
+
+          await this.interruptibleSleep(waitMs);
+
+          appendDebugLog("rate-limit:wait:end", {
+            iteration: this.state.currentIteration + 1,
+            stopRequested: this.stopRequested,
+          });
+
+          this.state.waitingUntil = null;
+          if (this.stopRequested) {
+            break;
+          }
+          if (this.stopForGracefulShutdown()) {
+            break;
+          }
+          this.state.status = "running";
+          this.emit("state", this.getState());
+          continue;
+        }
+
+        this.consecutiveRateLimitWaits = 0;
         const { record } = result;
         this.state.iterations.push(record);
         this.emit("iteration:end", record);
@@ -560,6 +611,18 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         error: serializeError(err),
       });
 
+      if (err instanceof RateLimitAgentError) {
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
+        this.state.lastAgentError = err.message;
+        return {
+          type: "rate-limited",
+          resumeAt: err.resumeAt,
+          message: err.message,
+        };
+      }
+
       if (err instanceof PermanentAgentError) {
         if (this.pendingCommitFailure === null) {
           resetHard(this.cwd);
@@ -718,6 +781,21 @@ ${this.pendingCommitFailure}
       keyLearnings: toStringArray(learnings),
       timestamp: new Date(),
     };
+  }
+
+  private computeRateLimitWaitMs(resumeAt: Date | null): number {
+    if (resumeAt) {
+      const waitMs =
+        resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
+      if (waitMs >= RATE_LIMIT_MIN_WAIT_MS) {
+        return waitMs;
+      }
+    }
+    return Math.min(
+      RATE_LIMIT_MIN_WAIT_MS *
+        Math.pow(2, Math.max(0, this.consecutiveRateLimitWaits - 1)),
+      RATE_LIMIT_MAX_FALLBACK_WAIT_MS,
+    );
   }
 
   private interruptibleSleep(ms: number): Promise<void> {
