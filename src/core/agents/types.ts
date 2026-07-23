@@ -142,6 +142,22 @@ export class PermanentAgentError extends Error {
   }
 }
 
+// The provider rejected the request because a usage window is exhausted
+// (e.g. the Claude subscription 5-hour window). Unlike retryable errors this
+// carries the provider-reported reset time so the orchestrator can wait for
+// the window to reset instead of burning the consecutive-failure budget.
+export class RateLimitAgentError extends Error {
+  detail: string;
+  resumeAt: Date | null;
+
+  constructor(message: string, detail: string, resumeAt: Date | null) {
+    super(message, { cause: detail });
+    this.name = "RateLimitAgentError";
+    this.detail = detail;
+    this.resumeAt = resumeAt;
+  }
+}
+
 export type OnUsage = (usage: TokenUsage) => void;
 
 export type OnMessage = (text: string) => void;

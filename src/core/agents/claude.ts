@@ -9,6 +9,7 @@ import {
   type AgentRunOptions,
   type TokenUsage,
   PermanentAgentError,
+  RateLimitAgentError,
 } from "./types.js";
 import { shutdownChildProcess } from "./managed-process.js";
 import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
@@ -32,6 +33,7 @@ interface ClaudeResultEvent {
   type: "result";
   subtype: string;
   is_error?: boolean;
+  result?: string;
   total_cost_usd: number;
   usage: {
     input_tokens: number;
@@ -42,7 +44,19 @@ interface ClaudeResultEvent {
   structured_output: AgentOutput | null;
 }
 
-type ClaudeEvent = ClaudeAssistantEvent | ClaudeResultEvent | { type: string };
+interface ClaudeRateLimitEvent {
+  type: "rate_limit_event";
+  rate_limit_info?: {
+    status?: string;
+    resetsAt?: number;
+  };
+}
+
+type ClaudeEvent =
+  | ClaudeAssistantEvent
+  | ClaudeResultEvent
+  | ClaudeRateLimitEvent
+  | { type: string };
 
 interface ClaudeAgentDeps {
   bin?: string;
@@ -196,6 +210,22 @@ function isPermanentClaudeError(stderr: string): boolean {
   return /credit balance\s+is\s+too\s+low/i.test(stderr);
 }
 
+function buildRateLimitError(
+  resetsAtEpochSeconds: number | null,
+  detail: string,
+): RateLimitAgentError {
+  const resumeAt =
+    resetsAtEpochSeconds === null
+      ? null
+      : new Date(resetsAtEpochSeconds * 1000);
+  const until = resumeAt === null ? "" : ` until ${resumeAt.toISOString()}`;
+  return new RateLimitAgentError(
+    `claude usage limit reached${until}`,
+    detail,
+    resumeAt,
+  );
+}
+
 export class ClaudeAgent implements Agent {
   name = "claude";
 
@@ -249,6 +279,9 @@ export class ClaudeAgent implements Agent {
       let resultEvent: ClaudeResultEvent | null = null;
       let finalStructuredResultEvent: ClaudeResultEvent | null = null;
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
+      let rateLimitRejected = false;
+      let rateLimitResetsAt: number | null = null;
+      let lastResultText: string | null = null;
       let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
       let closedAfterFinalCleanup = false;
       let stderr = "";
@@ -361,9 +394,26 @@ export class ClaudeAgent implements Agent {
           }
         }
 
+        if (event.type === "rate_limit_event") {
+          const info = (event as ClaudeRateLimitEvent).rate_limit_info;
+          if (info?.status === "rejected") {
+            rateLimitRejected = true;
+            rateLimitResetsAt =
+              typeof info.resetsAt === "number" ? info.resetsAt : null;
+          } else {
+            // A later allowed event means the limiter recovered; any failure
+            // after this point is not a rate-limit failure.
+            rateLimitRejected = false;
+            rateLimitResetsAt = null;
+          }
+        }
+
         if (event.type === "result") {
           const next = event as ClaudeResultEvent;
           latestResultUsage = next.usage;
+          if (typeof next.result === "string" && next.result.trim()) {
+            lastResultText = next.result.trim();
+          }
           if (isFinalStructuredResult(next)) {
             finalStructuredResultEvent = next;
             if (finalResultCleanupTimer) {
@@ -391,7 +441,17 @@ export class ClaudeAgent implements Agent {
         }
         logStream?.end();
         if (code !== 0 && !closedAfterFinalCleanup) {
-          const detail = `claude exited with code ${code}: ${stderr}`;
+          // stderr is often empty for API-level failures; the CLI reports
+          // them as a synthetic result message on stdout instead.
+          const resultSuffix =
+            lastResultText && !stderr.includes(lastResultText)
+              ? (stderr.trim() ? " | " : "") + lastResultText
+              : "";
+          const detail = `claude exited with code ${code}: ${stderr}${resultSuffix}`;
+          if (rateLimitRejected) {
+            reject(buildRateLimitError(rateLimitResetsAt, detail));
+            return;
+          }
           reject(
             isPermanentClaudeError(stderr)
               ? new PermanentAgentError(
@@ -414,11 +474,12 @@ export class ClaudeAgent implements Agent {
           terminalResultEvent.is_error ||
           terminalResultEvent.subtype !== "success"
         ) {
-          reject(
-            new Error(
-              `claude reported error: ${JSON.stringify(terminalResultEvent)}`,
-            ),
-          );
+          const detail = `claude reported error: ${JSON.stringify(terminalResultEvent)}`;
+          if (rateLimitRejected) {
+            reject(buildRateLimitError(rateLimitResetsAt, detail));
+            return;
+          }
+          reject(new Error(detail));
           return;
         }
 

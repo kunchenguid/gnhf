@@ -8,7 +8,11 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { ClaudeAgent } from "./claude.js";
-import { PermanentAgentError, buildAgentOutputSchema } from "./types.js";
+import {
+  PermanentAgentError,
+  RateLimitAgentError,
+  buildAgentOutputSchema,
+} from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -972,6 +976,123 @@ describe("ClaudeAgent", () => {
     await expect(promise).rejects.not.toBeInstanceOf(PermanentAgentError);
     await expect(promise).rejects.toThrow(
       "claude exited with code 1: Failed to fetch credit balance: temporary network failure",
+    );
+  });
+
+  it("rejects with RateLimitAgentError when a rejected rate limit precedes a non-zero exit", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "rejected",
+        resetsAt: 1784702400,
+        rateLimitType: "five_hour",
+      },
+    });
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toBeInstanceOf(RateLimitAgentError);
+    await expect(promise).rejects.toMatchObject({
+      message: `claude usage limit reached until ${new Date(1784702400 * 1000).toISOString()}`,
+      resumeAt: new Date(1784702400 * 1000),
+    });
+  });
+
+  it("includes the synthetic result message in exit error details", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1784702400 },
+    });
+    emitLine(proc, {
+      type: "assistant",
+      message: {
+        usage: { input_tokens: 0, output_tokens: 0 },
+        content: [],
+      },
+    });
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      result: "You've hit your org's monthly spend limit",
+      total_cost_usd: 0,
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    });
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toMatchObject({
+      detail:
+        "claude exited with code 1: You've hit your org's monthly spend limit",
+    });
+  });
+
+  it("rejects with RateLimitAgentError when the terminal result is a rate-limited error", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1784702400 },
+    });
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: true,
+      result: "You've hit your org's monthly spend limit",
+      total_cost_usd: 0,
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toBeInstanceOf(RateLimitAgentError);
+    await expect(promise).rejects.toMatchObject({
+      resumeAt: new Date(1784702400 * 1000),
+    });
+  });
+
+  it("does not classify a failure as rate-limited after the limiter recovers", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1784702400 },
+    });
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "allowed" },
+    });
+    proc.stderr.emit("data", Buffer.from("something else broke"));
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.not.toBeInstanceOf(RateLimitAgentError);
+    await expect(promise).rejects.toThrow(
+      "claude exited with code 1: something else broke",
     );
   });
 
