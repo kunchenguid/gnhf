@@ -36,6 +36,7 @@ export interface AcpAgentDeps {
   schema: AgentOutputSchema;
   runId: string;
   sessionStateDir: string;
+  model?: string;
   registryOverrides?: Record<string, string>;
   runtimeFactory?: (options: AcpRuntimeOptions) => AcpxRuntimeLike;
 }
@@ -155,6 +156,7 @@ export class AcpAgent implements Agent {
   private readonly runId: string;
   private readonly sessionStateDir: string;
   private readonly registryOverrides: Record<string, string> | undefined;
+  private readonly model: string | undefined;
   private readonly runtimeFactory: (
     options: AcpRuntimeOptions,
   ) => AcpxRuntimeLike;
@@ -174,6 +176,7 @@ export class AcpAgent implements Agent {
     this.runId = deps.runId;
     this.sessionStateDir = deps.sessionStateDir;
     this.registryOverrides = deps.registryOverrides;
+    this.model = deps.model;
     this.runtimeFactory =
       deps.runtimeFactory ?? ((options) => createAcpRuntime(options));
     this.name = `acp:${deps.target}`;

@@ -48,6 +48,7 @@ interface ClaudeAgentDeps {
   bin?: string;
   extraArgs?: string[];
   finalResultGraceMs?: number;
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -134,6 +135,7 @@ function buildClaudeArgs(
   prompt: string,
   schema: AgentOutputSchema,
   extraArgs?: string[],
+  model?: string,
 ): string[] {
   const userArgs = extraArgs ?? [];
   const userSpecifiedPermissionMode = userArgs.some(
@@ -154,6 +156,7 @@ function buildClaudeArgs(
     "stream-json",
     "--json-schema",
     JSON.stringify(schema),
+    ...(model ? ["--model", model] : []),
     ...(userSpecifiedPermissionMode ? [] : ["--dangerously-skip-permissions"]),
   ];
 }
@@ -202,6 +205,7 @@ export class ClaudeAgent implements Agent {
   private bin: string;
   private extraArgs?: string[];
   private finalResultGraceMs: number;
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
@@ -211,6 +215,7 @@ export class ClaudeAgent implements Agent {
     this.extraArgs = deps.extraArgs;
     this.finalResultGraceMs =
       deps.finalResultGraceMs ?? DEFAULT_FINAL_RESULT_EXIT_GRACE_MS;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -228,7 +233,7 @@ export class ClaudeAgent implements Agent {
 
       const child = spawn(
         this.bin,
-        buildClaudeArgs(prompt, this.schema, this.extraArgs),
+        buildClaudeArgs(prompt, this.schema, this.extraArgs, this.model),
         {
           cwd,
           detached: this.platform !== "win32",

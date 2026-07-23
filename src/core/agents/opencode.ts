@@ -138,6 +138,7 @@ interface OpenCodeDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
   spawn?: typeof spawn;
@@ -348,6 +349,7 @@ export class OpenCodeAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
   private spawnFn: typeof spawn;
@@ -360,6 +362,7 @@ export class OpenCodeAgent implements Agent {
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -776,6 +779,16 @@ export class OpenCodeAgent implements Agent {
             role: "user",
             parts: [{ type: "text", text: prompt }],
             format: buildStructuredOutputFormat(this.schema),
+            ...(this.model
+              ? {
+                  model: this.model.includes("/")
+                    ? {
+                        providerID: this.model.split("/")[0],
+                        modelID: this.model.split("/").slice(1).join("/"),
+                      }
+                    : { modelID: this.model },
+                }
+              : {}),
           },
           signal,
         });
