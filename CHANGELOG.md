@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.43](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.42...gnhf-v0.1.43) (2026-07-23)
+
+
+### Bug Fixes
+
+* execute every PR body compliance event ([#180](https://github.com/kunchenguid/gnhf/issues/180)) ([1d06739](https://github.com/kunchenguid/gnhf/commit/1d0673920f3ee6427bc75805faccd02a6d614e84))
+* **opencode:** time out individual server health check requests ([#177](https://github.com/kunchenguid/gnhf/issues/177)) ([6bfdcca](https://github.com/kunchenguid/gnhf/commit/6bfdcca98cfc227dec0cbe2a51b007e4252287f2))
+
 ## [0.1.42](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.41...gnhf-v0.1.42) (2026-05-13)
 
 
