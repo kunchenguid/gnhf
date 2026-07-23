@@ -7,7 +7,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { createServer } from "node:net";
 import {
   buildAgentOutputSchema,
-  validateAgentOutput,
+  parseAgentOutput,
   type Agent,
   type AgentOutput,
   type AgentOutputSchema,
@@ -16,7 +16,6 @@ import {
   type TokenUsage,
 } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
-import { parseAgentJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface OpenCodeMessagePart {
@@ -211,32 +210,6 @@ function buildPrompt(prompt: string, schema: AgentOutputSchema): string {
     "Do not include any prose before or after the JSON.",
     `The JSON must match this schema exactly: ${JSON.stringify(schema)}`,
   ].join("\n");
-}
-
-function parseOpenCodeOutput(
-  text: string,
-  schema: AgentOutputSchema,
-): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError(
-    "opencode output did not contain a parseable JSON object",
-  );
 }
 
 /**
@@ -1114,7 +1087,7 @@ export class OpenCodeAgent implements Agent {
     }
 
     try {
-      const output = parseOpenCodeOutput(finalOutputText, this.schema);
+      const output = parseAgentOutput(finalOutputText, this.schema, "opencode");
       appendDebugLog("opencode:output:structured", {
         sessionId,
         source: "final_answer",

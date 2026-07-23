@@ -2,8 +2,9 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
-  validateAgentOutput,
+  parseAgentOutput,
   type Agent,
+  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
@@ -382,28 +383,19 @@ export class PiAgent implements Agent {
           return;
         }
 
-        let parsed: unknown;
+        let output: AgentOutput;
         try {
-          parsed = JSON.parse(finalText);
+          output = parseAgentOutput(finalText, this.schema, "pi");
         } catch (err) {
-          reject(
-            new Error(
-              `Failed to parse pi output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
+          const message =
+            err instanceof SyntaxError
+              ? `Failed to parse pi output: ${err.message}`
+              : `Invalid pi output: ${err instanceof Error ? err.message : err}`;
+          reject(new Error(message));
           return;
         }
 
-        try {
-          const output = validateAgentOutput(parsed, this.schema);
-          resolve({ output, usage: lastEmittedUsage });
-        } catch (err) {
-          reject(
-            new Error(
-              `Invalid pi output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
-        }
+        resolve({ output, usage: lastEmittedUsage });
       });
     });
   }
