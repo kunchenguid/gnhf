@@ -76,6 +76,7 @@ export interface RunLimits {
   maxTokens?: number;
   stopWhen?: string;
   push?: boolean;
+  signCommits?: boolean;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
@@ -589,6 +590,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           iteration: this.state.currentIteration,
         }),
         this.cwd,
+        this.limits.signCommits,
       );
     } catch (error) {
       if (error instanceof CommitFailedError) {

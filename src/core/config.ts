@@ -79,6 +79,7 @@ export interface Config {
   commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
+  signCommits?: boolean;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -88,6 +89,7 @@ const DEFAULT_CONFIG: Config = {
   acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
+  signCommits: false,
 };
 
 const ACP_TARGET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;

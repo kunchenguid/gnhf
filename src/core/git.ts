@@ -235,16 +235,16 @@ export function getBranchDiffStats(
   return stats;
 }
 
-export function commitAll(message: string, cwd: string): void {
+export function commitAll(message: string, cwd: string, signCommits?: boolean): void {
   // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
   // signing enabled would otherwise have every gnhf iteration spawn gpg
   // and (for a locked agent) wait on a pinentry passphrase prompt that
-  // never arrives in the alt-screen TUI.
+  // never arrives in the alt-screen TUI. When signCommits is true,
+  // these flags are omitted so the user's git config is honored.
+  const useSign = signCommits === true;
   const commitArgs = [
-    "-c",
-    "commit.gpgsign=false",
-    "-c",
-    "tag.gpgsign=false",
+    ...(useSign ? [] : ["-c", "commit.gpgsign=false"]),
+    ...(useSign ? [] : ["-c", "tag.gpgsign=false"]),
     "commit",
     "-m",
     message,
