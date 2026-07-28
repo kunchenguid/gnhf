@@ -104,3 +104,13 @@ export function buildCommitMessage(
   const scope = resolveConventionalScope(commitOutput.scope);
   return collapseHeader(`${type}${scope}: ${output.summary}`);
 }
+
+export function buildCheckpointCommitMessage(
+  config: CommitMessageConfig | undefined,
+  context: CommitMessageContext,
+): string {
+  if (config === undefined) {
+    return `gnhf ${context.iteration}: checkpoint (max tokens reached)`;
+  }
+  return "chore: checkpoint (max tokens reached)";
+}

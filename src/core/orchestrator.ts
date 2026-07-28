@@ -25,7 +25,10 @@ import {
   type InterruptDisposition,
   type InterruptHint,
 } from "./interrupt-state.js";
-import { buildCommitMessage } from "./commit-message.js";
+import {
+  buildCheckpointCommitMessage,
+  buildCommitMessage,
+} from "./commit-message.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 
 export interface IterationRecord {
@@ -61,6 +64,7 @@ export interface OrchestratorState {
   lastMessage: string | null;
   lastAgentError?: string | null;
   hasPendingCommitFailure?: boolean;
+  hasCheckpointCommit?: boolean;
 }
 
 export interface OrchestratorEvents {
@@ -74,6 +78,7 @@ export interface OrchestratorEvents {
 export interface RunLimits {
   maxIterations?: number;
   maxTokens?: number;
+  tokenBuffer?: number;
   stopWhen?: string;
   push?: boolean;
 }
@@ -127,6 +132,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     waitingUntil: null,
     lastMessage: null,
     lastAgentError: null,
+    hasCheckpointCommit: false,
   };
 
   constructor(
@@ -254,6 +260,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
       maxTokens: this.limits.maxTokens,
+      tokenBuffer: this.limits.tokenBuffer,
       push: this.limits.push === true,
       maxConsecutiveFailures: this.config.maxConsecutiveFailures,
       baseCommit: this.runInfo.baseCommit,
@@ -537,7 +544,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           reason: this.pendingAbortReason,
         });
         if (this.pendingCommitFailure === null) {
-          resetHard(this.cwd);
+          this.checkpointInFlightWork(this.pendingAbortReason);
         }
         return { type: "aborted", reason: this.pendingAbortReason };
       }
@@ -621,6 +628,44 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       keyLearnings,
       timestamp: new Date(),
     };
+  }
+
+  private checkpointInFlightWork(reason: string): void {
+    try {
+      const committed = commitAll(
+        buildCheckpointCommitMessage(this.config.commitMessage, {
+          iteration: this.state.currentIteration,
+        }),
+        this.cwd,
+      );
+      if (!committed) return;
+      this.state.hasCheckpointCommit = true;
+      this.state.commitCount = getBranchCommitCount(
+        this.runInfo.baseCommit,
+        this.cwd,
+      );
+      appendNotes(
+        this.runInfo.notesPath,
+        this.state.currentIteration,
+        `[CHECKPOINT] ${reason} - in-flight work was committed unverified; ` +
+          `inspect and repair the latest commit before building on it`,
+        [],
+        [],
+      );
+      appendDebugLog("git:checkpoint:success", {
+        iteration: this.state.currentIteration,
+        commitCount: this.state.commitCount,
+      });
+    } catch (error) {
+      if (error instanceof CommitFailedError) {
+        // Same preserve-for-repair contract as recordCommitFailure: keep the
+        // workspace, surface the warning, never bypass hooks.
+        this.pendingCommitFailure = error.detail;
+        appendDebugLog("git:checkpoint:failed", { detail: error.detail });
+        return;
+      }
+      throw error;
+    }
   }
 
   private buildCommitRepairPrompt(basePrompt: string): string {
@@ -744,7 +789,7 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    return this.getTokenAbortReason();
+    return this.getSoftTokenAbortReason();
   }
 
   private getPostIterationAbortReason(): string | null {
@@ -755,7 +800,7 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    return this.getTokenAbortReason();
+    return this.getSoftTokenAbortReason();
   }
 
   private getTokenAbortReason(): string | null {
@@ -766,6 +811,23 @@ ${this.pendingCommitFailure}
     if (totalTokens < this.limits.maxTokens) return null;
 
     return `max tokens reached (${totalTokens}/${this.limits.maxTokens})`;
+  }
+
+  private getSoftTokenAbortReason(): string | null {
+    if (this.limits.maxTokens === undefined) return null;
+
+    const hardReason = this.getTokenAbortReason();
+    if (hardReason) return hardReason;
+
+    const buffer = this.limits.tokenBuffer ?? 0;
+    if (buffer === 0) return null;
+
+    const totalTokens =
+      this.state.totalInputTokens + this.state.totalOutputTokens;
+    const threshold = Math.max(0, this.limits.maxTokens - buffer);
+    if (totalTokens < threshold) return null;
+
+    return `token budget reached (${totalTokens}/${this.limits.maxTokens}, buffer ${buffer})`;
   }
 
   private finishGracefulStop(): void {

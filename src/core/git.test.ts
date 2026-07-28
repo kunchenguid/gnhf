@@ -198,11 +198,18 @@ describe("git utilities", () => {
       expect(argsOfCall(2)).toContain(injection);
     });
 
-    it("does not throw when there is nothing to commit", () => {
-      expect(() => commitAll("empty", "/repo")).not.toThrow();
+    it("returns false without committing when there is nothing to commit", () => {
+      expect(commitAll("empty", "/repo")).toBe(false);
       expect(mockExecFileSync).toHaveBeenCalledTimes(2);
       expect(argsOfCall(0)).toEqual(["add", "-A"]);
       expect(argsOfCall(1)).toEqual(["diff", "--cached", "--quiet"]);
+    });
+
+    it("returns true after committing staged changes", () => {
+      mockStagedChanges();
+
+      expect(commitAll("msg", "/repo")).toBe(true);
+      expect(mockExecFileSync).toHaveBeenCalledTimes(3);
     });
 
     it("throws CommitFailedError when commit fails so the agent can repair hook failures", () => {

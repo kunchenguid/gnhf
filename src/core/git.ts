@@ -235,7 +235,7 @@ export function getBranchDiffStats(
   return stats;
 }
 
-export function commitAll(message: string, cwd: string): void {
+export function commitAll(message: string, cwd: string): boolean {
   // -c commit.gpgsign=false / tag.gpgsign=false: a user with global
   // signing enabled would otherwise have every gnhf iteration spawn gpg
   // and (for a locked agent) wait on a pinentry passphrase prompt that
@@ -253,7 +253,7 @@ export function commitAll(message: string, cwd: string): void {
   git(["add", "-A"], cwd);
   try {
     git(["diff", "--cached", "--quiet"], cwd);
-    return;
+    return false;
   } catch {
     // Exit 1 means there are staged changes to commit.
   }
@@ -268,6 +268,7 @@ export function commitAll(message: string, cwd: string): void {
     });
     throw commitError;
   }
+  return true;
 }
 
 export function pushCurrentBranch(cwd: string): void {

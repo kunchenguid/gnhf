@@ -210,6 +210,48 @@ describe.concurrent("gnhf e2e cli", () => {
     });
   }, 15_000);
 
+  it("exits with error when --token-buffer is used without --max-tokens", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const env = createHomeWithConfig(temp, "agent: claude\n");
+
+      const result = await runCli(
+        cwd,
+        ["ship it", "--agent", "claude", "--token-buffer", "100"],
+        env,
+      );
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("--token-buffer requires --max-tokens");
+    });
+  }, 15_000);
+
+  it("exits with error when --token-buffer is not smaller than --max-tokens", async () => {
+    await withTemp(async (temp) => {
+      const cwd = createRepo(temp);
+      const env = createHomeWithConfig(temp, "agent: claude\n");
+
+      const result = await runCli(
+        cwd,
+        [
+          "ship it",
+          "--agent",
+          "claude",
+          "--max-tokens",
+          "100",
+          "--token-buffer",
+          "100",
+        ],
+        env,
+      );
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        "--token-buffer must be smaller than --max-tokens",
+      );
+    });
+  }, 15_000);
+
   it("uses config.agent when --agent flag is omitted", async () => {
     await withTemp(async (temp) => {
       const cwd = createRepo(temp);

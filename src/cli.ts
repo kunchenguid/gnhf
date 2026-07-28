@@ -571,6 +571,11 @@ program
     parseNonNegativeInteger,
   )
   .option(
+    "--token-buffer <n>",
+    "With --max-tokens: stop between iterations once usage is within N tokens of the cap, instead of cutting the iteration mid-turn",
+    parseNonNegativeInteger,
+  )
+  .option(
     "--stop-when <condition>",
     'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
@@ -608,6 +613,7 @@ program
         agent?: string;
         maxIterations?: number;
         maxTokens?: number;
+        tokenBuffer?: number;
         stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
@@ -702,6 +708,20 @@ program
       if (options.currentBranch && options.worktree) {
         console.error("Cannot combine --current-branch and --worktree.");
         process.exit(1);
+      }
+
+      if (options.tokenBuffer !== undefined) {
+        if (options.maxTokens === undefined) {
+          console.error("--token-buffer requires --max-tokens.");
+          process.exit(1);
+        }
+        if (options.tokenBuffer >= options.maxTokens) {
+          console.error(
+            "--token-buffer must be smaller than --max-tokens " +
+              `(got buffer ${options.tokenBuffer} with cap ${options.maxTokens}).`,
+          );
+          process.exit(1);
+        }
       }
 
       const cliStopWhen =
@@ -940,6 +960,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
+        tokenBuffer: options.tokenBuffer,
         stopWhen: effectiveStopWhen,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
@@ -976,6 +997,7 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
+          tokenBuffer: options.tokenBuffer,
           stopWhen: effectiveStopWhen,
           ...(options.push ? { push: true } : {}),
         },
@@ -1113,6 +1135,7 @@ program
           color: shouldUseColor(),
           terminalColumns: process.stdout.columns,
           hasPendingCommitFailure: finalState.hasPendingCommitFailure,
+          hasCheckpointCommit: finalState.hasCheckpointCommit,
         });
 
         appendDebugLog("run:complete", {
