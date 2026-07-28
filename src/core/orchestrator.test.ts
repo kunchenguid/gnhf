@@ -624,7 +624,14 @@ describe("Orchestrator stop limits", () => {
     await orchestrator.start();
 
     expect(mockResetHard).not.toHaveBeenCalled();
-    expect(mockAppendNotes).not.toHaveBeenCalled();
+    expect(mockAppendNotes).toHaveBeenCalledTimes(1);
+    expect(mockAppendNotes).toHaveBeenCalledWith(
+      runInfo.notesPath,
+      1,
+      expect.stringContaining("the checkpoint commit failed"),
+      [],
+      [expect.stringContaining("hook failed")],
+    );
     expect(orchestrator.getState()).toMatchObject({
       status: "aborted",
       hasPendingCommitFailure: true,

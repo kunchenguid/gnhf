@@ -661,7 +661,19 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         // Same preserve-for-repair contract as recordCommitFailure: keep the
         // workspace, surface the warning, never bypass hooks.
         this.pendingCommitFailure = error.detail;
-        appendDebugLog("git:checkpoint:failed", { detail: error.detail });
+        appendNotes(
+          this.runInfo.notesPath,
+          this.state.currentIteration,
+          `[ERROR] ${reason} - the checkpoint commit failed, so the in-flight ` +
+            `work is preserved uncommitted; inspect and repair it before ` +
+            `building on it`,
+          [],
+          [error.detail],
+        );
+        appendDebugLog("git:checkpoint:failed", {
+          iteration: this.state.currentIteration,
+          detail: error.detail,
+        });
         return;
       }
       throw error;
