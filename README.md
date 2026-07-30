@@ -221,7 +221,7 @@ If the file does not exist yet, `gnhf` creates it on first run with its defaults
 A supplied `--agent` is written as the default agent.
 With the default configuration, it has this exact content:
 
-<!-- This block mirrors src/core/bootstrap-config.golden.yml and is pinned to it by src/core/bootstrap-config.test.ts; update both together. -->
+<!-- Owner: serializeConfig in src/core/config.ts. This block and src/core/bootstrap-config.golden.yml are drift-pinned copies of its output (src/core/config.test.ts, src/core/bootstrap-config.test.ts); change serializeConfig first, then paste its output into both. -->
 
 ```yaml
 # Agent to use by default: native agent name or acp:<target-or-command>

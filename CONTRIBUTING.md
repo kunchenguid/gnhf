@@ -40,7 +40,7 @@ pnpm run test:coverage  # vitest with coverage, excludes e2e/
 ```
 
 Run a single test file with `pnpm exec vitest run src/core/orchestrator.test.ts`, or filter by name with `pnpm exec vitest run -t "name substring"`.
-E2E tests shell out to the built `dist/cli.mjs` against a mock `opencode` server in `e2e/fixtures/`, so they require a prior build (`pnpm test` and `pnpm run test:e2e` do this automatically).
+E2E tests shell out to the built `dist/cli.mjs` against the mock agent CLIs and servers in `e2e/fixtures/`, so they require a prior build (`pnpm test` and `pnpm run test:e2e` do this automatically).
 Add new e2e tests as `e2e/*.test.ts` so the directory glob in both scripts picks them up.
 CI (`.github/workflows/ci.yml`) runs lint, format:check, typecheck, and test on Ubuntu, macOS, and Windows with Node 24; all four must stay green.
 
