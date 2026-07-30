@@ -10,6 +10,7 @@ import { AcpAgent } from "./acp.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
+import { GrokAgent } from "./grok.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -69,6 +70,12 @@ export function createAgent(
       });
     case "pi":
       return new PiAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+        schema,
+      });
+    case "grok":
+      return new GrokAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,

@@ -13,6 +13,7 @@ export const AGENT_NAMES = [
   "opencode",
   "copilot",
   "pi",
+  "grok",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
@@ -190,6 +191,20 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-v" ||
         arg === "--api-key" ||
         arg.startsWith("--api-key=")
+      );
+    case "grok":
+      return (
+        arg === "-p" ||
+        arg === "--single" ||
+        arg.startsWith("--single=") ||
+        arg === "--prompt-file" ||
+        arg.startsWith("--prompt-file=") ||
+        arg === "--prompt-json" ||
+        arg.startsWith("--prompt-json=") ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--json-schema" ||
+        arg.startsWith("--json-schema=")
       );
   }
 }
@@ -524,6 +539,7 @@ function serializeConfig(config: Config): string {
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
+    "#   grok: /path/to/custom-grok",
     "",
     "# Native agent CLI arg overrides (optional)",
     "# ACP targets do not support path or arg overrides.",
@@ -544,6 +560,9 @@ function serializeConfig(config: Config): string {
     "#     - gpt-5.5",
     "#     - --thinking",
     "#     - high",
+    "#   grok:",
+    "#     - -m",
+    "#     - grok-4.5-build",
     "",
     "# Custom ACP target commands (optional)",
     "# Maps acp:<target> names to spawn commands. Useful for naming a",

@@ -45,6 +45,17 @@ vi.mock("./pi.js", () => {
   return { PiAgent };
 });
 
+vi.mock("./grok.js", () => {
+  const GrokAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "grok";
+    this.deps = deps;
+  });
+  return { GrokAgent };
+});
+
 vi.mock("./rovodev.js", () => {
   const RovoDevAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -86,6 +97,7 @@ import { AcpAgent } from "./acp.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
+import { GrokAgent } from "./grok.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -295,6 +307,46 @@ describe("createAgent", () => {
       includeStopField: true,
     });
     expect(PiAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
+  });
+
+  it("creates a GrokAgent when name is 'grok'", () => {
+    const agent = createAgent("grok", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(GrokAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("grok");
+  });
+
+  it("passes path override and extra args through to the GrokAgent", () => {
+    const agent = createAgent(
+      "grok",
+      stubRunInfo,
+      "/custom/grok",
+      ["-m", "grok-4.5-build"],
+      { includeStopField: false },
+    );
+
+    expect(GrokAgent).toHaveBeenCalledWith({
+      bin: "/custom/grok",
+      extraArgs: ["-m", "grok-4.5-build"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("grok");
+  });
+
+  it("hands GrokAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("grok", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(GrokAgent).toHaveBeenCalledWith({
       bin: undefined,
       extraArgs: undefined,
       schema: withStopSchema,
