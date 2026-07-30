@@ -149,7 +149,7 @@ Do not ask what to review first. Reconstruct state:
 git status --short
 git branch --show-current
 git log --oneline --decorate --max-count=20
-pgrep -fl 'gnhf|claude|codex|copilot|opencode|rovodev' || true
+pgrep -fl 'gnhf|claude|codex|copilot|grok|opencode|rovodev' || true
 ```
 
 Inspect likely GNHF branches, notes, logs, terminal sessions, and changed files. If a GNHF process is still running, report that first.
