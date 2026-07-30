@@ -29,6 +29,10 @@ function emitJson(proc: ReturnType<typeof createMockProcess>, event: unknown) {
 describe("CopilotAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default the `where` shim lookup to "nothing found". Return values survive
+    // clearAllMocks, so a shim path left behind by one test would otherwise put
+    // later tests on the cmd.exe path and escape their argv on Windows hosts.
+    vi.mocked(execFileSync).mockReturnValue("" as never);
   });
 
   it("spawns copilot in non-interactive JSONL mode with the default permission flag", () => {

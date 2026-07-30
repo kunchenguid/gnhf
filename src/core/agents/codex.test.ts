@@ -24,6 +24,10 @@ function createMockProcess() {
 describe("CodexAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default the `where` shim lookup to "nothing found". Return values survive
+    // clearAllMocks, so a shim path left behind by one test would otherwise put
+    // later tests on the cmd.exe path and escape their argv on Windows hosts.
+    vi.mocked(execFileSync).mockReturnValue("" as never);
   });
 
   it("does not use a shell for direct Windows launches", () => {

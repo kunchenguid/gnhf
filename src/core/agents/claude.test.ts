@@ -35,6 +35,10 @@ describe("ClaudeAgent", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default the `where` shim lookup to "nothing found". Return values survive
+    // clearAllMocks, so a shim path left behind by one test would otherwise put
+    // later tests on the cmd.exe path and escape their argv on Windows hosts.
+    vi.mocked(execFileSync).mockReturnValue("" as never);
     agent = new ClaudeAgent();
   });
 
