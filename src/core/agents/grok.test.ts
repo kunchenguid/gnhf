@@ -265,6 +265,47 @@ describe("GrokAgent", () => {
     expect(proc.kill).not.toHaveBeenCalled();
   });
 
+  it("kills the whole process group on unix when aborted", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 4321 });
+    mockSpawn.mockReturnValue(proc);
+    const killSpy = vi
+      .spyOn(process, "kill")
+      .mockImplementation(() => true as never);
+    const controller = new AbortController();
+    const unixAgent = new GrokAgent({ platform: "darwin" });
+
+    const promise = unixAgent.run("test prompt", "/work/dir", {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow("Agent was aborted");
+    expect(killSpy).toHaveBeenCalledWith(-4321, "SIGTERM");
+    expect(proc.kill).not.toHaveBeenCalled();
+    killSpy.mockRestore();
+  });
+
+  it("falls back to signalling the child directly when it leads no group", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 4321 });
+    mockSpawn.mockReturnValue(proc);
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw new Error("ESRCH");
+    });
+    const controller = new AbortController();
+    const unixAgent = new GrokAgent({ platform: "darwin" });
+
+    const promise = unixAgent.run("test prompt", "/work/dir", {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow("Agent was aborted");
+    expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+    killSpy.mockRestore();
+  });
+
   it("resolves structuredOutput and usage from the end event", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -303,7 +344,7 @@ describe("GrokAgent", () => {
       },
       usage: {
         inputTokens: 150,
-        outputTokens: 20,
+        outputTokens: 25,
         cacheReadTokens: 50,
         cacheCreationTokens: 0,
       },
@@ -311,10 +352,104 @@ describe("GrokAgent", () => {
     expect(onMessage).toHaveBeenCalledWith('{"success":true}');
     expect(onUsage).toHaveBeenCalledWith({
       inputTokens: 150,
-      outputTokens: 20,
+      outputTokens: 25,
       cacheReadTokens: 50,
       cacheCreationTokens: 0,
     });
+  });
+
+  it("accounts for reasoning tokens reported outside output_tokens", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "end",
+      stopReason: "EndTurn",
+      usage: {
+        input_tokens: 1000,
+        output_tokens: 200,
+        reasoning_tokens: 4000,
+        total_tokens: 5200,
+      },
+      structuredOutput: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 4200,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+    });
+  });
+
+  it("reports usage only after the finished iteration has settled", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const controller = new AbortController();
+    // Mirrors the orchestrator aborting mid-iteration once --max-tokens trips.
+    const onUsage = vi.fn(() => controller.abort());
+
+    const promise = agent.run("prompt", "/cwd", {
+      onUsage,
+      signal: controller.signal,
+    });
+
+    emitLine(proc, {
+      type: "end",
+      stopReason: "EndTurn",
+      usage: { input_tokens: 100, output_tokens: 100 },
+      structuredOutput: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "done" },
+    });
+    expect(onUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps surfacing the most recent streamed text", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onMessage = vi.fn();
+
+    const promise = agent.run("prompt", "/cwd", { onMessage });
+
+    emitLine(proc, { type: "text", data: "a".repeat(2000) });
+    emitLine(proc, { type: "text", data: " newest output" });
+    emitLine(proc, {
+      type: "end",
+      stopReason: "EndTurn",
+      structuredOutput: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true },
+    });
+    const lastMessage = onMessage.mock.calls.at(-1)?.[0] as string;
+    expect(lastMessage.endsWith("newest output")).toBe(true);
+    expect(lastMessage.length).toBeLessThanOrEqual(200);
   });
 
   it("falls back to parsing streamed text when structuredOutput is missing", async () => {
@@ -394,6 +529,64 @@ describe("GrokAgent", () => {
     proc.emit("close", 0);
 
     await expect(promise).rejects.toThrow('grok reported stopReason "Error"');
+  });
+
+  it("accepts unrecognised terminal stopReason values", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+    emitLine(proc, {
+      type: "end",
+      stopReason: "Completed",
+      structuredOutput: {
+        success: true,
+        summary: "x",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "x" },
+    });
+  });
+
+  it("prefers the streamed JSON object that matches the schema", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+    emitLine(proc, {
+      type: "text",
+      data: `Here is the result:\n${JSON.stringify({
+        success: true,
+        summary: "from text",
+        key_changes_made: [],
+        key_learnings: [],
+      })}\nDebug: {"tool":"bash"}`,
+    });
+    emitLine(proc, { type: "end", stopReason: "EndTurn" });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "from text" },
+    });
+  });
+
+  it("reports unparseable streamed text as a parse failure", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+    emitLine(proc, { type: "text", data: "I could not finish the task." });
+    emitLine(proc, { type: "end", stopReason: "EndTurn" });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow(
+      "grok output did not contain a parseable JSON object",
+    );
   });
 
   it("rejects invalid structuredOutput against the schema", async () => {

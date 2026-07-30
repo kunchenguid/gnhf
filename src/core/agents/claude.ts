@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
@@ -11,7 +11,13 @@ import {
   PermanentAgentError,
 } from "./types.js";
 import { shutdownChildProcess } from "./managed-process.js";
-import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
+import {
+  parseJSONLStream,
+  setupAbortHandler,
+  shouldUseWindowsShell,
+  spawnsDetached,
+  terminateChildProcess,
+} from "./stream-utils.js";
 
 const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
 
@@ -52,70 +58,14 @@ interface ClaudeAgentDeps {
   schema?: AgentOutputSchema;
 }
 
-function shouldUseWindowsShell(
-  bin: string,
-  platform: NodeJS.Platform,
-): boolean {
-  if (platform !== "win32") {
-    return false;
-  }
-
-  if (/\.(cmd|bat)$/i.test(bin)) {
-    return true;
-  }
-
-  if (/[\\/]/.test(bin)) {
-    return false;
-  }
-
-  try {
-    const resolved = execFileSync("where", [bin], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const firstMatch = resolved
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean);
-    return firstMatch ? /\.(cmd|bat)$/i.test(firstMatch) : false;
-  } catch {
-    return false;
-  }
-}
-
-function terminateClaudeProcess(
-  child: ReturnType<typeof spawn>,
-  platform: NodeJS.Platform,
-): void {
-  if (platform === "win32" && child.pid) {
-    try {
-      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
-        stdio: "ignore",
-      });
-    } catch {
-      // Best-effort: the process may have already exited.
-    }
-    return;
-  }
-
-  if (child.pid) {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-      return;
-    } catch {
-      // Fall back to the direct child if it was not started as a process group.
-    }
-  }
-
-  child.kill("SIGTERM");
-}
-
 async function shutdownClaudeProcess(
   child: ReturnType<typeof spawn>,
   platform: NodeJS.Platform,
 ): Promise<void> {
   if (platform === "win32") {
-    terminateClaudeProcess(child, platform);
+    terminateChildProcess(child, platform, {
+      detached: spawnsDetached(platform),
+    });
     return;
   }
 
@@ -225,13 +175,14 @@ export class ClaudeAgent implements Agent {
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
+      const detached = spawnsDetached(this.platform);
 
       const child = spawn(
         this.bin,
         buildClaudeArgs(prompt, this.schema, this.extraArgs),
         {
           cwd,
-          detached: this.platform !== "win32",
+          detached,
           shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
@@ -240,7 +191,7 @@ export class ClaudeAgent implements Agent {
 
       if (
         setupAbortHandler(signal, child, reject, () =>
-          terminateClaudeProcess(child, this.platform),
+          terminateChildProcess(child, this.platform, { detached }),
         )
       ) {
         return;

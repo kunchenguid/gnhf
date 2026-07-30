@@ -60,6 +60,7 @@ body:
         - opencode
         - copilot
         - pi
+        - grok
         - other / not sure
     validations:
       required: true

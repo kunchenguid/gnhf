@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import type {
   Agent,
@@ -11,6 +11,8 @@ import {
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
+  shouldUseWindowsShell,
+  terminateChildProcess,
 } from "./stream-utils.js";
 
 interface CodexItemCompleted {
@@ -33,55 +35,6 @@ interface CodexAgentDeps {
   bin?: string;
   extraArgs?: string[];
   platform?: NodeJS.Platform;
-}
-
-function shouldUseWindowsShell(
-  bin: string,
-  platform: NodeJS.Platform,
-): boolean {
-  if (platform !== "win32") {
-    return false;
-  }
-
-  if (/\.(cmd|bat)$/i.test(bin)) {
-    return true;
-  }
-
-  if (/[\\/]/.test(bin)) {
-    return false;
-  }
-
-  try {
-    const resolved = execFileSync("where", [bin], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const firstMatch = resolved
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean);
-    return firstMatch ? /\.(cmd|bat)$/i.test(firstMatch) : false;
-  } catch {
-    return false;
-  }
-}
-
-function terminateCodexProcess(
-  child: ReturnType<typeof spawn>,
-  platform: NodeJS.Platform,
-): void {
-  if (platform === "win32" && child.pid) {
-    try {
-      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
-        stdio: "ignore",
-      });
-    } catch {
-      // Best-effort: the process may have already exited.
-    }
-    return;
-  }
-
-  child.kill("SIGTERM");
 }
 
 function buildCodexArgs(
@@ -156,7 +109,7 @@ export class CodexAgent implements Agent {
 
       if (
         setupAbortHandler(signal, child, reject, () =>
-          terminateCodexProcess(child, this.platform),
+          terminateChildProcess(child, this.platform, { detached: false }),
         )
       ) {
         return;

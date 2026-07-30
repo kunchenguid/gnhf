@@ -1,6 +1,86 @@
-import type { ChildProcess } from "node:child_process";
+import { execFileSync, type ChildProcess } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { WriteStream } from "node:fs";
+
+/**
+ * npm installs some agent CLIs as `.cmd`/`.bat` shims on Windows, which
+ * `spawn` can only launch through a shell. Bare names are resolved with
+ * `where` so a configured override that points at a shim still works.
+ */
+export function shouldUseWindowsShell(
+  bin: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") {
+    return false;
+  }
+
+  if (/\.(cmd|bat)$/i.test(bin)) {
+    return true;
+  }
+
+  if (/[\\/]/.test(bin)) {
+    return false;
+  }
+
+  try {
+    const resolved = execFileSync("where", [bin], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const firstMatch = resolved
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    return firstMatch ? /\.(cmd|bat)$/i.test(firstMatch) : false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether an agent CLI should be spawned as its own process-group leader.
+ * Group leadership is what lets `terminateChildProcess` reach the tools the
+ * agent spawned; Windows has no process groups and uses `taskkill /T` instead.
+ */
+export function spawnsDetached(platform: NodeJS.Platform): boolean {
+  return platform !== "win32";
+}
+
+/**
+ * Terminate a spawned agent CLI and, where possible, everything it started.
+ *
+ * `detached` must match the `detached` option the child was spawned with:
+ * signalling the negated pid only reaches the agent's own descendants when the
+ * child leads its own process group, and would otherwise signal gnhf's group.
+ */
+export function terminateChildProcess(
+  child: ChildProcess,
+  platform: NodeJS.Platform,
+  { detached }: { detached: boolean },
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Best-effort: the process may have already exited.
+    }
+    return;
+  }
+
+  if (detached && child.pid) {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Fall back to the direct child if it was not started as a process group.
+    }
+  }
+
+  child.kill("SIGTERM");
+}
 
 /**
  * Wire stderr collection, spawn-error handling, and the common close-handler
