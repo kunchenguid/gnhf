@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
@@ -10,12 +9,12 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
-import { parseAgentJson } from "./json-extract.js";
+import { parseAgentOutputJson } from "./json-extract.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
-  shouldUseWindowsShell,
+  spawnAgentProcess,
   terminateChildProcess,
 } from "./stream-utils.js";
 
@@ -149,25 +148,8 @@ function parseCopilotOutput(
   text: string,
   schema: AgentOutputSchema,
 ): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError(
-    "copilot output did not contain a parseable JSON object",
+  return parseAgentOutputJson(text, "copilot", (value) =>
+    validateAgentOutput(value, schema),
   );
 }
 
@@ -198,12 +180,12 @@ export class CopilotAgent implements Agent {
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
-      const child = spawn(
+      const child = spawnAgentProcess(
         this.bin,
         buildCopilotArgs(prompt, this.schema, this.extraArgs),
+        this.platform,
         {
           cwd,
-          shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         },

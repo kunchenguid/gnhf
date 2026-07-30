@@ -16,7 +16,7 @@ import {
   type TokenUsage,
 } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
-import { parseAgentJson } from "./json-extract.js";
+import { parseAgentOutputJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface OpenCodeMessagePart {
@@ -217,25 +217,8 @@ function parseOpenCodeOutput(
   text: string,
   schema: AgentOutputSchema,
 ): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError(
-    "opencode output did not contain a parseable JSON object",
+  return parseAgentOutputJson(text, "opencode", (value) =>
+    validateAgentOutput(value, schema),
   );
 }
 

@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { validateAgentOutput } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
-import { parseAgentJson } from "./json-extract.js";
+import { parseAgentOutputJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface RovoDevRequestUsageEvent {
@@ -746,47 +746,27 @@ export class RovoDevAgent implements Agent {
     const schema = JSON.parse(
       readFileSync(this.schemaPath, "utf-8"),
     ) as AgentOutputSchema;
-    const parsed = parseAgentJson(finalText, (value) => {
-      try {
-        validateAgentOutput(value, schema);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-    if (parsed === null) {
-      const fallbackParsed = parseAgentJson(finalText);
-      if (fallbackParsed !== null) {
-        try {
-          validateAgentOutput(fallbackParsed, schema);
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to parse rovodev output: ${message}`);
-        }
-      }
-      const parseError = new SyntaxError(
-        "rovodev output did not contain a parseable JSON object",
+    let output;
+    try {
+      output = parseAgentOutputJson(finalText, "rovodev", (value) =>
+        validateAgentOutput(value, schema),
       );
-      appendDebugLog("rovodev:output:parse-error", {
-        sessionId,
-        outputTextLength: finalText.length,
-        outputTextSample: finalText.slice(0, 512),
-        error: serializeError(parseError),
-      });
-      throw new Error(`Failed to parse rovodev output: ${parseError.message}`);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        appendDebugLog("rovodev:output:parse-error", {
+          sessionId,
+          outputTextLength: finalText.length,
+          outputTextSample: finalText.slice(0, 512),
+          error: serializeError(error),
+        });
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to parse rovodev output: ${message}`);
     }
     appendDebugLog("rovodev:output:parsed", {
       sessionId,
       outputTextLength: finalText.length,
     });
-    let output;
-    try {
-      output = validateAgentOutput(parsed, schema);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to parse rovodev output: ${message}`);
-    }
     return {
       output,
       usage,

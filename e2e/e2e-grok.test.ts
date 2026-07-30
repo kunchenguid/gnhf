@@ -152,127 +152,156 @@ describe("gnhf grok e2e", () => {
     }
   });
 
-  it("runs an iteration through the grok CLI wire format and commits the result", async () => {
-    const cwd = createRepo();
-    tempDirs.push(cwd);
-    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
-    tempDirs.push(logDir);
-    const mockLogPath = join(logDir, "mock-grok.jsonl");
+  // Skipped on Windows: the fixture `grok` on PATH is a `.cmd` shim, so these
+  // runs go through `cmd.exe`, which cannot carry the multi-line iteration
+  // prompt as a single argv token no matter how it is quoted.
+  it.skipIf(process.platform === "win32")(
+    "runs an iteration through the grok CLI wire format and commits the result",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-grok.jsonl");
 
-    const result = await runCli(
-      cwd,
-      ["add a line to the readme", "--agent", "grok", "--max-iterations", "1"],
-      { env: createTestEnv(mockLogPath, tempDirs) },
-    );
+      const result = await runCli(
+        cwd,
+        [
+          "add a line to the readme",
+          "--agent",
+          "grok",
+          "--max-iterations",
+          "1",
+        ],
+        { env: createTestEnv(mockLogPath, tempDirs) },
+      );
 
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain("gnhf stopped");
-    expect(result.stdout).toContain("grok ran");
-    expect(result.stdout).toContain("max iterations reached (1)");
-    // Usage from the terminal `end` event: 1200 fresh + 300 cache-read input,
-    // and 150 reasoning tokens that `total_tokens` shows sit outside
-    // `output_tokens` (450 + 150 = 600). Authoritative, so no "~" prefix.
-    expect(result.stdout).toContain("2K in");
-    expect(result.stdout).toContain("600 out");
-    expect(result.stdout).not.toContain("~2K in");
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("gnhf stopped");
+      expect(result.stdout).toContain("grok ran");
+      expect(result.stdout).toContain("max iterations reached (1)");
+      // Usage from the terminal `end` event: 1200 fresh + 300 cache-read input,
+      // and 150 reasoning tokens that `total_tokens` shows sit outside
+      // `output_tokens` (450 + 150 = 600). Authoritative, so no "~" prefix.
+      expect(result.stdout).toContain("2K in");
+      expect(result.stdout).toContain("600 out");
+      expect(result.stdout).not.toContain("~2K in");
 
-    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
-    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
-    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).toContain("gnhf/");
-    expect(readFileSync(join(cwd, "README.md"), "utf-8")).toContain(
-      "- grok change",
-    );
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+      expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
+      expect(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).toContain(
+        "gnhf/",
+      );
+      expect(readFileSync(join(cwd, "README.md"), "utf-8")).toContain(
+        "- grok change",
+      );
 
-    const invocations = readMockInvocations(mockLogPath);
-    expect(invocations).toHaveLength(1);
-    const invocation = invocations[0]!;
-    expect(invocation.prompt).toContain("add a line to the readme");
-    expect(invocation.argv).toContain("-p");
-    expect(invocation.argv).toContain("--always-approve");
-    expect(invocation.argv.join(" ")).toContain(
-      "--output-format streaming-json",
-    );
-    expect(JSON.parse(invocation.schema)).toMatchObject({
-      type: "object",
-      required: ["success", "summary", "key_changes_made", "key_learnings"],
-    });
+      const invocations = readMockInvocations(mockLogPath);
+      expect(invocations).toHaveLength(1);
+      const invocation = invocations[0]!;
+      expect(invocation.prompt).toContain("add a line to the readme");
+      expect(invocation.argv).toContain("-p");
+      expect(invocation.argv).toContain("--always-approve");
+      expect(invocation.argv.join(" ")).toContain(
+        "--output-format streaming-json",
+      );
+      expect(JSON.parse(invocation.schema)).toMatchObject({
+        type: "object",
+        required: ["success", "summary", "key_changes_made", "key_learnings"],
+      });
 
-    const debugEntries = readJsonLines(findRunLogPath(cwd));
-    const debugEvents = debugEntries.map((entry) => entry.event);
-    expect(debugEvents).toContain("agent:run:start");
-    expect(debugEvents).toContain("agent:run:end");
-    expect(debugEvents).toContain("run:complete");
-    expect(
-      debugEntries.find((entry) => entry.event === "iteration:end")?.success,
-    ).toBe(true);
-  }, 30_000);
+      const debugEntries = readJsonLines(findRunLogPath(cwd));
+      const debugEvents = debugEntries.map((entry) => entry.event);
+      expect(debugEvents).toContain("agent:run:start");
+      expect(debugEvents).toContain("agent:run:end");
+      expect(debugEvents).toContain("run:complete");
+      expect(
+        debugEntries.find((entry) => entry.event === "iteration:end")?.success,
+      ).toBe(true);
+    },
+    30_000,
+  );
 
-  it("keeps the finished iteration's commit when its reported usage trips --max-tokens", async () => {
-    const cwd = createRepo();
-    tempDirs.push(cwd);
-    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
-    tempDirs.push(logDir);
-    const mockLogPath = join(logDir, "mock-grok.jsonl");
+  it.skipIf(process.platform === "win32")(
+    "keeps the finished iteration's commit when its reported usage trips --max-tokens",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-grok.jsonl");
 
-    // grok only reports usage in the terminal `end` event, so a low
-    // --max-tokens budget must not roll back the iteration that just
-    // finished: the work is committed, then the run stops.
-    const result = await runCli(
-      cwd,
-      [
-        "add a line to the readme",
-        "--agent",
-        "grok",
-        "--max-iterations",
-        "5",
-        "--max-tokens",
-        "100",
-      ],
-      { env: createTestEnv(mockLogPath, tempDirs) },
-    );
+      // grok only reports usage in the terminal `end` event, so a low
+      // --max-tokens budget must not roll back the iteration that just
+      // finished: the work is committed, then the run stops.
+      const result = await runCli(
+        cwd,
+        [
+          "add a line to the readme",
+          "--agent",
+          "grok",
+          "--max-iterations",
+          "5",
+          "--max-tokens",
+          "100",
+        ],
+        { env: createTestEnv(mockLogPath, tempDirs) },
+      );
 
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain("max tokens reached (2100/100)");
-    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
-    expect(readFileSync(join(cwd, "README.md"), "utf-8")).toContain(
-      "- grok change",
-    );
-    expect(readMockInvocations(mockLogPath)).toHaveLength(1);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("max tokens reached (2100/100)");
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+      expect(readFileSync(join(cwd, "README.md"), "utf-8")).toContain(
+        "- grok change",
+      );
+      expect(readMockInvocations(mockLogPath)).toHaveLength(1);
 
-    const debugEntries = readJsonLines(findRunLogPath(cwd));
-    expect(debugEntries.map((entry) => entry.event)).not.toContain(
-      "agent:run:aborted",
-    );
-    expect(
-      debugEntries.find((entry) => entry.event === "iteration:end")?.success,
-    ).toBe(true);
-  }, 30_000);
+      const debugEntries = readJsonLines(findRunLogPath(cwd));
+      expect(debugEntries.map((entry) => entry.event)).not.toContain(
+        "agent:run:aborted",
+      );
+      expect(
+        debugEntries.find((entry) => entry.event === "iteration:end")?.success,
+      ).toBe(true);
+    },
+    30_000,
+  );
 
-  it("recovers the iteration output when grok only prints JSON as text", async () => {
-    const cwd = createRepo();
-    tempDirs.push(cwd);
-    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
-    tempDirs.push(logDir);
-    const mockLogPath = join(logDir, "mock-grok.jsonl");
+  it.skipIf(process.platform === "win32")(
+    "recovers the iteration output when grok only prints JSON as text",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-grok-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-grok.jsonl");
 
-    const result = await runCli(
-      cwd,
-      ["add a line to the readme", "--agent", "grok", "--max-iterations", "1"],
-      {
-        env: {
-          ...createTestEnv(mockLogPath, tempDirs),
-          GNHF_MOCK_GROK_TEXT_ONLY: "1",
+      const result = await runCli(
+        cwd,
+        [
+          "add a line to the readme",
+          "--agent",
+          "grok",
+          "--max-iterations",
+          "1",
+        ],
+        {
+          env: {
+            ...createTestEnv(mockLogPath, tempDirs),
+            GNHF_MOCK_GROK_TEXT_ONLY: "1",
+          },
         },
-      },
-    );
+      );
 
-    expect(result.code).toBe(0);
-    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
-    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
+      expect(result.code).toBe(0);
+      expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+      expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
 
-    const notesPath = join(dirname(findRunLogPath(cwd)), "notes.md");
-    expect(readFileSync(notesPath, "utf-8")).toContain(
-      "appended a mock grok change to README.md",
-    );
-  }, 30_000);
+      const notesPath = join(dirname(findRunLogPath(cwd)), "notes.md");
+      expect(readFileSync(notesPath, "utf-8")).toContain(
+        "appended a mock grok change to README.md",
+      );
+    },
+    30_000,
+  );
 });

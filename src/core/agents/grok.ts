@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
@@ -10,12 +9,12 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
-import { parseAgentJson } from "./json-extract.js";
+import { parseAgentOutputJson } from "./json-extract.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
-  shouldUseWindowsShell,
+  spawnAgentProcess,
   spawnsDetached,
   terminateChildProcess,
 } from "./stream-utils.js";
@@ -163,27 +162,18 @@ function validateGrokOutput(
   }
 }
 
-function matchesSchema(value: unknown, schema: AgentOutputSchema): boolean {
-  try {
-    validateAgentOutput(value, schema);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Prefer grok's own `structuredOutput`, falling back to the streamed text for
- * builds that only emit the JSON answer as prose. The fallback text is the
- * whole turn's transcript, so a schema-aware pass runs first to avoid latching
- * onto an unrelated JSON object the agent happened to print.
+ * builds that only emit the JSON answer as prose, or that report "no structured
+ * answer" as an explicit null. The fallback text is the whole turn's
+ * transcript, so recovery goes through the shared schema-aware extractor.
  */
 function parseGrokOutput(
   end: GrokEndEvent,
   streamedText: string,
   schema: AgentOutputSchema,
 ): AgentOutput {
-  if (end.structuredOutput !== undefined) {
+  if (end.structuredOutput != null) {
     return validateGrokOutput(end.structuredOutput, schema);
   }
 
@@ -192,18 +182,9 @@ function parseGrokOutput(
     throw new Error("grok returned no structuredOutput or text");
   }
 
-  const matched = parseAgentJson(finalText, (value) =>
-    matchesSchema(value, schema),
+  return parseAgentOutputJson(finalText, "grok", (value) =>
+    validateGrokOutput(value, schema),
   );
-  if (matched !== null) {
-    return validateGrokOutput(matched, schema);
-  }
-
-  const parsed = parseAgentJson(finalText);
-  if (parsed === null) {
-    throw new Error("grok output did not contain a parseable JSON object");
-  }
-  return validateGrokOutput(parsed, schema);
 }
 
 export class GrokAgent implements Agent {
@@ -232,13 +213,13 @@ export class GrokAgent implements Agent {
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
       const detached = spawnsDetached(this.platform);
-      const child = spawn(
+      const child = spawnAgentProcess(
         this.bin,
         buildGrokArgs(prompt, this.schema, this.extraArgs),
+        this.platform,
         {
           cwd,
           detached,
-          shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         },

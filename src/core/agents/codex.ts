@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import type {
   Agent,
@@ -11,7 +10,7 @@ import {
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
-  shouldUseWindowsShell,
+  spawnAgentProcess,
   terminateChildProcess,
 } from "./stream-utils.js";
 
@@ -96,12 +95,12 @@ export class CodexAgent implements Agent {
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
-      const child = spawn(
+      const child = spawnAgentProcess(
         this.bin,
         buildCodexArgs(prompt, this.schemaPath, this.extraArgs),
+        this.platform,
         {
           cwd,
-          shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         },

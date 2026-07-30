@@ -139,13 +139,13 @@ describe("GrokAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "C:\\tools\\grok.cmd",
       [
-        "-p",
-        "test prompt",
-        "--output-format",
-        "streaming-json",
-        "--json-schema",
+        '^"-p^"',
+        '^"test^ prompt^"',
+        '^"--output-format^"',
+        '^"streaming-json^"',
+        '^"--json-schema^"',
         expect.any(String),
-        "--always-approve",
+        '^"--always-approve^"',
       ],
       {
         cwd: "/work/dir",
@@ -173,13 +173,13 @@ describe("GrokAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "grok-wrapper",
       [
-        "-p",
-        "test prompt",
-        "--output-format",
-        "streaming-json",
-        "--json-schema",
+        '^"-p^"',
+        '^"test^ prompt^"',
+        '^"--output-format^"',
+        '^"streaming-json^"',
+        '^"--json-schema^"',
         expect.any(String),
-        "--always-approve",
+        '^"--always-approve^"',
       ],
       {
         cwd: "/work/dir",
@@ -568,6 +568,32 @@ describe("GrokAgent", () => {
       })}\nDebug: {"tool":"bash"}`,
     });
     emitLine(proc, { type: "end", stopReason: "EndTurn" });
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "from text" },
+    });
+  });
+
+  it("falls back to the streamed text when structuredOutput is an explicit null", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+    emitLine(proc, {
+      type: "text",
+      data: JSON.stringify({
+        success: true,
+        summary: "from text",
+        key_changes_made: [],
+        key_learnings: [],
+      }),
+    });
+    emitLine(proc, {
+      type: "end",
+      stopReason: "EndTurn",
+      structuredOutput: null,
+    });
     proc.emit("close", 0);
 
     await expect(promise).resolves.toMatchObject({

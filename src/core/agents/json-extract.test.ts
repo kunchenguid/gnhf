@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractLastJsonObject,
   parseAgentJson,
+  parseAgentOutputJson,
   stripJsonFences,
   tryExtractBalancedObject,
 } from "./json-extract.js";
@@ -134,5 +135,53 @@ describe("parseAgentJson", () => {
   it("returns null for empty input", () => {
     expect(parseAgentJson("")).toBeNull();
     expect(parseAgentJson("   ")).toBeNull();
+  });
+});
+
+describe("parseAgentOutputJson", () => {
+  interface Answer {
+    summary: string;
+  }
+
+  function validateAnswer(value: unknown): Answer {
+    const record = value as Record<string, unknown>;
+    if (typeof record?.summary !== "string") {
+      throw new Error("summary is required");
+    }
+    return { summary: record.summary };
+  }
+
+  it("prefers the object the validator accepts over other JSON in the text", () => {
+    const text = [
+      'Tool result: {"tool":"bash"}',
+      '{"summary":"the real answer"}',
+      'Debug: {"elapsed":12}',
+    ].join("\n");
+
+    expect(parseAgentOutputJson(text, "grok", validateAnswer)).toEqual({
+      summary: "the real answer",
+    });
+  });
+
+  it("surfaces the validator's error when the only JSON does not validate", () => {
+    expect(() =>
+      parseAgentOutputJson(
+        'Here it is: {"success":true}',
+        "grok",
+        validateAnswer,
+      ),
+    ).toThrow("summary is required");
+  });
+
+  it("throws a named SyntaxError when the text holds no JSON object", () => {
+    expect(() =>
+      parseAgentOutputJson(
+        "I could not finish the task.",
+        "grok",
+        validateAnswer,
+      ),
+    ).toThrow(
+      new SyntaxError("grok output did not contain a parseable JSON object"),
+    );
   });
 });

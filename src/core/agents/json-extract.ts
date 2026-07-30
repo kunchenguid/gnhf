@@ -85,6 +85,41 @@ export function extractLastJsonObject(
   return null;
 }
 
+/**
+ * Recover an agent's structured answer from its final message text.
+ *
+ * A schema-aware pass runs first so a transcript that also contains unrelated
+ * JSON (tool arguments, debug dumps) cannot win over the real answer, then a
+ * plain pass runs so a near-miss answer surfaces its validation error instead
+ * of a generic "no JSON found". `validate` owns the agent's error wording for
+ * anything that parses; only the no-JSON-at-all case is reported here.
+ */
+export function parseAgentOutputJson<T>(
+  text: string,
+  agentName: string,
+  validate: (value: unknown) => T,
+): T {
+  const matched = parseAgentJson(text, (value) => {
+    try {
+      validate(value);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (matched !== null) {
+    return validate(matched);
+  }
+
+  const parsed = parseAgentJson(text);
+  if (parsed === null) {
+    throw new SyntaxError(
+      `${agentName} output did not contain a parseable JSON object`,
+    );
+  }
+  return validate(parsed);
+}
+
 export function parseAgentJson(
   text: string,
   accepts?: (value: unknown) => boolean,

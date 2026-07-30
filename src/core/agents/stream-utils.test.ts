@@ -1,10 +1,22 @@
 import { EventEmitter } from "node:events";
 import { describe, it, expect, vi } from "vitest";
+
+vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(),
+  spawn: vi.fn(),
+}));
+
+import { spawn } from "node:child_process";
 import {
+  escapeWindowsShellArgument,
+  escapeWindowsShellCommand,
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
+  spawnAgentProcess,
 } from "./stream-utils.js";
+
+const mockSpawn = vi.mocked(spawn);
 
 function createMockChild() {
   const child = new EventEmitter() as EventEmitter & {
@@ -163,5 +175,80 @@ describe("setupAbortHandler", () => {
     child.emit("close", 0);
     controller.abort();
     expect(child.kill).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("escapeWindowsShellArgument", () => {
+  it("quotes an argument that holds spaces so cmd.exe cannot split it", () => {
+    expect(escapeWindowsShellArgument("test prompt")).toBe('^"test^ prompt^"');
+  });
+
+  it("escapes embedded quotes for the child's command-line parser", () => {
+    expect(escapeWindowsShellArgument('say "hi"')).toBe('^"say^ \\^"hi\\^"^"');
+  });
+
+  it("keeps a JSON schema argument in one piece", () => {
+    expect(escapeWindowsShellArgument('{"type":"object"}')).toBe(
+      '^"{\\^"type\\^":\\^"object\\^"}^"',
+    );
+  });
+
+  it("doubles a trailing backslash run so it is not read as escaping the quote", () => {
+    expect(escapeWindowsShellArgument("C:\\dir\\")).toBe('^"C:\\dir\\\\^"');
+  });
+
+  it("escapes shell operators that would otherwise run as commands", () => {
+    expect(escapeWindowsShellArgument("a & b | c > d")).toBe(
+      '^"a^ ^&^ b^ ^|^ c^ ^>^ d^"',
+    );
+  });
+});
+
+describe("escapeWindowsShellCommand", () => {
+  it("leaves an ordinary shim path untouched", () => {
+    expect(escapeWindowsShellCommand("C:\\tools\\grok.cmd")).toBe(
+      "C:\\tools\\grok.cmd",
+    );
+  });
+
+  it("escapes meta characters in a shim path", () => {
+    expect(escapeWindowsShellCommand("C:\\Program Files\\grok.cmd")).toBe(
+      "C:\\Program^ Files\\grok.cmd",
+    );
+  });
+});
+
+describe("spawnAgentProcess", () => {
+  it("passes argv through verbatim when no shell is involved", () => {
+    spawnAgentProcess("grok", ["-p", "test prompt"], "darwin", {
+      cwd: "/work/dir",
+      detached: true,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith("grok", ["-p", "test prompt"], {
+      cwd: "/work/dir",
+      detached: true,
+      shell: false,
+    });
+  });
+
+  it("escapes argv for a Windows shim that can only run through cmd.exe", () => {
+    spawnAgentProcess(
+      "C:\\tools\\grok.cmd",
+      ["-p", "test prompt", "--json-schema", '{"type":"object"}'],
+      "win32",
+      { cwd: "/work/dir" },
+    );
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "C:\\tools\\grok.cmd",
+      [
+        '^"-p^"',
+        '^"test^ prompt^"',
+        '^"--json-schema^"',
+        '^"{\\^"type\\^":\\^"object\\^"}^"',
+      ],
+      { cwd: "/work/dir", shell: true },
+    );
   });
 });

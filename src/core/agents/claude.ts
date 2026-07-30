@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
@@ -14,7 +14,7 @@ import { shutdownChildProcess } from "./managed-process.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
-  shouldUseWindowsShell,
+  spawnAgentProcess,
   spawnsDetached,
   terminateChildProcess,
 } from "./stream-utils.js";
@@ -59,7 +59,7 @@ interface ClaudeAgentDeps {
 }
 
 async function shutdownClaudeProcess(
-  child: ReturnType<typeof spawn>,
+  child: ChildProcess,
   platform: NodeJS.Platform,
 ): Promise<void> {
   if (platform === "win32") {
@@ -177,13 +177,13 @@ export class ClaudeAgent implements Agent {
       const logStream = logPath ? createWriteStream(logPath) : null;
       const detached = spawnsDetached(this.platform);
 
-      const child = spawn(
+      const child = spawnAgentProcess(
         this.bin,
         buildClaudeArgs(prompt, this.schema, this.extraArgs),
+        this.platform,
         {
           cwd,
           detached,
-          shell: shouldUseWindowsShell(this.bin, this.platform),
           stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         },

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
@@ -13,7 +12,7 @@ import {
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
-  shouldUseWindowsShell,
+  spawnAgentProcess,
   spawnsDetached,
   terminateChildProcess,
 } from "./stream-utils.js";
@@ -167,13 +166,17 @@ export class PiAgent implements Agent {
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
       const detached = spawnsDetached(this.platform);
-      const child = spawn(this.bin, buildPiArgs(this.extraArgs), {
-        cwd,
-        detached,
-        shell: shouldUseWindowsShell(this.bin, this.platform),
-        stdio: ["pipe", "pipe", "pipe"],
-        env: process.env,
-      });
+      const child = spawnAgentProcess(
+        this.bin,
+        buildPiArgs(this.extraArgs),
+        this.platform,
+        {
+          cwd,
+          detached,
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        },
+      );
 
       child.stdin?.write(buildPiPrompt(prompt, this.schema));
       child.stdin?.end();

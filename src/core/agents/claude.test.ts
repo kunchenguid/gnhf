@@ -142,14 +142,14 @@ describe("ClaudeAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "C:\\tools\\claude.cmd",
       [
-        "-p",
-        "test prompt",
-        "--verbose",
-        "--output-format",
-        "stream-json",
-        "--json-schema",
+        '^"-p^"',
+        '^"test^ prompt^"',
+        '^"--verbose^"',
+        '^"--output-format^"',
+        '^"stream-json^"',
+        '^"--json-schema^"',
         expect.any(String),
-        "--dangerously-skip-permissions",
+        '^"--dangerously-skip-permissions^"',
       ],
       {
         cwd: "/work/dir",
@@ -177,14 +177,14 @@ describe("ClaudeAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "claude-code-switch",
       [
-        "-p",
-        "test prompt",
-        "--verbose",
-        "--output-format",
-        "stream-json",
-        "--json-schema",
+        '^"-p^"',
+        '^"test^ prompt^"',
+        '^"--verbose^"',
+        '^"--output-format^"',
+        '^"stream-json^"',
+        '^"--json-schema^"',
         expect.any(String),
-        "--dangerously-skip-permissions",
+        '^"--dangerously-skip-permissions^"',
       ],
       {
         cwd: "/work/dir",

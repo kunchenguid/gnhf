@@ -1,4 +1,9 @@
-import { execFileSync, type ChildProcess } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+} from "node:child_process";
 import type { Readable } from "node:stream";
 import type { WriteStream } from "node:fs";
 
@@ -6,8 +11,11 @@ import type { WriteStream } from "node:fs";
  * npm installs some agent CLIs as `.cmd`/`.bat` shims on Windows, which
  * `spawn` can only launch through a shell. Bare names are resolved with
  * `where` so a configured override that points at a shim still works.
+ *
+ * Kept module-private so every caller goes through `spawnAgentProcess`, which
+ * is the only place that knows how to keep argv intact once a shell is in play.
  */
-export function shouldUseWindowsShell(
+function shouldUseWindowsShell(
   bin: string,
   platform: NodeJS.Platform,
 ): boolean {
@@ -36,6 +44,61 @@ export function shouldUseWindowsShell(
   } catch {
     return false;
   }
+}
+
+/**
+ * Characters `cmd.exe` interprets itself. Prefixing each with `^` makes the
+ * whole command line opaque to the shell so that argument splitting is left to
+ * the child's own command-line parser.
+ */
+const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
+
+/**
+ * Escape a program name for the `cmd.exe` command line.
+ */
+export function escapeWindowsShellCommand(command: string): string {
+  return command.replace(WINDOWS_SHELL_META_CHARS, "^$1");
+}
+
+/**
+ * Escape one argument for the `cmd.exe` command line.
+ *
+ * Node's `shell: true` joins argv with plain spaces and quotes nothing, so an
+ * argument holding spaces, quotes or JSON reaches the agent shredded into
+ * several tokens. The argument is first quoted the way `CommandLineToArgvW`
+ * expects (backslash runs before a quote are doubled, quotes are escaped), then
+ * every character `cmd.exe` would act on - including the quotes just added - is
+ * `^`-escaped so the shell passes the whole thing through untouched.
+ */
+export function escapeWindowsShellArgument(arg: string): string {
+  const quoted = `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`;
+  return quoted.replace(WINDOWS_SHELL_META_CHARS, "^$1");
+}
+
+/**
+ * Spawn an agent CLI with argv that survives the platform's spawn boundary.
+ *
+ * Everywhere but a Windows `.cmd`/`.bat` shim this is a plain `spawn`, which
+ * already delivers argv verbatim. Shims can only be launched through `cmd.exe`,
+ * so their argv is escaped first; without that, multi-word prompts and JSON
+ * schema arguments arrive split apart.
+ */
+export function spawnAgentProcess(
+  bin: string,
+  args: string[],
+  platform: NodeJS.Platform,
+  options: Omit<SpawnOptions, "shell">,
+): ChildProcess {
+  const shell = shouldUseWindowsShell(bin, platform);
+  if (!shell) {
+    return spawn(bin, args, { ...options, shell });
+  }
+
+  return spawn(
+    escapeWindowsShellCommand(bin),
+    args.map(escapeWindowsShellArgument),
+    { ...options, shell },
+  );
 }
 
 /**
