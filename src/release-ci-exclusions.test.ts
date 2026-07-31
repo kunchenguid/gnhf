@@ -76,9 +76,10 @@ function expectedReleaseOutputs(): string[] {
 }
 
 function loadWorkflowOn(filePath: string): Record<string, unknown> | null {
-  const doc = yaml.load(readFileSync(filePath, "utf8")) as
-    | Record<string | boolean, unknown>
-    | null;
+  const doc = yaml.load(readFileSync(filePath, "utf8")) as Record<
+    string | boolean,
+    unknown
+  > | null;
   if (!doc || typeof doc !== "object") return null;
   // YAML 1.1 may parse a bare `on:` key as boolean true.
   const on = doc.on ?? doc[true];
