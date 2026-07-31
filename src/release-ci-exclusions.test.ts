@@ -76,13 +76,19 @@ function expectedReleaseOutputs(): string[] {
 }
 
 function loadWorkflowOn(filePath: string): Record<string, unknown> | null {
-  const doc = yaml.load(readFileSync(filePath, "utf8")) as Record<
-    string | boolean,
-    unknown
-  > | null;
-  if (!doc || typeof doc !== "object") return null;
-  // YAML 1.1 may parse a bare `on:` key as boolean true.
-  const on = doc.on ?? doc[true];
+  const loaded: unknown = yaml.load(readFileSync(filePath, "utf8"));
+  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+    return null;
+  }
+
+  // YAML 1.1 may parse a bare `on:` key as boolean true. Prefer the string
+  // key; fall back via Reflect so a real boolean key still resolves without
+  // indexing a Record by boolean (illegal in TypeScript's PropertyKey).
+  const doc = loaded as Record<string, unknown>;
+  const on =
+    doc.on ??
+    Reflect.get(loaded, true as unknown as PropertyKey) ??
+    doc["true"];
   if (!on || typeof on !== "object" || Array.isArray(on)) return null;
   return on as Record<string, unknown>;
 }
