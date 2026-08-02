@@ -281,6 +281,8 @@ describe("setupRun", () => {
       baseCommitPath: join(runDir, "base-commit"),
       stopWhenPath: join(runDir, "stop-when"),
       stopWhen: undefined,
+      bestMetricPath: join(runDir, "best-metric"),
+      bestMetric: undefined,
       commitMessagePath: join(runDir, "commit-message"),
       commitMessage: undefined,
     });

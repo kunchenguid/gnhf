@@ -18,10 +18,12 @@ import { Command, InvalidArgumentError } from "commander";
 import {
   AGENT_NAMES,
   isAgentSpec,
+  isScoreDirection,
   loadConfig,
   redactAgentSpecForLogs,
   type AgentName,
   type AgentSpec,
+  type ScoreDirection,
 } from "./core/config.js";
 import {
   appendDebugLog,
@@ -104,6 +106,19 @@ function parseMeteorFrequency(value: string): number {
     );
   }
   return parsed;
+}
+
+function parsePositiveInteger(value: string): number {
+  const parsed = parseNonNegativeInteger(value);
+  if (parsed < 1) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
+function parseScoreDirection(value: string): ScoreDirection {
+  if (isScoreDirection(value)) return value;
+  throw new InvalidArgumentError('must be "min" or "max"');
 }
 
 function parseOnOffBoolean(value: string): boolean {
@@ -575,6 +590,20 @@ program
     'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
   .option(
+    "--score-command <command>",
+    "Shell command that prints a single numeric score; a successful iteration is committed only when the score strictly improves",
+  )
+  .option(
+    "--score-direction <direction>",
+    'Direction of score improvement: "min" or "max" (required with --score-command)',
+    parseScoreDirection,
+  )
+  .option(
+    "--stop-after-non-improving <n>",
+    "Stop the run after N consecutive non-improving iterations (default 3)",
+    parsePositiveInteger,
+  )
+  .option(
     "--prevent-sleep <mode>",
     'Prevent system sleep during the run ("on" or "off")',
     parseOnOffBoolean,
@@ -609,6 +638,9 @@ program
         maxIterations?: number;
         maxTokens?: number;
         stopWhen?: string;
+        scoreCommand?: string;
+        scoreDirection?: ScoreDirection;
+        stopAfterNonImproving?: number;
         preventSleep?: boolean;
         worktree: boolean;
         currentBranch: boolean;
@@ -666,10 +698,28 @@ program
         ...(options.preventSleep === undefined
           ? {}
           : { preventSleep: options.preventSleep }),
+        ...(options.scoreCommand === undefined
+          ? {}
+          : { scoreCommand: options.scoreCommand }),
+        ...(options.scoreDirection === undefined
+          ? {}
+          : { scoreDirection: options.scoreDirection }),
+        ...(options.stopAfterNonImproving === undefined
+          ? {}
+          : { stopAfterNonImproving: options.stopAfterNonImproving }),
       };
       if (!isAgentSpec(config.agent)) {
         console.error(
           `Unknown agent: ${config.agent}. Use ${AGENT_SPEC_LIST}.`,
+        );
+        process.exit(1);
+      }
+      if (
+        config.scoreCommand !== undefined &&
+        config.scoreDirection === undefined
+      ) {
+        console.error(
+          '--score-direction ("min" or "max") is required when --score-command is set.',
         );
         process.exit(1);
       }
@@ -941,6 +991,9 @@ program
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
         stopWhen: effectiveStopWhen,
+        scoreCommand: config.scoreCommand,
+        scoreDirection: config.scoreDirection,
+        stopAfterNonImproving: config.stopAfterNonImproving,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
         agentArgsOverride: getNativeAgentName(config.agent)

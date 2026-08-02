@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import {
@@ -8,7 +9,7 @@ import {
 } from "./agents/types.js";
 import { redactAgentSpecForLogs, type Config } from "./config.js";
 import type { RunInfo } from "./run.js";
-import { appendNotes, toStringArray } from "./run.js";
+import { appendNotes, toStringArray, writeBestMetric } from "./run.js";
 import { appendDebugLog, serializeError } from "./debug-log.js";
 import {
   CommitFailedError,
@@ -90,6 +91,26 @@ type RunIterationResult =
   | { type: "stopped" }
   | { type: "aborted"; reason: string };
 
+interface MetricGateOutcome {
+  improved: boolean;
+  score: number | undefined;
+  summary: string;
+}
+
+// The score command may print progress noise before the result; the last
+// non-empty stdout line is the score. Anything non-numeric is a parse
+// failure, which the gate treats as non-improving rather than crashing.
+function parseScoreOutput(stdout: string): number | undefined {
+  const lines = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const last = lines[lines.length - 1];
+  if (last === undefined) return undefined;
+  const value = Number(last);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private config: Config;
   private agent: Agent;
@@ -106,6 +127,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private activeIterationTokensEstimated = false;
   private loopDone = false;
   private stoppedEventEmitted = false;
+  private bestMetric: number | undefined;
+  private consecutiveNonImproving = 0;
 
   private state: Omit<
     OrchestratorState,
@@ -146,6 +169,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.cwd = cwd;
     this.limits = limits;
     this.state.currentIteration = startIteration;
+    this.bestMetric = runInfo.bestMetric;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
       this.cwd,
@@ -352,6 +376,17 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           break;
         }
 
+        const stopAfterNonImproving = this.config.stopAfterNonImproving ?? 3;
+        if (
+          this.config.scoreCommand !== undefined &&
+          this.consecutiveNonImproving >= stopAfterNonImproving
+        ) {
+          this.abort(
+            `metric gate: ${stopAfterNonImproving} consecutive non-improving iterations`,
+          );
+          break;
+        }
+
         const postIterationAbortReason = this.getPostIterationAbortReason();
         if (postIterationAbortReason) {
           this.abort(postIterationAbortReason);
@@ -497,7 +532,42 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       const shouldFullyStop = result.output.should_fully_stop === true;
 
       if (result.output.success) {
+        // Metric gate: the agent's success claim alone is not enough to
+        // commit. When a score command is configured it is the ground truth;
+        // only a strict improvement over the run's best score may commit.
+        const gate = this.evaluateMetricGate();
+        if (gate !== null && !gate.improved) {
+          this.consecutiveNonImproving++;
+          appendDebugLog("metric:gate:rejected", {
+            iteration: this.state.currentIteration,
+            score: gate.score ?? null,
+            best: this.bestMetric ?? null,
+            consecutiveNonImproving: this.consecutiveNonImproving,
+          });
+          return {
+            type: "completed",
+            record: this.recordFailure(
+              `[METRIC] ${gate.summary}`,
+              gate.summary,
+              toStringArray(result.output.key_learnings),
+              "reported",
+            ),
+            shouldFullyStop: false,
+          };
+        }
         const record = this.recordSuccess(result.output);
+        if (gate !== null && record.success && gate.score !== undefined) {
+          // Persist only after the commit landed: a pending commit failure
+          // must not advance the best score, or the repaired retry would be
+          // gated against its own measurement.
+          this.bestMetric = gate.score;
+          this.consecutiveNonImproving = 0;
+          writeBestMetric(this.runInfo.bestMetricPath, gate.score);
+          appendDebugLog("metric:gate:accepted", {
+            iteration: this.state.currentIteration,
+            score: gate.score,
+          });
+        }
         const abortReason =
           record.success && this.limits.push === true
             ? this.pushAfterSuccess()
@@ -578,6 +648,71 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       this.activeAbortController = null;
       this.pendingAbortReason = null;
     }
+  }
+
+  /**
+   * Run the configured score command in the (still dirty, uncommitted)
+   * workspace and compare against the run's best score. Returns null when no
+   * score command is configured. Command failure or unparseable output is a
+   * non-improving outcome with a warning, never a crash.
+   */
+  private evaluateMetricGate(): MetricGateOutcome | null {
+    const command = this.config.scoreCommand;
+    if (command === undefined) return null;
+    const direction = this.config.scoreDirection ?? "max";
+
+    let stdout: string;
+    try {
+      stdout = execSync(command, {
+        cwd: this.cwd,
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch (err) {
+      appendDebugLog("metric:score:command-failed", {
+        iteration: this.state.currentIteration,
+        error: serializeError(err),
+      });
+      return {
+        improved: false,
+        score: undefined,
+        summary:
+          "metric gate: score command failed; treating iteration as non-improving",
+      };
+    }
+
+    const score = parseScoreOutput(stdout);
+    if (score === undefined) {
+      appendDebugLog("metric:score:parse-failed", {
+        iteration: this.state.currentIteration,
+        stdout: stdout.slice(0, 500),
+      });
+      return {
+        improved: false,
+        score: undefined,
+        summary:
+          "metric gate: score command output is not a number; treating iteration as non-improving",
+      };
+    }
+
+    const best = this.bestMetric;
+    const improved =
+      best === undefined || (direction === "max" ? score > best : score < best);
+    appendDebugLog("metric:gate", {
+      iteration: this.state.currentIteration,
+      score,
+      best: best ?? null,
+      direction,
+      improved,
+    });
+    return {
+      improved,
+      score,
+      summary: improved
+        ? `metric gate: score ${score} improves on best ${best ?? "(none)"} (${direction})`
+        : `metric gate: score ${score} does not improve on best ${best} (${direction})`,
+    };
   }
 
   private recordSuccess(output: AgentOutput): IterationRecord {

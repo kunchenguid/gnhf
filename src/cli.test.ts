@@ -46,6 +46,8 @@ const stubRunInfo: RunInfo = {
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
   stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
   stopWhen: undefined,
+  bestMetricPath: "/repo/.gnhf/runs/run-abc/best-metric",
+  bestMetric: undefined,
   commitMessagePath: "/repo/.gnhf/runs/run-abc/commit-message",
   commitMessage: undefined,
 };

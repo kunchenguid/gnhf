@@ -71,6 +71,12 @@ export function redactAgentSpecForLogs(spec: string): string {
   return `acp:${redactAcpTargetForLogs(spec.slice("acp:".length))}`;
 }
 
+export type ScoreDirection = "min" | "max";
+
+export function isScoreDirection(value: unknown): value is ScoreDirection {
+  return value === "min" || value === "max";
+}
+
 export interface Config {
   agent: AgentSpec;
   agentPathOverride: Partial<Record<AgentName, string>>;
@@ -79,6 +85,15 @@ export interface Config {
   commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
+  // Metric gate: shell command that prints a single number on stdout. When
+  // set, a successful iteration is committed only when the score strictly
+  // improves on the run's best (per scoreDirection); otherwise the iteration
+  // is treated as a failure and the worktree is reset.
+  scoreCommand?: string;
+  scoreDirection?: ScoreDirection;
+  // Stop the run after this many consecutive non-improving iterations
+  // (defaults to 3 when unset).
+  stopAfterNonImproving?: number;
 }
 
 const DEFAULT_CONFIG: Config = {
@@ -449,6 +464,43 @@ function normalizeConfig(
     }
   } else {
     delete normalized.commitMessage;
+  }
+
+  if (config.scoreCommand === undefined) {
+    delete normalized.scoreCommand;
+  } else if (
+    typeof config.scoreCommand !== "string" ||
+    config.scoreCommand.trim().length === 0
+  ) {
+    throw new InvalidConfigError(
+      `Invalid config value for scoreCommand: ${String(config.scoreCommand)}`,
+    );
+  } else {
+    normalized.scoreCommand = config.scoreCommand;
+  }
+
+  if (config.scoreDirection === undefined) {
+    delete normalized.scoreDirection;
+  } else if (!isScoreDirection(config.scoreDirection)) {
+    throw new InvalidConfigError(
+      `Invalid config value for scoreDirection: ${String(config.scoreDirection)} (use "min" or "max")`,
+    );
+  } else {
+    normalized.scoreDirection = config.scoreDirection;
+  }
+
+  if (config.stopAfterNonImproving === undefined) {
+    delete normalized.stopAfterNonImproving;
+  } else if (
+    typeof config.stopAfterNonImproving !== "number" ||
+    !Number.isInteger(config.stopAfterNonImproving) ||
+    config.stopAfterNonImproving < 1
+  ) {
+    throw new InvalidConfigError(
+      `Invalid config value for stopAfterNonImproving: ${String(config.stopAfterNonImproving)} (use a positive integer)`,
+    );
+  } else {
+    normalized.stopAfterNonImproving = config.stopAfterNonImproving;
   }
 
   return normalized;

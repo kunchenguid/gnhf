@@ -31,6 +31,8 @@ export interface RunInfo {
   baseCommitPath: string;
   stopWhenPath: string;
   stopWhen: string | undefined;
+  bestMetricPath: string;
+  bestMetric: number | undefined;
   commitMessagePath: string;
   commitMessage: CommitMessageConfig | undefined;
 }
@@ -47,6 +49,7 @@ export interface RunMetadata {
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
 const COMMIT_MESSAGE_FILENAME = "commit-message";
+const BEST_METRIC_FILENAME = "best-metric";
 
 function writeSchemaFile(
   schemaPath: string,
@@ -78,6 +81,16 @@ function readStopWhen(stopWhenPath: string): string | undefined {
   if (!existsSync(stopWhenPath)) return undefined;
   const stopWhen = readFileSync(stopWhenPath, "utf-8").trim();
   return stopWhen.length > 0 ? stopWhen : undefined;
+}
+
+function readBestMetric(bestMetricPath: string): number | undefined {
+  if (!existsSync(bestMetricPath)) return undefined;
+  const value = Number(readFileSync(bestMetricPath, "utf-8").trim());
+  return Number.isFinite(value) ? value : undefined;
+}
+
+export function writeBestMetric(bestMetricPath: string, value: number): void {
+  writeFileSync(bestMetricPath, `${value}\n`, "utf-8");
 }
 
 function commitMessageMetadataValue(
@@ -221,6 +234,8 @@ export function setupRun(
   if (stopWhen !== undefined) {
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
+  const bestMetricPath = join(runDir, BEST_METRIC_FILENAME);
+  const bestMetric = readBestMetric(bestMetricPath);
   const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
   const commitMessage = schemaOptions.commitMessage;
   writeCommitMessageMetadata(commitMessagePath, commitMessage);
@@ -235,6 +250,8 @@ export function setupRun(
     baseCommit: resolvedBaseCommit,
     baseCommitPath,
     stopWhenPath,
+    bestMetricPath,
+    bestMetric,
     stopWhen,
     commitMessagePath,
     commitMessage,
@@ -260,6 +277,8 @@ export function resumeRun(
     ? readFileSync(baseCommitPath, "utf-8").trim()
     : backfillLegacyBaseCommit(runId, baseCommitPath, cwd);
   const stopWhenPath = join(runDir, STOP_WHEN_FILENAME);
+  const bestMetricPath = join(runDir, BEST_METRIC_FILENAME);
+  const bestMetric = readBestMetric(bestMetricPath);
   let stopWhen = readStopWhen(stopWhenPath);
   if (schemaOptions.clearStopWhen) {
     rmSync(stopWhenPath, { force: true });
@@ -287,6 +306,8 @@ export function resumeRun(
     baseCommit,
     baseCommitPath,
     stopWhenPath,
+    bestMetricPath,
+    bestMetric,
     stopWhen,
     commitMessagePath,
     commitMessage,
