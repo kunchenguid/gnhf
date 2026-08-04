@@ -285,6 +285,9 @@ describe("loadConfig", () => {
         "    - gpt-5.5",
         "    - --thinking",
         "    - high",
+        "  cursor:",
+        "    - --model",
+        "    - composer-2",
         "",
       ].join("\n"),
     );
@@ -305,6 +308,7 @@ describe("loadConfig", () => {
         "--thinking",
         "high",
       ],
+      cursor: ["--model", "composer-2"],
     });
   });
 
@@ -429,6 +433,42 @@ describe("loadConfig", () => {
       /agentArgsOverride\.pi\[0\].*managed by gnhf/,
     );
   });
+
+  it("allows safe agentArgsOverride.cursor flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  cursor:\n    - --model\n    - composer-2\n    - --force\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      cursor: ["--model", "composer-2", "--force"],
+    });
+  });
+
+  it.each([
+    "-p",
+    "--print",
+    "--output-format",
+    "--output-format=json",
+    "--stream-partial-output",
+    "--workspace",
+    "--workspace=/tmp",
+    "--resume",
+    "--continue",
+    "--worktree",
+  ])(
+    "throws when agentArgsOverride.cursor contains reserved flag %s",
+    (flag) => {
+      mockReadFileSync.mockReturnValue(
+        `agentArgsOverride:\n  cursor:\n    - ${flag}\n`,
+      );
+
+      expect(() => loadConfig()).toThrow(
+        /agentArgsOverride\.cursor\[0\].*managed by gnhf/,
+      );
+    },
+  );
 
   it("reads acpRegistryOverrides from config", () => {
     mockReadFileSync.mockReturnValue(
