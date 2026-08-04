@@ -45,6 +45,17 @@ vi.mock("./pi.js", () => {
   return { PiAgent };
 });
 
+vi.mock("./cursor.js", () => {
+  const CursorAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "cursor";
+    this.deps = deps;
+  });
+  return { CursorAgent };
+});
+
 vi.mock("./rovodev.js", () => {
   const RovoDevAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -88,6 +99,7 @@ import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
+import { CursorAgent } from "./cursor.js";
 import { RovoDevAgent } from "./rovodev.js";
 import type { RunInfo } from "../run.js";
 
@@ -295,6 +307,46 @@ describe("createAgent", () => {
       includeStopField: true,
     });
     expect(PiAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: withStopSchema,
+    });
+  });
+
+  it("creates a CursorAgent when name is 'cursor'", () => {
+    const agent = createAgent("cursor", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(CursorAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("cursor");
+  });
+
+  it("passes path override and extra args through to the CursorAgent", () => {
+    const agent = createAgent(
+      "cursor",
+      stubRunInfo,
+      "/custom/agent",
+      ["--model", "composer-2"],
+      { includeStopField: false },
+    );
+
+    expect(CursorAgent).toHaveBeenCalledWith({
+      bin: "/custom/agent",
+      extraArgs: ["--model", "composer-2"],
+      schema: noStopSchema,
+    });
+    expect(agent.name).toBe("cursor");
+  });
+
+  it("hands CursorAgent a schema that requires should_fully_stop when includeStopField is true", () => {
+    createAgent("cursor", stubRunInfo, undefined, undefined, {
+      includeStopField: true,
+    });
+    expect(CursorAgent).toHaveBeenCalledWith({
       bin: undefined,
       extraArgs: undefined,
       schema: withStopSchema,
