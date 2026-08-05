@@ -146,26 +146,50 @@ export class AntigravityAgent implements Agent {
         if (event.event === "step_update" && event.step_update) {
           const step = event.step_update;
           
-          // 1. Capture standard text (what you already had)
-          if (step.step_type === "agent_response" && step.text_delta) {
-            streamedResponse += step.text_delta;
-            onMessage?.(step.text_delta);
+          let delta = "";
+          
+          // 1. Capture standard text and tool deltas indiscriminately
+          if (typeof step.text_delta === "string") delta += step.text_delta;
+          if (typeof step.tool_call_delta === "string") delta += step.tool_call_delta;
+          if (typeof step.input_json_delta === "string") delta += step.input_json_delta;
+          if (typeof step.arguments_delta === "string") delta += step.arguments_delta;
+          
+          // 2. Safely capture array-based tool calls
+          if (Array.isArray(step.tool_calls)) {
+            for (const tc of step.tool_calls) {
+              if (typeof tc.delta === "string") delta += tc.delta;
+              if (typeof tc.input_json_delta === "string") delta += tc.input_json_delta;
+              if (typeof tc.arguments_delta === "string") delta += tc.arguments_delta;
+              if (tc.function && typeof tc.function.arguments === "string") {
+                  delta += tc.function.arguments;
+              }
+            }
           }
-          // 2. NEW: Capture tool call arguments! This is where the strict JSON actually streams.
-          else if (step.step_type !== "agent_response") {
-            // Check common delta fields used by agent tool streams
-            let delta = step.text_delta || step.tool_call_delta || step.input_json_delta || step.arguments_delta;
-            
-            // Handle array-based tool call chunks if agy structures them that way
-            if (!delta && Array.isArray(step.tool_calls) && step.tool_calls.length > 0) {
-                const tc = step.tool_calls[0];
-                delta = tc.delta || tc.input_json_delta || tc.arguments_delta || (tc.function && tc.function.arguments);
-            }
 
-            if (delta && typeof delta === "string") {
-              streamedResponse += delta;
-              onMessage?.(delta); 
-            }
+          // 3. NEW: Capture Antigravity's specific `tool_info` payload (July 28 Update)
+          if (step.tool_info && step.tool_info.parameters) {
+             try {
+                 const paramsStr = typeof step.tool_info.parameters === "string" 
+                     ? step.tool_info.parameters 
+                     : JSON.stringify(step.tool_info.parameters);
+                 // Pad with newlines so concatenated tools don't smash into each other
+                 delta += "\n" + paramsStr + "\n";
+             } catch {}
+          }
+          
+          // 4. NEW: Capture Antigravity's subagent_info (July 28 Update)
+          if (step.subagent_info) {
+             try {
+                 const subagentStr = typeof step.subagent_info === "string"
+                     ? step.subagent_info
+                     : JSON.stringify(step.subagent_info);
+                 delta += "\n" + subagentStr + "\n";
+             } catch {}
+          }
+
+          if (delta) {
+            streamedResponse += delta;
+            onMessage?.(delta);
           }
 
           if (step.usage) {
@@ -201,23 +225,61 @@ export class AntigravityAgent implements Agent {
           let parsed = resultEvent.structured_output;
           
           if (!parsed && streamedResponse) {
-            // Fallback 1: Try gnhf's standard markdown extractor
-            const extracted = parseAgentJson(streamedResponse);
+            let extracted = parseAgentJson(streamedResponse);
+            
+            // If gnhf's default extractor returns its generic failure, ignore it so we can extract the raw JSON!
+            if (extracted && extracted.success === false && extracted.summary === "Agent did not return structured output.") {
+                extracted = null;
+            }
+            
             if (extracted) {
               parsed = extracted;
             } else {
-              // Fallback 2: Tool arguments lack markdown fences. Try parsing the raw string.
-              // It might be completely valid JSON that just failed strict schema validation!
+              const text = streamedResponse.trim();
               try {
-                parsed = JSON.parse(streamedResponse.trim());
+                parsed = JSON.parse(text);
               } catch {
-                // Fallback 3: It's completely malformed. Wrap it in a graceful failure.
-                // We slice the last 500 chars so gnhf logs exactly what the model hallucinated.
-                parsed = {
-                  success: false,
-                  summary: "Agent failed schema validation. Raw output: " + streamedResponse.trim().slice(-500),
-                };
+                // Bracket-matching backward search to find the LAST valid JSON object 
+                // in case multiple tool_info payloads were concatenated into the stream.
+                let found = false;
+                let openBraces = 0;
+                let closeBraces = 0;
+                let endIndex = -1;
+                
+                for (let i = text.length - 1; i >= 0; i--) {
+                  if (text[i] === '}') {
+                    if (endIndex === -1) endIndex = i;
+                    closeBraces++;
+                  } else if (text[i] === '{') {
+                    openBraces++;
+                    if (openBraces === closeBraces && endIndex !== -1) {
+                      try {
+                        parsed = JSON.parse(text.substring(i, endIndex + 1));
+                        found = true;
+                        break;
+                      } catch {
+                        // Keep searching backward
+                      }
+                    }
+                  }
+                }
+                
+                if (!found) {
+                  parsed = {
+                    success: false,
+                    summary: "Agent failed schema validation. Raw output: " + text.slice(-1000)
+                  };
+                }
               }
+            }
+            
+            // Final safety wrapper: ensure the extracted object has the keys gnhf expects.
+            // If it's missing them, gnhf will overwrite our logs!
+            if (parsed && typeof parsed === "object" && !("success" in parsed && "summary" in parsed)) {
+                parsed = {
+                    success: false,
+                    summary: "Agent hallucinated invalid schema. Raw JSON: " + JSON.stringify(parsed).slice(-1000)
+                };
             }
           }
 
