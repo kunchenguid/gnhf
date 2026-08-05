@@ -43,7 +43,7 @@ describe("AntigravityAgent", () => {
         "--json-schema",
         "/tmp/schema.json",
         "--output-format",
-        "json",
+        "stream-json",
       ],
       {
         cwd: "/work/dir",
@@ -72,7 +72,7 @@ describe("AntigravityAgent", () => {
         "--json-schema",
         "/tmp/schema.json",
         "--output-format",
-        "json",
+        "stream-json",
       ],
       {
         cwd: "/work/dir",
@@ -104,7 +104,7 @@ describe("AntigravityAgent", () => {
         "--json-schema",
         "/tmp/schema.json",
         "--output-format",
-        "json",
+        "stream-json",
       ],
       {
         cwd: "/work/dir",
@@ -134,7 +134,7 @@ describe("AntigravityAgent", () => {
         "--json-schema",
         "/tmp/schema.json",
         "--output-format",
-        "json",
+        "stream-json",
       ],
       expect.any(Object),
     );

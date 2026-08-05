@@ -8,6 +8,7 @@ import type {
   AgentRunOptions,
 } from "./types.js";
 import {
+  parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
 } from "./stream-utils.js";
@@ -82,7 +83,7 @@ function buildAntigravityArgs(
     "--json-schema",
     schemaPath,
     "--output-format",
-    "json",
+    "stream-json",
   ];
 }
 
@@ -131,7 +132,8 @@ export class AntigravityAgent implements Agent {
         return;
       }
 
-      let stdout = "";
+      let streamedResponse = "";
+      let resultEvent: any = null;
       const cumulative: TokenUsage = {
         inputTokens: 0,
         outputTokens: 0,
@@ -140,60 +142,96 @@ export class AntigravityAgent implements Agent {
         estimated: true,
       };
 
-      child.stdout.on("data", (data: Buffer) => {
-        const text = data.toString();
-        stdout += text;
-        onMessage?.(text);
-        if (logStream) {
-          logStream.write(data);
+      parseJSONLStream<any>(child.stdout!, logStream, (event) => {
+        if (event.event === "step_update" && event.step_update) {
+          const step = event.step_update;
+          
+          // 1. Capture standard text (what you already had)
+          if (step.step_type === "agent_response" && step.text_delta) {
+            streamedResponse += step.text_delta;
+            onMessage?.(step.text_delta);
+          }
+          // 2. NEW: Capture tool call arguments! This is where the strict JSON actually streams.
+          else if (step.step_type !== "agent_response") {
+            // Check common delta fields used by agent tool streams
+            let delta = step.text_delta || step.tool_call_delta || step.input_json_delta || step.arguments_delta;
+            
+            // Handle array-based tool call chunks if agy structures them that way
+            if (!delta && Array.isArray(step.tool_calls) && step.tool_calls.length > 0) {
+                const tc = step.tool_calls[0];
+                delta = tc.delta || tc.input_json_delta || tc.arguments_delta || (tc.function && tc.function.arguments);
+            }
+
+            if (delta && typeof delta === "string") {
+              streamedResponse += delta;
+              onMessage?.(delta); 
+            }
+          }
+
+          if (step.usage) {
+            cumulative.inputTokens = step.usage.input_tokens || cumulative.inputTokens;
+            cumulative.outputTokens = step.usage.output_tokens || cumulative.outputTokens;
+            cumulative.cacheReadTokens = step.usage.cache_read_tokens || cumulative.cacheReadTokens;
+          }
+        } else if (event.event === "result" && event.result) {
+          resultEvent = event.result;
         }
       });
 
       setupChildProcessHandlers(child, "antigravity", logStream, reject, () => {
         try {
-          let parsed = parseAgentJson(stdout) as any;
-          if (!parsed) {
-            reject(new Error("Could not find a valid JSON object in antigravity output"));
+          if (!resultEvent) {
+            reject(new Error("Antigravity exited without producing a result event"));
             return;
           }
 
-          if (typeof parsed === "object" && parsed !== null && "conversation_id" in parsed) {
-            if (parsed.status === "ERROR") {
-              reject(new Error(`Antigravity failed: ${parsed.response || "unknown error"}`));
-              return;
-            }
-            if (parsed.usage) {
-              cumulative.inputTokens = parsed.usage.input_tokens || 0;
-              cumulative.outputTokens = parsed.usage.output_tokens || 0;
-              cumulative.cacheReadTokens = parsed.usage.cache_read_tokens || 0;
-              cumulative.cacheCreationTokens = parsed.usage.cache_creation_tokens || 0;
-              cumulative.estimated = false;
-            }
-            if ("structured_output" in parsed) {
-              parsed = parsed.structured_output;
-              if (typeof parsed === "string") {
-                try {
-                  parsed = JSON.parse(parsed);
-                } catch {
-                  // leave as string
-                }
-              }
+          if (resultEvent.status === "ERROR") {
+            reject(new Error(`Antigravity failed: ${resultEvent.response || "unknown error"}`));
+            return;
+          }
+
+          if (resultEvent.usage) {
+             cumulative.inputTokens = resultEvent.usage.input_tokens || cumulative.inputTokens;
+             cumulative.outputTokens = resultEvent.usage.output_tokens || cumulative.outputTokens;
+             cumulative.cacheReadTokens = resultEvent.usage.cache_read_tokens || cumulative.cacheReadTokens;
+             cumulative.cacheCreationTokens = resultEvent.usage.cache_creation_tokens || cumulative.cacheCreationTokens;
+             cumulative.estimated = false;
+          }
+
+          let parsed = resultEvent.structured_output;
+          
+          if (!parsed && streamedResponse) {
+            // Fallback 1: Try gnhf's standard markdown extractor
+            const extracted = parseAgentJson(streamedResponse);
+            if (extracted) {
+              parsed = extracted;
             } else {
-              parsed = {
-                success: false,
-                summary: parsed.response || "Agent did not return structured output.",
-              };
+              // Fallback 2: Tool arguments lack markdown fences. Try parsing the raw string.
+              // It might be completely valid JSON that just failed strict schema validation!
+              try {
+                parsed = JSON.parse(streamedResponse.trim());
+              } catch {
+                // Fallback 3: It's completely malformed. Wrap it in a graceful failure.
+                // We slice the last 500 chars so gnhf logs exactly what the model hallucinated.
+                parsed = {
+                  success: false,
+                  summary: "Agent failed schema validation. Raw output: " + streamedResponse.trim().slice(-500),
+                };
+              }
             }
+          }
+
+          if (!parsed) {
+            parsed = {
+              success: false,
+              summary: "Agent did not return structured output or a response.",
+            };
           }
 
           onUsage?.({ ...cumulative });
           resolve({ output: parsed as unknown as AgentOutput, usage: cumulative });
         } catch (err) {
-          reject(
-            new Error(
-              `Failed to parse antigravity output: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
+          reject(new Error(`Failed to parse antigravity output: ${err instanceof Error ? err.message : err}`));
         }
       });
     });
