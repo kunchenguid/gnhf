@@ -144,6 +144,9 @@ export class AntigravityAgent implements Agent {
         const text = data.toString();
         stdout += text;
         onMessage?.(text);
+        if (logStream) {
+          logStream.write(data);
+        }
       });
 
       setupChildProcessHandlers(child, "antigravity", logStream, reject, () => {
