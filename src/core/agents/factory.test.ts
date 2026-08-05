@@ -444,9 +444,15 @@ describe("createAgent", () => {
   });
 
   it("creates an AntigravityAgent when name is 'antigravity'", () => {
-    const agent = createAgent("antigravity", stubRunInfo, undefined, undefined, {
-      includeStopField: false,
-    });
+    const agent = createAgent(
+      "antigravity",
+      stubRunInfo,
+      undefined,
+      undefined,
+      {
+        includeStopField: false,
+      },
+    );
     expect(AntigravityAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
       bin: undefined,
       extraArgs: undefined,
