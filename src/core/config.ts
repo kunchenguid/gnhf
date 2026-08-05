@@ -13,6 +13,7 @@ export const AGENT_NAMES = [
   "opencode",
   "copilot",
   "pi",
+  "antigravity",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
@@ -190,6 +191,15 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-v" ||
         arg === "--api-key" ||
         arg.startsWith("--api-key=")
+      );
+    case "antigravity":
+      return (
+        arg === "--headless" ||
+        arg === "--prompt" ||
+        arg.startsWith("--prompt=") ||
+        arg === "--output-schema" ||
+        arg.startsWith("--output-schema=") ||
+        arg === "--json"
       );
   }
 }
@@ -524,6 +534,7 @@ function serializeConfig(config: Config): string {
     "#   codex: /path/to/custom-codex",
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
+    "#   antigravity: /path/to/custom-antigravity",
     "",
     "# Native agent CLI arg overrides (optional)",
     "# ACP targets do not support path or arg overrides.",

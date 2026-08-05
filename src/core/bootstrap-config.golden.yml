@@ -10,6 +10,7 @@ agent: claude
 #   codex: /path/to/custom-codex
 #   copilot: /path/to/custom-copilot
 #   pi: /path/to/custom-pi
+#   antigravity: /path/to/custom-antigravity
 
 # Native agent CLI arg overrides (optional)
 # ACP targets do not support path or arg overrides.

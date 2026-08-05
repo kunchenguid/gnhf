@@ -341,6 +341,11 @@ describe.concurrent("gnhf e2e cli", () => {
       yaml: "agentArgsOverride:\n  copilot:\n    - --output-format=json\n",
       expected: "managed by gnhf",
     },
+    {
+      label: "agentArgsOverride.antigravity: gnhf-managed flag",
+      yaml: "agentArgsOverride:\n  antigravity:\n    - --headless\n",
+      expected: "managed by gnhf",
+    },
   ])(
     "rejects invalid config: $label",
     async ({ yaml, expected }) => {

@@ -81,8 +81,22 @@ vi.mock("./acp.js", () => {
   return { AcpAgent };
 });
 
+vi.mock("./antigravity.js", () => {
+  const AntigravityAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    schemaPath: string,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "antigravity";
+    this.schemaPath = schemaPath;
+    this.deps = deps;
+  });
+  return { AntigravityAgent };
+});
+
 import { createAgent } from "./factory.js";
 import { AcpAgent } from "./acp.js";
+import { AntigravityAgent } from "./antigravity.js";
 import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
@@ -427,5 +441,32 @@ describe("createAgent", () => {
       runId: stubRunInfo.runId,
       sessionStateDir: acpSessionStateDir,
     });
+  });
+
+  it("creates an AntigravityAgent when name is 'antigravity'", () => {
+    const agent = createAgent("antigravity", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+    });
+    expect(AntigravityAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
+      bin: undefined,
+      extraArgs: undefined,
+    });
+    expect(agent.name).toBe("antigravity");
+  });
+
+  it("passes per-agent extra args through to the AntigravityAgent", () => {
+    const agent = createAgent(
+      "antigravity",
+      stubRunInfo,
+      undefined,
+      ["--model", "gemini-3"],
+      { includeStopField: false },
+    );
+
+    expect(AntigravityAgent).toHaveBeenCalledWith(stubRunInfo.schemaPath, {
+      bin: undefined,
+      extraArgs: ["--model", "gemini-3"],
+    });
+    expect(agent.name).toBe("antigravity");
   });
 });

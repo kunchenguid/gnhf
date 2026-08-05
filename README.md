@@ -236,6 +236,7 @@ agent: claude
 #   codex: /path/to/custom-codex
 #   copilot: /path/to/custom-copilot
 #   pi: /path/to/custom-pi
+#   antigravity: /path/to/custom-antigravity
 
 # Native agent CLI arg overrides (optional)
 # ACP targets do not support path or arg overrides.
@@ -325,7 +326,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 
 ## Agents
 
-`gnhf` supports six native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target-or-command>` specs.
+`gnhf` supports seven native agents plus ACP targets. ACP support is powered by [`acpx`](https://github.com/openclaw/acpx), which is bundled with `gnhf` and provides the runtime and agent registry for `acp:<target-or-command>` specs.
 
 | Agent              | Flag                              | Requirements                                                                                                                                                                        | Notes                                                                                                                                                                                                                                                                                                       |
 | ------------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -335,6 +336,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 | Pi                 | `--agent pi`                      | Install the `pi` CLI and configure a usable provider/model first.                                                                                                                   | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                                                                                                          |
 | Rovo Dev           | `--agent rovodev`                 | Install Atlassian's `acli` and authenticate it with Rovo Dev first.                                                                                                                 | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                                                                                                      |
 | OpenCode           | `--agent opencode`                | Install `opencode` and configure at least one usable model provider first.                                                                                                          | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.                                                                                            |
+| Antigravity        | `--agent antigravity`             | Install the `agy` CLI and sign in first.                                                                                                                                            | `gnhf` invokes `agy` directly in headless mode with `--output-schema` pointing at the run's schema file.                                                                                                                                                                                                    |
 | ACP target         | `--agent acp:<target-or-command>` | Install and authenticate the target supported by the bundled [`acpx`](https://github.com/openclaw/acpx) registry, such as `acp:gemini`, or pass a quoted custom ACP server command. | `gnhf` runs the target through ACP with a persistent per-run session under `.gnhf/runs/<runId>/acp-sessions`; token usage and `--max-tokens` use ACP `used` deltas when available, with prompt-length plus tool-call estimates as a fallback, and `agentPathOverride` and `agentArgsOverride` do not apply. |
 
 ## Development
