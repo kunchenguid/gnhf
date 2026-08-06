@@ -78,6 +78,7 @@ function buildAntigravityArgs(
 
   return [
     ...userArgs,
+    "--dangerously-skip-permissions",
     "--print",
     prompt,
     "--json-schema",

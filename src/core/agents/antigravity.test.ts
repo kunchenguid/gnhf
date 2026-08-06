@@ -38,6 +38,7 @@ describe("AntigravityAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "agy",
       [
+        "--dangerously-skip-permissions",
         "--print",
         "test prompt",
         "--json-schema",
@@ -67,6 +68,7 @@ describe("AntigravityAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "C:\\tools\\antigravity.cmd",
       [
+        "--dangerously-skip-permissions",
         "--print",
         "test prompt",
         "--json-schema",
@@ -99,6 +101,7 @@ describe("AntigravityAgent", () => {
     expect(mockSpawn).toHaveBeenCalledWith(
       "antigravity-switch",
       [
+        "--dangerously-skip-permissions",
         "--print",
         "test prompt",
         "--json-schema",
@@ -129,6 +132,7 @@ describe("AntigravityAgent", () => {
       [
         "--custom-arg",
         "value",
+        "--dangerously-skip-permissions",
         "--print",
         "test prompt",
         "--json-schema",
