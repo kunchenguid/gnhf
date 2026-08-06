@@ -145,79 +145,83 @@ export class AntigravityAgent implements Agent {
         estimated: true,
       };
 
-      parseJSONLStream<Record<string, unknown>>(child.stdout!, logStream, (event) => {
-        if (event.event === "step_update" && event.step_update) {
-          const step = event.step_update;
+      parseJSONLStream<Record<string, unknown>>(
+        child.stdout!,
+        logStream,
+        (event) => {
+          if (event.event === "step_update" && event.step_update) {
+            const step = event.step_update;
 
-          let delta = "";
+            let delta = "";
 
-          // 1. Capture standard text and tool deltas indiscriminately
-          if (typeof step.text_delta === "string") delta += step.text_delta;
-          if (typeof step.tool_call_delta === "string")
-            delta += step.tool_call_delta;
-          if (typeof step.input_json_delta === "string")
-            delta += step.input_json_delta;
-          if (typeof step.arguments_delta === "string")
-            delta += step.arguments_delta;
+            // 1. Capture standard text and tool deltas indiscriminately
+            if (typeof step.text_delta === "string") delta += step.text_delta;
+            if (typeof step.tool_call_delta === "string")
+              delta += step.tool_call_delta;
+            if (typeof step.input_json_delta === "string")
+              delta += step.input_json_delta;
+            if (typeof step.arguments_delta === "string")
+              delta += step.arguments_delta;
 
-          // 2. Safely capture array-based tool calls
-          if (Array.isArray(step.tool_calls)) {
-            for (const tc of step.tool_calls) {
-              if (typeof tc.delta === "string") delta += tc.delta;
-              if (typeof tc.input_json_delta === "string")
-                delta += tc.input_json_delta;
-              if (typeof tc.arguments_delta === "string")
-                delta += tc.arguments_delta;
-              if (tc.function && typeof tc.function.arguments === "string") {
-                delta += tc.function.arguments;
+            // 2. Safely capture array-based tool calls
+            if (Array.isArray(step.tool_calls)) {
+              for (const tc of step.tool_calls) {
+                if (typeof tc.delta === "string") delta += tc.delta;
+                if (typeof tc.input_json_delta === "string")
+                  delta += tc.input_json_delta;
+                if (typeof tc.arguments_delta === "string")
+                  delta += tc.arguments_delta;
+                if (tc.function && typeof tc.function.arguments === "string") {
+                  delta += tc.function.arguments;
+                }
               }
             }
-          }
 
-          // 3. NEW: Capture Antigravity's specific `tool_info` payload (July 28 Update)
-          if (step.tool_info && step.tool_info.parameters) {
-            try {
-              const paramsStr =
-                typeof step.tool_info.parameters === "string"
-                  ? step.tool_info.parameters
-                  : JSON.stringify(step.tool_info.parameters);
-              // Pad with newlines so concatenated tools don't smash into each other
-              delta += "\n" + paramsStr + "\n";
-            } catch {
-              // ignore
+            // 3. NEW: Capture Antigravity's specific `tool_info` payload (July 28 Update)
+            if (step.tool_info && step.tool_info.parameters) {
+              try {
+                const paramsStr =
+                  typeof step.tool_info.parameters === "string"
+                    ? step.tool_info.parameters
+                    : JSON.stringify(step.tool_info.parameters);
+                // Pad with newlines so concatenated tools don't smash into each other
+                delta += "\n" + paramsStr + "\n";
+              } catch {
+                // ignore
+              }
             }
-          }
 
-          // 4. NEW: Capture Antigravity's subagent_info (July 28 Update)
-          if (step.subagent_info) {
-            try {
-              const subagentStr =
-                typeof step.subagent_info === "string"
-                  ? step.subagent_info
-                  : JSON.stringify(step.subagent_info);
-              delta += "\n" + subagentStr + "\n";
-            } catch {
-              // ignore
+            // 4. NEW: Capture Antigravity's subagent_info (July 28 Update)
+            if (step.subagent_info) {
+              try {
+                const subagentStr =
+                  typeof step.subagent_info === "string"
+                    ? step.subagent_info
+                    : JSON.stringify(step.subagent_info);
+                delta += "\n" + subagentStr + "\n";
+              } catch {
+                // ignore
+              }
             }
-          }
 
-          if (delta) {
-            streamedResponse += delta;
-            onMessage?.(delta);
-          }
+            if (delta) {
+              streamedResponse += delta;
+              onMessage?.(delta);
+            }
 
-          if (step.usage) {
-            cumulative.inputTokens =
-              step.usage.input_tokens || cumulative.inputTokens;
-            cumulative.outputTokens =
-              step.usage.output_tokens || cumulative.outputTokens;
-            cumulative.cacheReadTokens =
-              step.usage.cache_read_tokens || cumulative.cacheReadTokens;
+            if (step.usage) {
+              cumulative.inputTokens =
+                step.usage.input_tokens || cumulative.inputTokens;
+              cumulative.outputTokens =
+                step.usage.output_tokens || cumulative.outputTokens;
+              cumulative.cacheReadTokens =
+                step.usage.cache_read_tokens || cumulative.cacheReadTokens;
+            }
+          } else if (event.event === "result" && event.result) {
+            resultEvent = event.result;
           }
-        } else if (event.event === "result" && event.result) {
-          resultEvent = event.result;
-        }
-      });
+        },
+      );
 
       setupChildProcessHandlers(child, "antigravity", logStream, reject, () => {
         try {
