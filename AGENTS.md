@@ -8,6 +8,7 @@ This file provides guidance to agents when working with code in this repository.
 The supported-agent roster is owned by the README's [Agents](./README.md#agents) table.
 Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration.
 Failure and rollback semantics are owned by the README's [How It Works](./README.md#how-it-works) section.
+The acceptance policy for what gnhf should and should not become is owned by [VISION.md](./VISION.md); test feature or scope decisions against its aligns/resist criteria.
 Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
 
 ## Commands
