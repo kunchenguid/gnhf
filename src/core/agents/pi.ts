@@ -9,6 +9,7 @@ import {
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
+import { parseAgentJson } from "./json-extract.js";
 import {
   parseJSONLStream,
   setupAbortHandler,
@@ -382,13 +383,11 @@ export class PiAgent implements Agent {
           return;
         }
 
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(finalText);
-        } catch (err) {
+        const parsed = parseAgentJson(finalText, isRecord);
+        if (!parsed) {
           reject(
             new Error(
-              `Failed to parse pi output: ${err instanceof Error ? err.message : err}`,
+              `Failed to parse pi output: no valid JSON object found in response`,
             ),
           );
           return;
