@@ -15,6 +15,7 @@ import {
   generateSideMeteorShower,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
+import { getMoonPhase } from "./utils/moon.js";
 import type {
   IterationRecord,
   Orchestrator,
@@ -191,6 +192,20 @@ describe("renderMoonStrip", () => {
     expect(text).toMatch(
       /[\u{1F311}\u{1F312}\u{1F313}\u{1F314}\u{1F315}\u{1F316}\u{1F317}\u{1F318}]/u,
     );
+  });
+
+  it("reflows the active moon into the final row on narrow terminals", () => {
+    const now = 400;
+    const activeMoon = getMoonPhase("active", now, 1600);
+    const strip = renderMoonStrip(
+      Array.from({ length: 24 }, () => ({ success: true })),
+      true,
+      now,
+      20,
+    );
+
+    expect(strip).toHaveLength(3);
+    expect(strip.at(-1)).toContain(activeMoon);
   });
 });
 
@@ -422,11 +437,55 @@ describe("buildFrame", () => {
     const moonLines = plainLines.filter((line) => /🌕/.test(line));
 
     expect(lines).toHaveLength(24);
-    expect(moonLines).toHaveLength(3);
+    expect(moonLines).toHaveLength(2);
     expect(plainLines.at(-2)?.trim()).toBe(
       "[graceful stop requested, ctrl+c again to force stop, gnhf again to resume]",
     );
     expect(plainLines.at(-1)?.trim()).toBe("");
+  });
+
+  it("keeps the active moon visible after resizing to a narrow terminal", () => {
+    const now = 400;
+    const activeMoon = getMoonPhase("active", now, 1600);
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 25,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: Array.from({ length: 24 }, (_, index) =>
+        createIteration({ number: index + 1, success: true }),
+      ),
+      successCount: 24,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    for (const terminalWidth of [80, 20]) {
+      const frame = buildFrameCells(
+        "ship it",
+        "claude",
+        state,
+        [],
+        [],
+        [],
+        now,
+        terminalWidth,
+        40,
+      );
+
+      expect(frame.every((row) => row.length === terminalWidth)).toBe(true);
+      expect(frame.map(rowToString).map(stripAnsi).join("\n")).toContain(
+        activeMoon,
+      );
+    }
   });
 
   it("does not let wide agent text push side stars out of position", () => {
