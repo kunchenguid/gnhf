@@ -6,11 +6,19 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock("../debug-log.js", () => ({
+  appendDebugLog: vi.fn(),
+  initDebugLog: vi.fn(),
+  serializeError: vi.fn(),
+}));
+
 import { execFileSync, spawn } from "node:child_process";
+import { appendDebugLog } from "../debug-log.js";
 import { PiAgent } from "./pi.js";
 import { buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 function createMockProcess() {
   const proc = Object.assign(new EventEmitter(), {
@@ -359,7 +367,7 @@ describe("PiAgent", () => {
     await expect(promise).rejects.toThrow("Invalid pi output");
   });
 
-  it("rejects empty final text", async () => {
+  it("fails an empty response without retrying and names --no-session as the reason", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const agent = new PiAgent();
@@ -371,7 +379,35 @@ describe("PiAgent", () => {
     });
     proc.emit("close", 0);
 
-    await expect(promise).rejects.toThrow("pi returned no text output");
+    await expect(promise).rejects.toThrow(
+      /pi returned no text output.*--no-session/,
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockAppendDebugLog).not.toHaveBeenCalledWith(
+      "pi:output:continuation",
+      expect.anything(),
+    );
+  });
+
+  it("does not re-ask when pi reports an error stop reason", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new PiAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: "",
+        stopReason: "error",
+        errorMessage: "provider exploded",
+      },
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("pi reported error: provider explod");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed JSON", async () => {

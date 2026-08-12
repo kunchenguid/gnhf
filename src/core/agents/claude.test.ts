@@ -6,11 +6,19 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock("../debug-log.js", () => ({
+  appendDebugLog: vi.fn(),
+  initDebugLog: vi.fn(),
+  serializeError: vi.fn(),
+}));
+
 import { execFileSync, spawn } from "node:child_process";
+import { appendDebugLog } from "../debug-log.js";
 import { ClaudeAgent } from "./claude.js";
 import { PermanentAgentError, buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 const STOP_SCHEMA = buildAgentOutputSchema({
   includeStopField: true,
@@ -1171,7 +1179,206 @@ describe("ClaudeAgent", () => {
     await expect(promise).rejects.toThrow("claude reported error");
   });
 
-  it("rejects when structured_output is null", async () => {
+  it("resumes the same session once with the bare nudge when structured_output is null", async () => {
+    const first = createMockProcess();
+    const second = createMockProcess();
+    mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(first, {
+      type: "system",
+      subtype: "init",
+      session_id: "session-abc",
+    });
+    emitLine(first, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "session-abc",
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 5,
+      },
+      structured_output: null,
+    });
+    first.emit("close", 0);
+
+    await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2));
+
+    emitLine(second, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "session-abc",
+      usage: {
+        input_tokens: 3,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 2,
+      },
+      structured_output: {
+        success: true,
+        summary: "recovered",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    second.emit("close", 0);
+
+    await expect(promise).resolves.toMatchObject({
+      output: { success: true, summary: "recovered" },
+      usage: { inputTokens: 13, outputTokens: 7 },
+    });
+
+    const continuationArgs = mockSpawn.mock.calls[1]![1] as string[];
+    expect(continuationArgs).toContain("--resume");
+    expect(continuationArgs[continuationArgs.indexOf("--resume") + 1]).toBe(
+      "session-abc",
+    );
+    expect(continuationArgs[continuationArgs.indexOf("-p") + 1]).toBe(
+      "You did not produce a final answer. Continue and provide your final summary now.",
+    );
+    expect(continuationArgs).toContain("--json-schema");
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "claude:output:continuation",
+      expect.objectContaining({ attempt: 1 }),
+    );
+  });
+
+  it.each(["-c", "--continue"])(
+    "replaces configured %s with the captured session id for recovery",
+    async (continuationArg) => {
+      const first = createMockProcess();
+      const second = createMockProcess();
+      mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+      const continuingAgent = new ClaudeAgent({
+        extraArgs: [continuationArg],
+      });
+
+      const promise = continuingAgent.run("prompt", "/cwd");
+
+      emitLine(first, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "session-continued",
+        usage: {
+          input_tokens: 1,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          output_tokens: 1,
+        },
+        structured_output: null,
+      });
+      first.emit("close", 0);
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2));
+
+      const initialArgs = mockSpawn.mock.calls[0]![1] as string[];
+      const continuationArgs = mockSpawn.mock.calls[1]![1] as string[];
+      expect(initialArgs).toContain(continuationArg);
+      expect(continuationArgs).not.toContain(continuationArg);
+      expect(continuationArgs).toContain("--resume");
+      expect(continuationArgs[continuationArgs.indexOf("--resume") + 1]).toBe(
+        "session-continued",
+      );
+
+      emitLine(second, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "session-continued",
+        usage: {
+          input_tokens: 1,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          output_tokens: 1,
+        },
+        structured_output: {
+          success: true,
+          summary: "recovered",
+          key_changes_made: [],
+          key_learnings: [],
+        },
+      });
+      second.emit("close", 0);
+
+      await expect(promise).resolves.toMatchObject({
+        output: { summary: "recovered" },
+      });
+    },
+  );
+
+  it("rejects after exactly one continuation when structured_output is still null", async () => {
+    const first = createMockProcess();
+    const second = createMockProcess();
+    mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    const emptyResult = {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "session-abc",
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    };
+
+    emitLine(first, emptyResult);
+    first.emit("close", 0);
+
+    await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2));
+    emitLine(second, emptyResult);
+    second.emit("close", 0);
+
+    await expect(promise).rejects.toThrow(
+      "claude returned no structured_output",
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not continue when --no-session-persistence makes the session unresumable", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const noPersistenceAgent = new ClaudeAgent({
+      extraArgs: ["--no-session-persistence"],
+    });
+
+    const promise = noPersistenceAgent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      session_id: "session-abc",
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow(/--no-session-persistence/);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockAppendDebugLog).not.toHaveBeenCalledWith(
+      "claude:output:continuation",
+      expect.anything(),
+    );
+  });
+
+  it("does not continue when claude reported no session id", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -1189,12 +1396,68 @@ describe("ClaudeAgent", () => {
       },
       structured_output: null,
     });
-
     proc.emit("close", 0);
 
-    await expect(promise).rejects.toThrow(
-      "claude returned no structured_output",
-    );
+    await expect(promise).rejects.toThrow(/no session id/);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["-c", "--continue"])(
+    "does not recover configured %s without a captured session id",
+    async (continuationArg) => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+      const continuingAgent = new ClaudeAgent({
+        extraArgs: [continuationArg],
+      });
+
+      const promise = continuingAgent.run("prompt", "/cwd");
+
+      emitLine(proc, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        usage: {
+          input_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          output_tokens: 0,
+        },
+        structured_output: null,
+      });
+      proc.emit("close", 0);
+
+      await expect(promise).rejects.toThrow(/no session id/);
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      expect(mockAppendDebugLog).not.toHaveBeenCalledWith(
+        "claude:output:continuation",
+        expect.anything(),
+      );
+    },
+  );
+
+  it("does not continue when claude reported an error result", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 0,
+      },
+      structured_output: null,
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow("claude reported error");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
   it("picks up structured_output from a later result event when the first had none", async () => {

@@ -430,6 +430,19 @@ describe("loadConfig", () => {
     );
   });
 
+  it.each(["-r", "--resume", "--resume=abc123"])(
+    "throws when agentArgsOverride.claude contains reserved flag %s",
+    (flag) => {
+      mockReadFileSync.mockReturnValue(
+        `agentArgsOverride:\n  claude:\n    - ${flag}\n`,
+      );
+
+      expect(() => loadConfig()).toThrow(
+        /agentArgsOverride\.claude\[0\].*managed by gnhf/,
+      );
+    },
+  );
+
   it("reads acpRegistryOverrides from config", () => {
     mockReadFileSync.mockReturnValue(
       [

@@ -1,5 +1,4 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
   parseAgentOutput,
@@ -7,9 +6,13 @@ import {
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
+  type OnMessage,
+  type OnUsage,
   type TokenUsage,
 } from "./types.js";
+import { appendDebugLog } from "../debug-log.js";
 import {
+  AgentLogFile,
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
@@ -30,6 +33,16 @@ interface CopilotUsageEvent {
 type CopilotEvent =
   | CopilotAssistantMessageEvent
   | (CopilotUsageEvent & { type: string });
+
+// Copilot has no verified exact-session resume contract: `--continue` selects
+// by recency rather than identity, and nothing in its JSONL output is
+// documented to carry a session id that `--resume` would accept. Continuing
+// the wrong session would let the agent describe an earlier iteration's work
+// as if it were this turn's, so copilot is excluded from empty-response
+// recovery and reports why instead. See
+// https://github.com/kunchenguid/gnhf/issues/193.
+const COPILOT_EMPTY_RESPONSE_MESSAGE =
+  "copilot returned no agent message (copilot has no verified exact-session resume contract, so the empty response cannot be safely recovered)";
 
 interface CopilotAgentDeps {
   bin?: string;
@@ -207,16 +220,39 @@ export class CopilotAgent implements Agent {
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
   }
 
-  run(
+  async run(
     prompt: string,
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
     const { onUsage, onMessage, signal, logPath } = options ?? {};
+    const logFile = new AgentLogFile(logPath);
+
+    try {
+      return await this.runTurn(prompt, cwd, {
+        onUsage,
+        onMessage,
+        signal,
+        logFile,
+      });
+    } finally {
+      logFile.finish();
+    }
+  }
+
+  private runTurn(
+    prompt: string,
+    cwd: string,
+    options: {
+      onUsage?: OnUsage;
+      onMessage?: OnMessage;
+      signal?: AbortSignal;
+      logFile: AgentLogFile;
+    },
+  ): Promise<AgentResult> {
+    const { onUsage, onMessage, signal, logFile } = options;
 
     return new Promise((resolve, reject) => {
-      const logStream = logPath ? createWriteStream(logPath) : null;
-
       const child = spawn(
         this.bin,
         buildCopilotArgs(prompt, this.schema, this.extraArgs),
@@ -227,6 +263,7 @@ export class CopilotAgent implements Agent {
           env: process.env,
         },
       );
+      logFile.track(child);
 
       if (
         setupAbortHandler(signal, child, reject, () =>
@@ -244,7 +281,7 @@ export class CopilotAgent implements Agent {
         cacheCreationTokens: 0,
       };
 
-      parseJSONLStream<CopilotEvent>(child.stdout!, logStream, (event) => {
+      parseJSONLStream<CopilotEvent>(child.stdout!, logFile, (event) => {
         if (event.type === "assistant.message") {
           const data = (event as CopilotAssistantMessageEvent).data;
           if (typeof data.content === "string") {
@@ -272,9 +309,13 @@ export class CopilotAgent implements Agent {
         }
       });
 
-      setupChildProcessHandlers(child, "copilot", logStream, reject, () => {
+      setupChildProcessHandlers(child, "copilot", reject, () => {
         if (!lastAgentMessage) {
-          reject(new Error("copilot returned no agent message"));
+          appendDebugLog("copilot:output:missing", {
+            recoverable: false,
+            reason: "copilot has no verified exact-session resume contract",
+          });
+          reject(new Error(COPILOT_EMPTY_RESPONSE_MESSAGE));
           return;
         }
 

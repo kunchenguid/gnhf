@@ -234,6 +234,118 @@ describe("gnhf e2e", () => {
     expect(debugEvents).toContain("run:complete");
   }, 30_000);
 
+  it("recovers one completed empty turn in the same session and records the nudge", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "recover the empty response",
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "1",
+        "--prevent-sleep",
+        "off",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_OPENCODE_EMPTY_ONCE: "1",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+
+    const messages = readJsonLines(mockLogPath).filter(
+      (entry) => entry.event === "message:start",
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.sessionId).toBe(messages[0]?.sessionId);
+    expect(messages[1]?.prompt).toBe(
+      "You did not produce a final answer. Continue and provide your final summary now.",
+    );
+
+    const debugLogPath = findRunLogPath(cwd);
+    const continuationEvents = readJsonLines(debugLogPath).filter(
+      (entry) => entry.event === "opencode:output:continuation",
+    );
+    expect(continuationEvents).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        sessionId: messages[0]?.sessionId,
+        prompt:
+          "You did not produce a final answer. Continue and provide your final summary now.",
+      }),
+    ]);
+    expect(
+      readFileSync(join(dirname(debugLogPath), "notes.md"), "utf-8"),
+    ).toContain("**Summary:** mocked objective complete");
+  }, 30_000);
+
+  it("fails after one continuation when both completed turns are empty", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "stop after one empty-response retry",
+        "--agent",
+        "opencode",
+        "--max-iterations",
+        "1",
+        "--prevent-sleep",
+        "off",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_OPENCODE_ALWAYS_EMPTY: "1",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("1");
+
+    const messages = readJsonLines(mockLogPath).filter(
+      (entry) => entry.event === "message:start",
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.sessionId).toBe(messages[0]?.sessionId);
+    expect(messages[1]?.prompt).toBe(
+      "You did not produce a final answer. Continue and provide your final summary now.",
+    );
+
+    const debugLogPath = findRunLogPath(cwd);
+    const debugEntries = readJsonLines(debugLogPath);
+    expect(
+      debugEntries.filter(
+        (entry) => entry.event === "opencode:output:continuation",
+      ),
+    ).toHaveLength(1);
+    const iterationEnd = debugEntries.find(
+      (entry) => entry.event === "iteration:end",
+    );
+    expect(iterationEnd).toMatchObject({
+      success: false,
+      summary: "OpenCode produced no final answer",
+    });
+    expect(
+      readFileSync(join(dirname(debugLogPath), "notes.md"), "utf-8"),
+    ).toContain("[ERROR] OpenCode produced no final answer");
+  }, 30_000);
+
   it("runs on the current branch and pushes each successful iteration", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);

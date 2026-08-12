@@ -516,6 +516,169 @@ describe("AcpAgent", () => {
     expect(result.output).toEqual(VALID_OUTPUT);
   });
 
+  it("nudges the same session once when a completed turn produced no output text", async () => {
+    const { runtime, calls } = createFakeRuntime([
+      { events: [], result: { status: "completed" } },
+      {
+        events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+    const onUsage = vi.fn();
+
+    const result = await agent.run("p", "/w", { onUsage });
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(calls.startTurnInputs).toHaveLength(2);
+    expect(calls.ensureSessionInputs).toHaveLength(1);
+    expect(calls.startTurnInputs[1]?.text).toContain(
+      "You did not produce a final answer",
+    );
+    expect(calls.startTurnInputs[1]?.text).not.toContain(
+      "gnhf final output contract",
+    );
+    expect(onUsage).toHaveBeenLastCalledWith(result.usage);
+  });
+
+  it("nudges when a completed turn produced only whitespace output", async () => {
+    const { runtime, calls } = createFakeRuntime([
+      {
+        events: [textDelta(" \n\t")],
+        result: { status: "completed" },
+      },
+      {
+        events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(calls.startTurnInputs).toHaveLength(2);
+    expect(calls.startTurnInputs[1]?.text).toContain(
+      "You did not produce a final answer",
+    );
+  });
+
+  it("reports usage across both the empty turn and its continuation", async () => {
+    // The first turn streams only reasoning, so it completes with no output
+    // text while still burning output tokens that must survive into the total.
+    const firstTurnText = "thinking hard";
+    const secondTurnText = JSON.stringify(VALID_OUTPUT);
+    const { runtime } = createFakeRuntime([
+      {
+        events: [textDelta(firstTurnText, "thought")],
+        result: { status: "completed" },
+      },
+      {
+        events: [textDelta(secondTurnText)],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+
+    expect(result.usage.outputTokens).toBe(
+      Math.ceil(firstTurnText.length / 4) +
+        Math.ceil(secondTurnText.length / 4),
+    );
+  });
+
+  it("does not add fallback input to a cumulative continuation update", async () => {
+    const { runtime } = createFakeRuntime([
+      {
+        events: [
+          {
+            type: "status",
+            text: "u",
+            tag: "usage_update",
+            used: 100,
+            size: 1000,
+          },
+          textDelta(JSON.stringify(VALID_OUTPUT)),
+        ],
+        result: { status: "completed" },
+      },
+      { events: [], result: { status: "completed" } },
+      {
+        events: [
+          {
+            type: "status",
+            text: "u",
+            tag: "usage_update",
+            used: 160,
+            size: 1000,
+          },
+          textDelta(JSON.stringify(VALID_OUTPUT)),
+        ],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    await agent.run("warmup", "/w");
+    const onUsage = vi.fn();
+    const result = await agent.run("recover", "/w", { onUsage });
+
+    expect(result.usage.inputTokens).toBe(60);
+    expect(onUsage).toHaveBeenLastCalledWith(result.usage);
+  });
+
+  it("continues when tool work leaves no final output message", async () => {
+    const { runtime, calls } = createFakeRuntime([
+      {
+        events: [
+          textDelta("I will inspect the file."),
+          { type: "tool_call", text: "Read file", toolCallId: "1" },
+        ],
+        result: { status: "completed" },
+      },
+      {
+        events: [textDelta(JSON.stringify(VALID_OUTPUT))],
+        result: { status: "completed" },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    const result = await agent.run("p", "/w");
+
+    expect(result.output).toEqual(VALID_OUTPUT);
+    expect(calls.startTurnInputs).toHaveLength(2);
+  });
+
+  it("rejects after the ACP continuation is also empty", async () => {
+    const { runtime, calls } = createFakeRuntime([
+      { events: [], result: { status: "completed" } },
+      { events: [], result: { status: "completed" } },
+    ]);
+    const agent = makeAgent(runtime);
+
+    await expect(agent.run("p", "/w")).rejects.toThrow(
+      "ACP agent returned no output text",
+    );
+    expect(calls.startTurnInputs).toHaveLength(2);
+  });
+
+  it("does not nudge when the empty turn failed rather than completed", async () => {
+    const { runtime, calls } = createFakeRuntime([
+      {
+        events: [],
+        result: {
+          status: "failed",
+          error: { message: "transient", retryable: true },
+        },
+      },
+    ]);
+    const agent = makeAgent(runtime);
+
+    await expect(agent.run("p", "/w")).rejects.toThrow("transient");
+    expect(calls.startTurnInputs).toHaveLength(1);
+  });
+
   it("throws PermanentAgentError when the runtime reports a non-retryable failure", async () => {
     const { runtime } = createFakeRuntime([
       {

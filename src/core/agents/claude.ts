@@ -1,5 +1,4 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
   type Agent,
@@ -7,11 +6,22 @@ import {
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
+  type OnMessage,
+  type OnUsage,
   type TokenUsage,
   PermanentAgentError,
 } from "./types.js";
+import { appendDebugLog } from "../debug-log.js";
+import {
+  EmptyAgentResponseError,
+  runTurnWithEmptyResponseRetry,
+} from "./empty-response.js";
 import { shutdownChildProcess } from "./managed-process.js";
-import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
+import {
+  AgentLogFile,
+  parseJSONLStream,
+  setupAbortHandler,
+} from "./stream-utils.js";
 
 const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
 /** Upper bound on the stdout tail kept for non-zero-exit error reporting. */
@@ -50,7 +60,10 @@ interface ClaudeResultEvent {
   structured_output: AgentOutput | null;
 }
 
-type ClaudeEvent = ClaudeAssistantEvent | ClaudeResultEvent | { type: string };
+type ClaudeEvent =
+  | ClaudeAssistantEvent
+  | ClaudeResultEvent
+  | { type: string; session_id?: string };
 
 interface ClaudeAgentDeps {
   bin?: string;
@@ -138,13 +151,27 @@ function isFinalStructuredResult(event: ClaudeResultEvent): boolean {
   );
 }
 
+function isSessionContinuationArg(arg: string): boolean {
+  return arg === "-c" || arg === "--continue";
+}
+
+// `--no-session-persistence` tells claude not to write the session to disk, so
+// there is nothing for `--resume` to reopen.
+function sessionPersistenceDisabled(userArgs: string[]): boolean {
+  return userArgs.some((arg) => arg === "--no-session-persistence");
+}
+
 function buildClaudeArgs(
   prompt: string,
   schema: AgentOutputSchema,
   extraArgs?: string[],
+  resumeSessionId?: string | null,
 ): string[] {
   const userArgs = extraArgs ?? [];
-  const userSpecifiedPermissionMode = userArgs.some(
+  const turnArgs = resumeSessionId
+    ? userArgs.filter((arg) => !isSessionContinuationArg(arg))
+    : userArgs;
+  const userSpecifiedPermissionMode = turnArgs.some(
     (arg) =>
       arg === "--dangerously-skip-permissions" ||
       arg === "--permission-mode" ||
@@ -154,7 +181,7 @@ function buildClaudeArgs(
   );
 
   return [
-    ...userArgs,
+    ...turnArgs,
     "-p",
     prompt,
     "--verbose",
@@ -162,6 +189,7 @@ function buildClaudeArgs(
     "stream-json",
     "--json-schema",
     JSON.stringify(schema),
+    ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
     ...(userSpecifiedPermissionMode ? [] : ["--dangerously-skip-permissions"]),
   ];
 }
@@ -321,19 +349,61 @@ export class ClaudeAgent implements Agent {
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
   }
 
-  run(
+  async run(
     prompt: string,
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
     const { onUsage, onMessage, signal, logPath } = options ?? {};
+    const logFile = new AgentLogFile(logPath);
+    // Populated from the first turn's stream so a continuation resumes that
+    // exact conversation and still sees its own reasoning and tool calls.
+    let sessionId: string | null = null;
+
+    try {
+      // `--json-schema` is a spawn flag, so the continuation turn keeps the
+      // output contract without any extra prompt scaffolding.
+      return await runTurnWithEmptyResponseRetry({
+        logEvent: "claude:output:continuation",
+        onUsage,
+        signal,
+        initialText: prompt,
+        runTurn: (text, onTurnUsage) =>
+          this.runTurn(text, cwd, {
+            onUsage: onTurnUsage,
+            onMessage,
+            signal,
+            logFile,
+            resumeSessionId: sessionId,
+            onSessionId: (id) => {
+              sessionId = id;
+            },
+          }),
+      });
+    } finally {
+      logFile.finish();
+    }
+  }
+
+  private runTurn(
+    prompt: string,
+    cwd: string,
+    options: {
+      onUsage?: OnUsage;
+      onMessage?: OnMessage;
+      signal?: AbortSignal;
+      logFile: AgentLogFile;
+      resumeSessionId: string | null;
+      onSessionId: (sessionId: string) => void;
+    },
+  ): Promise<AgentResult> {
+    const { onUsage, onMessage, signal, logFile } = options;
+    const { resumeSessionId, onSessionId } = options;
 
     return new Promise((resolve, reject) => {
-      const logStream = logPath ? createWriteStream(logPath) : null;
-
       const child = spawn(
         this.bin,
-        buildClaudeArgs(prompt, this.schema, this.extraArgs),
+        buildClaudeArgs(prompt, this.schema, this.extraArgs, resumeSessionId),
         {
           cwd,
           detached: this.platform !== "win32",
@@ -342,6 +412,7 @@ export class ClaudeAgent implements Agent {
           env: process.env,
         },
       );
+      logFile.track(child);
 
       if (
         setupAbortHandler(signal, child, reject, () =>
@@ -352,6 +423,7 @@ export class ClaudeAgent implements Agent {
       }
 
       let resultEvent: ClaudeResultEvent | null = null;
+      let turnSessionId: string | null = resumeSessionId;
       let finalStructuredResultEvent: ClaudeResultEvent | null = null;
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
       let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -382,7 +454,13 @@ export class ClaudeAgent implements Agent {
         reject(new Error(`Failed to spawn claude: ${err.message}`));
       });
 
-      parseJSONLStream<ClaudeEvent>(child.stdout!, logStream, (event) => {
+      parseJSONLStream<ClaudeEvent>(child.stdout!, logFile, (event) => {
+        const eventSessionId = (event as { session_id?: unknown }).session_id;
+        if (typeof eventSessionId === "string" && eventSessionId) {
+          turnSessionId = eventSessionId;
+          onSessionId(eventSessionId);
+        }
+
         if (event.type === "assistant") {
           const msg = (event as ClaudeAssistantEvent).message;
           const nextUsage = toTokenUsage(msg.usage);
@@ -499,7 +577,6 @@ export class ClaudeAgent implements Agent {
         if (finalResultCleanupTimer) {
           clearTimeout(finalResultCleanupTimer);
         }
-        logStream?.end();
         if (code !== 0 && !closedAfterFinalCleanup) {
           const failure = describeExitFailure(code, stdoutTail, stderr);
           reject(
@@ -533,7 +610,33 @@ export class ClaudeAgent implements Agent {
         }
 
         if (!terminalResultEvent.structured_output) {
-          reject(new Error("claude returned no structured_output"));
+          const userArgs = this.extraArgs ?? [];
+          const resumeBlockedReason = sessionPersistenceDisabled(userArgs)
+            ? "--no-session-persistence disables session resume, so the turn cannot be continued"
+            : !turnSessionId
+              ? "claude reported no session id, so the turn cannot be resumed"
+              : null;
+          appendDebugLog("claude:output:missing", {
+            subtype: terminalResultEvent.subtype,
+            resumed: resumeSessionId !== null,
+            hasSessionId: turnSessionId !== null,
+            resumeBlockedReason,
+          });
+          reject(
+            new EmptyAgentResponseError(
+              resumeBlockedReason
+                ? `claude returned no structured_output (${resumeBlockedReason})`
+                : "claude returned no structured_output",
+              {
+                // A non-error `result` event with subtype "success" is claude's
+                // own end-of-turn signal; it just carried no final answer.
+                turnCompleted: resumeBlockedReason === null,
+                usage: toTokenUsage(
+                  latestResultUsage ?? terminalResultEvent.usage,
+                ),
+              },
+            ),
+          );
           return;
         }
 

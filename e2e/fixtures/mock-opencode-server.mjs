@@ -157,6 +157,34 @@ function emitCompletedEvents(sessionId, summary) {
   return output;
 }
 
+function emitEmptyCompletedEvents(sessionId) {
+  broadcast({
+    directory: "/repo",
+    payload: {
+      type: "message.updated",
+      properties: {
+        sessionID: sessionId,
+        info: {
+          id: "msg-empty-1",
+          role: "assistant",
+          tokens: {
+            input: 3,
+            output: 0,
+            cache: { read: 0, write: 0 },
+          },
+        },
+      },
+    },
+  });
+  broadcast({
+    directory: "/repo",
+    payload: {
+      type: "session.idle",
+      properties: { sessionID: sessionId },
+    },
+  });
+}
+
 function applyWorkspaceChange(sessionId) {
   const session = sessions.get(sessionId);
   if (!session?.directory) return;
@@ -277,6 +305,18 @@ const server = createServer(async (req, res) => {
 
     if (process.env.GNHF_MOCK_OPENCODE_OVERLOAD === "1") {
       emitOverloadError(sessionId);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const shouldEmitEmpty =
+      process.env.GNHF_MOCK_OPENCODE_ALWAYS_EMPTY === "1" ||
+      (process.env.GNHF_MOCK_OPENCODE_EMPTY_ONCE === "1" &&
+        !session?.emittedEmptyTurn);
+    if (shouldEmitEmpty && session) {
+      session.emittedEmptyTurn = true;
+      emitEmptyCompletedEvents(sessionId);
       res.writeHead(204);
       res.end();
       return;

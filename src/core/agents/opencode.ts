@@ -16,6 +16,10 @@ import {
   type TokenUsage,
 } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
+import {
+  EmptyAgentResponseError,
+  runTurnWithEmptyResponseRetry,
+} from "./empty-response.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
 interface OpenCodeMessagePart {
@@ -371,15 +375,24 @@ export class OpenCodeAgent implements Agent {
     try {
       const server = await this.ensureServer(cwd, runController.signal);
       sessionId = await this.createSession(server, cwd, runController.signal);
-      const result = await this.streamMessage(
-        server,
-        sessionId,
-        buildPrompt(prompt, this.schema),
-        runController.signal,
-        logStream,
+      const activeSessionId = sessionId;
+      const result = await runTurnWithEmptyResponseRetry({
+        logEvent: "opencode:output:continuation",
+        logFields: { sessionId: activeSessionId },
         onUsage,
-        onMessage,
-      );
+        signal: runController.signal,
+        initialText: buildPrompt(prompt, this.schema),
+        runTurn: (text, onTurnUsage) =>
+          this.streamMessage(
+            server,
+            activeSessionId,
+            text,
+            runController.signal,
+            logStream,
+            onTurnUsage,
+            onMessage,
+          ),
+      });
       appendDebugLog("opencode:run:end", {
         sessionId,
         elapsedMs: Date.now() - runStartedAt,
@@ -847,6 +860,13 @@ export class OpenCodeAgent implements Agent {
       onMessage?.(trimmed);
     };
 
+    // `sawSessionIdle` means the session really reported idle, so it is the
+    // only safe gate for an empty-response continuation. `streamTerminated`
+    // is the broader "stop reading" signal and is also set by provider
+    // errors, which must never qualify for a nudge.
+    let sawSessionIdle = false;
+    let streamTerminated = false;
+
     const handleEvent = (event: OpenCodeStreamEvent) => {
       const errorInfo = extractStreamError(event, sessionId);
       if (errorInfo) {
@@ -907,13 +927,17 @@ export class OpenCodeAgent implements Agent {
         return false;
       }
 
-      return payload?.type === "session.idle";
+      if (payload?.type === "session.idle") {
+        sawSessionIdle = true;
+        return true;
+      }
+
+      return false;
     };
 
     const decoder = new TextDecoder();
     const reader = eventResponse.body.getReader();
     let buffer = "";
-    let sawSessionIdle = false;
 
     const processRawEvent = (rawEvent: string) => {
       if (!rawEvent.trim()) return;
@@ -928,7 +952,7 @@ export class OpenCodeAgent implements Agent {
         const event = JSON.parse(dataLines.join("\n")) as OpenCodeStreamEvent;
         noteEvent(event.payload?.type);
         if (handleEvent(event)) {
-          sawSessionIdle = true;
+          streamTerminated = true;
         }
       } catch {
         // Ignore malformed SSE events.
@@ -956,7 +980,7 @@ export class OpenCodeAgent implements Agent {
 
         processRawEvent(buffer.slice(0, boundary));
         buffer = buffer.slice(boundary + separatorLen);
-        if (sawSessionIdle) return;
+        if (streamTerminated) return;
       }
 
       if (flushRemainder && buffer.trim()) {
@@ -967,7 +991,7 @@ export class OpenCodeAgent implements Agent {
 
     let bytesRead = 0;
     try {
-      while (!sawSessionIdle) {
+      while (!streamTerminated) {
         let readResult: ReadableStreamReadResult<Uint8Array>;
         try {
           readResult = await reader.read();
@@ -1033,6 +1057,7 @@ export class OpenCodeAgent implements Agent {
       elapsedMs: Date.now() - streamStartedAt,
       bytesRead,
       sawSessionIdle,
+      streamTerminated,
       telemetry: buildTelemetry(),
     });
 
@@ -1082,8 +1107,12 @@ export class OpenCodeAgent implements Agent {
       appendDebugLog("opencode:output:missing", {
         sessionId,
         hasStructuredOutput: structuredOutputFromSSE !== null,
+        sawSessionIdle,
       });
-      throw new Error("OpenCode produced no final answer");
+      throw new EmptyAgentResponseError("OpenCode produced no final answer", {
+        turnCompleted: sawSessionIdle,
+        usage: { ...usage },
+      });
     }
 
     try {

@@ -14,6 +14,10 @@ import type {
 } from "./types.js";
 import { validateAgentOutput } from "./types.js";
 import { appendDebugLog, serializeError } from "../debug-log.js";
+import {
+  EmptyAgentResponseError,
+  runTurnWithEmptyResponseRetry,
+} from "./empty-response.js";
 import { parseAgentJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 
@@ -227,22 +231,36 @@ export class RovoDevAgent implements Agent {
     try {
       const server = await this.ensureServer(cwd, runController.signal);
       sessionId = await this.createSession(server, runController.signal);
-      await this.setInlineSystemPrompt(server, sessionId, runController.signal);
-      await this.setChatMessage(
+      const activeSessionId = sessionId;
+      await this.setInlineSystemPrompt(
         server,
-        sessionId,
-        prompt,
+        activeSessionId,
         runController.signal,
       );
 
-      const result = await this.streamChat(
-        server,
-        sessionId,
-        runController.signal,
-        logStream,
+      const result = await runTurnWithEmptyResponseRetry({
+        logEvent: "rovodev:output:continuation",
+        logFields: { sessionId: activeSessionId },
         onUsage,
-        onMessage,
-      );
+        signal: runController.signal,
+        initialText: prompt,
+        runTurn: async (text, onTurnUsage) => {
+          await this.setChatMessage(
+            server,
+            activeSessionId,
+            text,
+            runController.signal,
+          );
+          return this.streamChat(
+            server,
+            activeSessionId,
+            runController.signal,
+            logStream,
+            onTurnUsage,
+            onMessage,
+          );
+        },
+      });
       appendDebugLog("rovodev:run:end", {
         sessionId,
         elapsedMs: Date.now() - runStartedAt,
@@ -555,6 +573,10 @@ export class RovoDevAgent implements Agent {
       cacheCreationTokens: 0,
     };
     let latestTextSegment = "";
+    // Rovo Dev terminates a turn with an `event: close` frame. Seeing it is the
+    // only way to tell a finished-but-silent turn from a stream that was cut
+    // short, so it gates the empty-response continuation.
+    let sawClose = false;
     let currentTextParts: string[] = [];
     let currentTextIndexes = new Map<number, number>();
     const decoder = new TextDecoder();
@@ -570,6 +592,7 @@ export class RovoDevAgent implements Agent {
     };
 
     const resetCurrentMessage = () => {
+      latestTextSegment = "";
       currentTextParts = [];
       currentTextIndexes = new Map<number, number>();
     };
@@ -598,6 +621,11 @@ export class RovoDevAgent implements Agent {
         }
       }
 
+      if (eventName === "close") {
+        sawClose = true;
+        return;
+      }
+
       const rawData = dataLines.join("\n");
       if (rawData.length === 0) return;
 
@@ -613,6 +641,11 @@ export class RovoDevAgent implements Agent {
         (typeof (payload as Record<string, unknown>).event_kind === "string"
           ? ((payload as Record<string, unknown>).event_kind as string)
           : "");
+
+      if (kind === "close") {
+        sawClose = true;
+        return;
+      }
 
       if (kind === "request-usage") {
         handleUsage(payload as RovoDevRequestUsageEvent);
@@ -735,12 +768,16 @@ export class RovoDevAgent implements Agent {
       sessionId,
       elapsedMs: Date.now() - streamStartedAt,
       bytesRead,
+      sawClose,
     });
 
     const finalText = latestTextSegment.trim();
     if (!finalText) {
-      appendDebugLog("rovodev:output:missing", { sessionId });
-      throw new Error("rovodev returned no text output");
+      appendDebugLog("rovodev:output:missing", { sessionId, sawClose });
+      throw new EmptyAgentResponseError("rovodev returned no text output", {
+        turnCompleted: sawClose,
+        usage: { ...usage },
+      });
     }
 
     const schema = JSON.parse(

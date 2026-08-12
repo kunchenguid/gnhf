@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events";
-import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
+  AgentLogFile,
   parseJSONLStream,
   setupAbortHandler,
   setupChildProcessHandlers,
@@ -19,6 +23,80 @@ function createMockChild() {
 function createMockReadable() {
   return new EventEmitter();
 }
+
+describe("AgentLogFile", () => {
+  const tempDirs: string[] = [];
+
+  function tempLogPath() {
+    const dir = mkdtempSync(join(tmpdir(), "gnhf-log-"));
+    tempDirs.push(dir);
+    return join(dir, "iteration.jsonl");
+  }
+
+  afterEach(() => {
+    while (tempDirs.length > 0) {
+      rmSync(tempDirs.pop()!, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps recording stdout that arrives after an aborted run finished", async () => {
+    const logPath = tempLogPath();
+    const logFile = new AgentLogFile(logPath);
+    const child = createMockChild();
+    const stdout = createMockReadable();
+    logFile.track(child as never);
+    parseJSONLStream(stdout as never, logFile, () => {});
+
+    stdout.emit("data", Buffer.from('{"type":"before-abort"}\n'));
+    // The abort path rejects the run while the child is still streaming.
+    const closed = logFile.finish();
+    stdout.emit("data", Buffer.from('{"type":"after-abort"}\n'));
+    child.emit("close", 143);
+    await closed;
+
+    const written = readFileSync(logPath, "utf8");
+    expect(written).toContain("before-abort");
+    expect(written).toContain("after-abort");
+  });
+
+  it("stays open across a second spawn and closes once the last child exits", async () => {
+    const logPath = tempLogPath();
+    const logFile = new AgentLogFile(logPath);
+    const first = createMockChild();
+    logFile.track(first as never);
+    logFile.write('{"turn":1}\n');
+    first.emit("close", 0);
+
+    const second = createMockChild();
+    logFile.track(second as never);
+    logFile.write('{"turn":2}\n');
+    const closed = logFile.finish();
+    second.emit("close", 0);
+    await closed;
+
+    const written = readFileSync(logPath, "utf8");
+    expect(written).toContain('{"turn":1}');
+    expect(written).toContain('{"turn":2}');
+
+    // A late stdout chunk after the file closed must not raise
+    // ERR_STREAM_WRITE_AFTER_END.
+    expect(() => logFile.write('{"turn":"late"}\n')).not.toThrow();
+    expect(readFileSync(logPath, "utf8")).not.toContain("late");
+  });
+
+  it("closes a run whose child failed to spawn", async () => {
+    const logPath = tempLogPath();
+    const logFile = new AgentLogFile(logPath);
+    const child = createMockChild();
+    logFile.track(child as never);
+    logFile.write('{"spawn":"failed"}\n');
+
+    child.emit("error", new Error("ENOENT"));
+    await logFile.finish();
+
+    expect(readFileSync(logPath, "utf8")).toContain('{"spawn":"failed"}');
+  });
+});
 
 describe("parseJSONLStream", () => {
   it("parses complete JSONL events across chunk boundaries and writes chunks to the log", () => {
@@ -73,20 +151,12 @@ describe("setupChildProcessHandlers", () => {
     const child = createMockChild();
     const reject = vi.fn();
     const onSuccess = vi.fn();
-    const logStream = { end: vi.fn() };
 
-    setupChildProcessHandlers(
-      child as never,
-      "codex",
-      logStream as never,
-      reject,
-      onSuccess,
-    );
+    setupChildProcessHandlers(child as never, "codex", reject, onSuccess);
 
     child.stderr.emit("data", Buffer.from("boom"));
     child.emit("close", 2);
 
-    expect(logStream.end).toHaveBeenCalledTimes(1);
     expect(onSuccess).not.toHaveBeenCalled();
     expect(reject).toHaveBeenCalledWith(
       new Error("codex exited with code 2: boom"),
@@ -97,15 +167,8 @@ describe("setupChildProcessHandlers", () => {
     const child = createMockChild();
     const reject = vi.fn();
     const onSuccess = vi.fn();
-    const logStream = { end: vi.fn() };
 
-    setupChildProcessHandlers(
-      child as never,
-      "rovodev",
-      logStream as never,
-      reject,
-      onSuccess,
-    );
+    setupChildProcessHandlers(child as never, "rovodev", reject, onSuccess);
 
     child.emit("error", new Error("ENOENT"));
     expect(reject).toHaveBeenCalledWith(
@@ -113,7 +176,6 @@ describe("setupChildProcessHandlers", () => {
     );
 
     child.emit("close", 0);
-    expect(logStream.end).toHaveBeenCalledTimes(1);
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 });

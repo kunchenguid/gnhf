@@ -23,8 +23,10 @@ vi.mock("../debug-log.js", () => ({
 }));
 
 import { execFileSync, spawn } from "node:child_process";
+import { appendDebugLog } from "../debug-log.js";
 
 const mockSpawn = vi.mocked(spawn);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 function createMockProcess() {
   const proc = Object.assign(new EventEmitter(), {
@@ -409,6 +411,191 @@ describe("RovoDevAgent", () => {
 
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     expect(getPort).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues the same session once when a closed turn produced no text", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: request-usage",
+            'data: {"input_tokens":10,"cache_write_tokens":0,"cache_read_tokens":0,"output_tokens":4}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            'data: {"index":0,"part":{"content":"{\\"success\\":true,\\"summary\\":\\"recovered\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}","part_kind":"text"},"event_kind":"part_start"}',
+            "",
+            "event: request-usage",
+            'data: {"input_tokens":5,"cache_write_tokens":0,"cache_read_tokens":0,"output_tokens":3}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    const onUsage = vi.fn();
+    const result = await agent.run("test", "/repo", { onUsage });
+
+    expect(result.output).toEqual({
+      success: true,
+      summary: "recovered",
+      key_changes_made: [],
+      key_learnings: [],
+    });
+    expect(result.usage).toMatchObject({ inputTokens: 15, outputTokens: 7 });
+    expect(onUsage).toHaveBeenLastCalledWith(result.usage);
+    expect(mockAppendDebugLog).toHaveBeenCalledWith(
+      "rovodev:output:continuation",
+      expect.objectContaining({ sessionId: "session-123", attempt: 1 }),
+    );
+
+    const chatMessages = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes("/v3/set_chat_message"),
+    );
+    expect(chatMessages).toHaveLength(2);
+    expect(chatMessages[1]?.[1]?.body).toContain(
+      "You did not produce a final answer",
+    );
+  });
+
+  it("continues when tool work leaves no final text segment", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            'data: {"index":0,"part":{"content":"I will inspect the file.","part_kind":"text"},"event_kind":"part_start"}',
+            "",
+            "event: on_call_tools_start",
+            'data: {"parts":[{"tool_name":"open_files","args":"{}","tool_call_id":"tool-1","part_kind":"tool-call"}]}',
+            "",
+            "event: tool-return",
+            'data: {"tool_name":"open_files","content":"ok","tool_call_id":"tool-1","part_kind":"tool-return"}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: part_start",
+            'data: {"index":0,"part":{"content":"{\\"success\\":true,\\"summary\\":\\"recovered\\",\\"key_changes_made\\":[],\\"key_learnings\\":[]}","part_kind":"text"},"event_kind":"part_start"}',
+            "",
+            "event: close",
+            "data: ",
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    const result = await agent.run("test", "/repo");
+
+    expect(result.output.summary).toBe("recovered");
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).includes("/v3/set_chat_message"),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("rejects after the rovodev continuation is also empty", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const emptyClosedTurn = () =>
+      textResponse(["event: close", "data: ", ""].join("\n"));
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(emptyClosedTurn())
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(emptyClosedTurn())
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      "rovodev returned no text output",
+    );
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).includes("/v3/set_chat_message"),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("does not continue when the stream ends without a close event", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
+      .mockResolvedValueOnce(
+        jsonResponse({ session_id: "session-123", title: "gnhf" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "ok", prompt_set: true }))
+      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
+      .mockResolvedValueOnce(
+        textResponse(
+          [
+            "event: request-usage",
+            'data: {"input_tokens":10,"cache_write_tokens":0,"cache_read_tokens":0,"output_tokens":4}',
+            "",
+          ].join("\n"),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
+
+    await expect(agent.run("test", "/repo")).rejects.toThrow(
+      "rovodev returned no text output",
+    );
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).includes("/v3/set_chat_message"),
+      ),
+    ).toHaveLength(1);
+    expect(mockAppendDebugLog).not.toHaveBeenCalledWith(
+      "rovodev:output:continuation",
+      expect.anything(),
+    );
   });
 
   it("rejects when the final text is not valid JSON", async () => {

@@ -6,11 +6,19 @@ vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock("../debug-log.js", () => ({
+  appendDebugLog: vi.fn(),
+  initDebugLog: vi.fn(),
+  serializeError: vi.fn(),
+}));
+
 import { execFileSync, spawn } from "node:child_process";
+import { appendDebugLog } from "../debug-log.js";
 import { CopilotAgent } from "./copilot.js";
 import { buildAgentOutputSchema } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
+const mockAppendDebugLog = vi.mocked(appendDebugLog);
 
 function createMockProcess() {
   const proc = Object.assign(new EventEmitter(), {
@@ -264,15 +272,40 @@ describe("CopilotAgent", () => {
     expect(args[1]).toContain("should_fully_stop");
   });
 
-  it("rejects when copilot returns no assistant message", async () => {
+  it("fails an empty response without retrying and names the missing resume contract", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const agent = new CopilotAgent();
 
     const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "session.started",
+      data: { session_id: "session-abc" },
+    });
+    emitJson(proc, { type: "assistant.message", data: { outputTokens: 5 } });
     proc.emit("close", 0);
 
-    await expect(promise).rejects.toThrow("copilot returned no agent message");
+    await expect(promise).rejects.toThrow(
+      /copilot returned no agent message.*resume contract/,
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockAppendDebugLog).not.toHaveBeenCalledWith(
+      "copilot:output:continuation",
+      expect.anything(),
+    );
+  });
+
+  it("does not re-ask when copilot exits non-zero", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    proc.stderr.emit("data", Buffer.from("boom"));
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toThrow("copilot exited with code 1");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
   it("rejects when the final assistant message is not valid JSON", async () => {

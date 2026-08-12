@@ -118,11 +118,15 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "--output-format" ||
         arg.startsWith("--output-format=") ||
         arg === "--json-schema" ||
-        arg.startsWith("--json-schema=")
+        arg.startsWith("--json-schema=") ||
+        arg === "-r" ||
+        arg === "--resume" ||
+        arg.startsWith("--resume=")
       );
     case "codex":
       return (
         arg === "exec" ||
+        arg === "resume" ||
         arg === "--json" ||
         arg === "--output-schema" ||
         arg.startsWith("--output-schema=") ||
