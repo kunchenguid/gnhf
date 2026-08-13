@@ -97,6 +97,29 @@ describe("CursorAgent", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32")(
+    "falls back when cursor-agent is not executable",
+    () => {
+      withTemporaryPath(["cursor-agent", "agent"], () => {
+        const directory = process.env.PATH!;
+        chmodSync(join(directory, "cursor-agent"), 0o644);
+        const proc = createMockProcess();
+        mockSpawn.mockReturnValue(proc);
+
+        new CursorAgent({ platform: "linux" }).run(
+          "test prompt",
+          "/work/dir",
+        );
+
+        expect(mockSpawn).toHaveBeenCalledWith(
+          "agent",
+          expect.arrayContaining(["-p"]),
+          expect.objectContaining({ cwd: "/work/dir" }),
+        );
+      });
+    },
+  );
+
   it("spawns cursor-agent in print stream-json mode with force, trust, and approve-mcps defaults", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

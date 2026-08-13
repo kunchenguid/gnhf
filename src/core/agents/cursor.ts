@@ -1,5 +1,11 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream, readdirSync, statSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  createWriteStream,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { posix, win32 } from "node:path";
 import {
   buildAgentOutputSchema,
@@ -31,13 +37,22 @@ function isFile(path: string): boolean {
   }
 }
 
+function isExecutableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function candidateExistsOnPath(
   directory: string,
   candidate: string,
   platform: NodeJS.Platform,
 ): boolean {
   if (platform !== "win32") {
-    return isFile(posix.join(directory, candidate));
+    return isExecutableFile(posix.join(directory, candidate));
   }
 
   const extensions = (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
