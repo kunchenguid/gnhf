@@ -209,7 +209,9 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg.startsWith("--worktree=") ||
         arg === "--worktree-base" ||
         arg.startsWith("--worktree-base=") ||
-        arg === "--skip-worktree-setup"
+        arg === "--skip-worktree-setup" ||
+        arg === "--api-key" ||
+        arg.startsWith("--api-key=")
       );
   }
 }

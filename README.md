@@ -291,7 +291,7 @@ You can also pass a raw custom ACP server command directly as a quoted `acp:` sp
 
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, `copilot`, and `cursor`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
-- Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` specifically, `--api-key` is also blocked; configure the Pi API key via Pi's own config or the environment variable it reads, not via `agentArgsOverride`.
+- Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` and `cursor`, `--api-key` is also blocked; configure credentials via Pi's own config or the `CURSOR_API_KEY` environment variable, not via `agentArgsOverride`.
 
 `commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
 

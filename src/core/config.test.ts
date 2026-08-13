@@ -457,6 +457,8 @@ describe("loadConfig", () => {
     "--resume",
     "--continue",
     "--worktree",
+    "--api-key",
+    "--api-key=secret",
   ])(
     "throws when agentArgsOverride.cursor contains reserved flag %s",
     (flag) => {
