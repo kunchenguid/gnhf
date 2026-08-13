@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readdirSync, statSync } from "node:fs";
+import { posix, win32 } from "node:path";
 import {
   buildAgentOutputSchema,
   parseAgentOutput,
@@ -22,16 +23,59 @@ const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
  */
 const CURSOR_BIN_CANDIDATES = ["cursor-agent", "agent"] as const;
 
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function candidateExistsOnPath(
+  directory: string,
+  candidate: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") {
+    return isFile(posix.join(directory, candidate));
+  }
+
+  const extensions = (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .filter(Boolean)
+    .map((extension) =>
+      extension.startsWith(".") ? extension : `.${extension}`,
+    );
+  const expectedNames = new Set(
+    [candidate, ...extensions.map((extension) => candidate + extension)].map(
+      (name) => name.toLowerCase(),
+    ),
+  );
+
+  try {
+    return readdirSync(directory).some(
+      (name) =>
+        expectedNames.has(name.toLowerCase()) &&
+        isFile(win32.join(directory, name)),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function resolveCursorBin(platform: NodeJS.Platform): string {
-  const lookup = platform === "win32" ? "where" : "which";
+  const delimiter = platform === "win32" ? ";" : ":";
+  const directories = (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean);
+
   for (const candidate of CURSOR_BIN_CANDIDATES) {
-    try {
-      execFileSync(lookup, [candidate], {
-        stdio: ["ignore", "ignore", "ignore"],
-      });
+    if (
+      directories.some((directory) =>
+        candidateExistsOnPath(directory, candidate, platform),
+      )
+    ) {
       return candidate;
-    } catch {
-      // Not on PATH: try the next candidate.
     }
   }
   return CURSOR_BIN_CANDIDATES[0];

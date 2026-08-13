@@ -1,5 +1,13 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
@@ -30,11 +38,33 @@ function emitJson(proc: ReturnType<typeof createMockProcess>, event: unknown) {
   proc.stdout.emit("data", Buffer.from(`${JSON.stringify(event)}\n`));
 }
 
+function withTemporaryPath(
+  candidates: string[],
+  callback: () => void,
+): void {
+  const directory = mkdtempSync(join(tmpdir(), "gnhf-cursor-path-"));
+  const originalPath = process.env.PATH;
+  try {
+    for (const candidate of candidates) {
+      const path = join(directory, candidate);
+      writeFileSync(path, "");
+      chmodSync(path, 0o755);
+    }
+    process.env.PATH = directory;
+    callback();
+  } finally {
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 describe("CursorAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: every binary candidate resolves on PATH. clearAllMocks() keeps
-    // implementations, so reset it here to stop per-test PATH stubs leaking.
     vi.mocked(execFileSync).mockReset();
   });
 
@@ -42,27 +72,30 @@ describe("CursorAgent", () => {
     expect(new CursorAgent().name).toBe("cursor");
   });
 
-  it("falls back to the generic agent binary when cursor-agent is not on PATH", () => {
-    vi.mocked(execFileSync).mockImplementation(((
-      _cmd: string,
-      args?: readonly string[],
-    ) => {
-      if (args?.[0] === "cursor-agent") {
-        throw new Error("not found");
-      }
-      return "";
-    }) as unknown as typeof execFileSync);
-    const proc = createMockProcess();
-    mockSpawn.mockReturnValue(proc);
+  it.each([
+    [["cursor-agent"], "cursor-agent"],
+    [["agent"], "agent"],
+    [[], "cursor-agent"],
+  ] as const)(
+    "resolves PATH candidates %j to %s",
+    (candidates, expectedBin) => {
+      withTemporaryPath([...candidates], () => {
+        const proc = createMockProcess();
+        mockSpawn.mockReturnValue(proc);
 
-    new CursorAgent({ platform: "linux" }).run("test prompt", "/work/dir");
+        new CursorAgent({ platform: "linux" }).run(
+          "test prompt",
+          "/work/dir",
+        );
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "agent",
-      expect.arrayContaining(["-p"]),
-      expect.objectContaining({ cwd: "/work/dir" }),
-    );
-  });
+        expect(mockSpawn).toHaveBeenCalledWith(
+          expectedBin,
+          expect.arrayContaining(["-p"]),
+          expect.objectContaining({ cwd: "/work/dir" }),
+        );
+      });
+    },
+  );
 
   it("spawns cursor-agent in print stream-json mode with force, trust, and approve-mcps defaults", () => {
     const proc = createMockProcess();
