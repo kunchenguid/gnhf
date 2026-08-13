@@ -236,7 +236,7 @@ agent: claude
 #   codex: /path/to/custom-codex
 #   copilot: /path/to/custom-copilot
 #   pi: /path/to/custom-pi
-#   cursor: /path/to/custom-agent
+#   cursor: /path/to/custom-cursor-agent
 
 # Native agent CLI arg overrides (optional)
 # ACP targets do not support path or arg overrides.
@@ -259,7 +259,7 @@ agent: claude
 #     - high
 #   cursor:
 #     - --model
-#     - composer-2
+#     - composer-2.5
 
 # Custom ACP target commands (optional)
 # Maps acp:<target> names to spawn commands. Useful for naming a
@@ -309,7 +309,7 @@ agentPathOverride:
   codex: /usr/local/bin/my-codex-wrapper
   copilot: ~/bin/copilot-wrapper
   pi: ~/bin/pi-wrapper
-  cursor: ~/bin/agent-wrapper
+  cursor: ~/bin/cursor-agent-wrapper
 ```
 
 Paths may be absolute, bare executable names already on your `PATH`, `~`-prefixed, or relative to the config directory (`~/.gnhf/`). The override replaces only the binary name; all standard arguments are preserved, so the replacement must be CLI-compatible with the original agent. On Windows, `.cmd` and `.bat` wrappers are supported, including bare names resolved from `PATH`. For `rovodev`, the override must point to an `acli`-compatible binary since gnhf invokes it as `<bin> rovodev serve ...`.
@@ -338,7 +338,7 @@ Set `GNHF_TELEMETRY=0` to turn it off.
 | Codex              | `--agent codex`                   | Install OpenAI's `codex` CLI and sign in first.                                                                                                                                     | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                                                                                                               |
 | GitHub Copilot CLI | `--agent copilot`                 | Install GitHub Copilot CLI and sign in first.                                                                                                                                       | `gnhf` invokes `copilot` directly in non-interactive JSONL mode. Copilot currently exposes assistant output tokens, but not full input/cache token totals; see https://github.com/github/copilot-cli/issues/1152.                                                                                           |
 | Pi                 | `--agent pi`                      | Install the `pi` CLI and configure a usable provider/model first.                                                                                                                   | `gnhf` invokes `pi` directly in JSON mode, appends the final output schema to the prompt, and disables Pi session persistence with `--no-session`.                                                                                                                                                          |
-| Cursor CLI         | `--agent cursor`                  | Install Cursor's `agent` CLI and sign in first (`agent login`).                                                                                                                     | `gnhf` invokes `agent` directly in non-interactive `--print` stream-json mode, appends the final output schema to the prompt, and defaults to `--force`, `--trust`, and `--approve-mcps` unless you override those flags. After Cursor emits a non-error result, `gnhf` shuts down any lingering Cursor process tree after a short grace period. |
+| Cursor CLI         | `--agent cursor`                  | Install Cursor's CLI and sign in first (`cursor-agent login`).                                                                                                                      | `gnhf` invokes `cursor-agent` (falling back to the `agent` name) directly in non-interactive `--print` stream-json mode, appends the final output schema to the prompt, and defaults to `--force`, `--trust`, and `--approve-mcps` unless you override those flags. After Cursor emits a non-error result, `gnhf` shuts down any lingering Cursor process tree after a short grace period. |
 | Rovo Dev           | `--agent rovodev`                 | Install Atlassian's `acli` and authenticate it with Rovo Dev first.                                                                                                                 | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                                                                                                                      |
 | OpenCode           | `--agent opencode`                | Install `opencode` and configure at least one usable model provider first.                                                                                                          | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts.                                                                                            |
 | ACP target         | `--agent acp:<target-or-command>` | Install and authenticate the target supported by the bundled [`acpx`](https://github.com/openclaw/acpx) registry, such as `acp:gemini`, or pass a quoted custom ACP server command. | `gnhf` runs the target through ACP with a persistent per-run session under `.gnhf/runs/<runId>/acp-sessions`; token usage and `--max-tokens` use ACP `used` deltas when available, with prompt-length plus tool-call estimates as a fallback, and `agentPathOverride` and `agentArgsOverride` do not apply. |

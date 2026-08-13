@@ -2,19 +2,40 @@ import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import {
   buildAgentOutputSchema,
-  validateAgentOutput,
+  parseAgentOutput,
+  PermanentAgentError,
   type Agent,
-  type AgentOutput,
   type AgentOutputSchema,
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
 } from "./types.js";
-import { parseAgentJson } from "./json-extract.js";
 import { shutdownChildProcess } from "./managed-process.js";
 import { parseJSONLStream, setupAbortHandler } from "./stream-utils.js";
 
 const DEFAULT_FINAL_RESULT_EXIT_GRACE_MS = 15_000;
+/**
+ * Cursor's installer symlinks the same binary as both `cursor-agent` and the
+ * generic `agent`. Prefer the unambiguous name so an unrelated `agent` on PATH
+ * cannot be driven by mistake, and fall back to `agent` for installs that only
+ * expose the newer name.
+ */
+const CURSOR_BIN_CANDIDATES = ["cursor-agent", "agent"] as const;
+
+function resolveCursorBin(platform: NodeJS.Platform): string {
+  const lookup = platform === "win32" ? "where" : "which";
+  for (const candidate of CURSOR_BIN_CANDIDATES) {
+    try {
+      execFileSync(lookup, [candidate], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      return candidate;
+    } catch {
+      // Not on PATH: try the next candidate.
+    }
+  }
+  return CURSOR_BIN_CANDIDATES[0];
+}
 
 interface CursorAgentDeps {
   bin?: string;
@@ -229,30 +250,13 @@ function textFromAssistantMessage(message: { content?: unknown }): string {
   return "";
 }
 
-function parseCursorOutput(
-  text: string,
-  schema: AgentOutputSchema,
-): AgentOutput {
-  const parsed = parseAgentJson(text, (value) => {
-    try {
-      validateAgentOutput(value, schema);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (parsed !== null) {
-    return validateAgentOutput(parsed, schema);
-  }
-
-  const fallbackParsed = parseAgentJson(text);
-  if (fallbackParsed !== null) {
-    return validateAgentOutput(fallbackParsed, schema);
-  }
-
-  throw new SyntaxError(
-    "cursor output did not contain a parseable JSON object",
-  );
+/**
+ * Auth failures need a human to run `cursor-agent login`, so retrying only
+ * burns the run's consecutive-failure budget. Classify them from text the CLI
+ * itself authored, never from agent output that may merely quote the phrase.
+ */
+function isPermanentCursorError(output: string): boolean {
+  return /authentication required|not (?:logged in|authenticated)/i.test(output);
 }
 
 export class CursorAgent implements Agent {
@@ -265,11 +269,11 @@ export class CursorAgent implements Agent {
   private schema: AgentOutputSchema;
 
   constructor(deps: CursorAgentDeps = {}) {
-    this.bin = deps.bin ?? "agent";
     this.extraArgs = deps.extraArgs;
     this.finalResultGraceMs =
       deps.finalResultGraceMs ?? DEFAULT_FINAL_RESULT_EXIT_GRACE_MS;
     this.platform = deps.platform ?? process.platform;
+    this.bin = deps.bin ?? resolveCursorBin(this.platform);
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
   }
@@ -373,12 +377,27 @@ export class CursorAgent implements Agent {
         }
         logStream?.end();
         if (code !== 0 && !closedAfterFinalCleanup) {
-          reject(new Error(`cursor exited with code ${code}: ${stderr}`));
+          const detail = `cursor exited with code ${code}: ${stderr}`;
+          reject(
+            isPermanentCursorError(stderr)
+              ? new PermanentAgentError(
+                  "cursor is not signed in - run `cursor-agent login`",
+                  detail,
+                )
+              : new Error(detail),
+          );
           return;
         }
 
         if (resultError) {
-          reject(new Error(resultError));
+          reject(
+            isPermanentCursorError(resultError)
+              ? new PermanentAgentError(
+                  "cursor is not signed in - run `cursor-agent login`",
+                  resultError,
+                )
+              : new Error(resultError),
+          );
           return;
         }
 
@@ -389,7 +408,7 @@ export class CursorAgent implements Agent {
         }
 
         try {
-          const output = parseCursorOutput(finalText, this.schema);
+          const output = parseAgentOutput(finalText, this.schema, "cursor");
           resolve({ output, usage });
         } catch (err) {
           reject(

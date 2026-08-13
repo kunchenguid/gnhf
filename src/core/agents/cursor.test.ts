@@ -8,7 +8,7 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync, spawn } from "node:child_process";
 import { CursorAgent } from "./cursor.js";
-import { buildAgentOutputSchema } from "./types.js";
+import { buildAgentOutputSchema, PermanentAgentError } from "./types.js";
 
 const mockSpawn = vi.mocked(spawn);
 
@@ -33,13 +33,38 @@ function emitJson(proc: ReturnType<typeof createMockProcess>, event: unknown) {
 describe("CursorAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: every binary candidate resolves on PATH. clearAllMocks() keeps
+    // implementations, so reset it here to stop per-test PATH stubs leaking.
+    vi.mocked(execFileSync).mockReset();
   });
 
-  it("has the cursor agent name and defaults the binary to agent", () => {
+  it("has the cursor agent name", () => {
     expect(new CursorAgent().name).toBe("cursor");
   });
 
-  it("spawns agent in print stream-json mode with force, trust, and approve-mcps defaults", () => {
+  it("falls back to the generic agent binary when cursor-agent is not on PATH", () => {
+    vi.mocked(execFileSync).mockImplementation(((
+      _cmd: string,
+      args?: readonly string[],
+    ) => {
+      if (args?.[0] === "cursor-agent") {
+        throw new Error("not found");
+      }
+      return "";
+    }) as unknown as typeof execFileSync);
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    new CursorAgent({ platform: "linux" }).run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "agent",
+      expect.arrayContaining(["-p"]),
+      expect.objectContaining({ cwd: "/work/dir" }),
+    );
+  });
+
+  it("spawns cursor-agent in print stream-json mode with force, trust, and approve-mcps defaults", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const agent = new CursorAgent({ platform: "linux" });
@@ -47,7 +72,7 @@ describe("CursorAgent", () => {
     agent.run("test prompt", "/work/dir");
 
     expect(mockSpawn).toHaveBeenCalledWith(
-      "agent",
+      "cursor-agent",
       [
         "-p",
         "--output-format",
@@ -423,6 +448,54 @@ describe("CursorAgent", () => {
     proc.emit("close", 0);
 
     await expect(promise).rejects.toThrow("auth failed");
+  });
+
+  it("reports a signed-out cursor exit as permanent so it does not burn retries", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    proc.stderr.emit(
+      "data",
+      Buffer.from(
+        "Error: Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.\n",
+      ),
+    );
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toThrow(PermanentAgentError);
+    await expect(promise).rejects.toThrow("cursor is not signed in");
+  });
+
+  it("reports a signed-out cursor result event as permanent", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    emitJson(proc, {
+      type: "result",
+      subtype: "error",
+      is_error: true,
+      result: "Authentication required. Please run 'agent login' first.",
+    });
+    proc.emit("close", 0);
+
+    await expect(promise).rejects.toThrow(PermanentAgentError);
+  });
+
+  it("keeps an ordinary non-zero exit retryable", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent();
+
+    const promise = agent.run("test prompt", "/work/dir");
+    proc.stderr.emit("data", Buffer.from("upstream provider is overloaded\n"));
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toThrow("cursor exited with code 1");
+    await expect(promise).rejects.not.toThrow(PermanentAgentError);
   });
 
   it("shuts down a lingering cursor process after a non-error result", async () => {

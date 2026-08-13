@@ -10,7 +10,7 @@ agent: claude
 #   codex: /path/to/custom-codex
 #   copilot: /path/to/custom-copilot
 #   pi: /path/to/custom-pi
-#   cursor: /path/to/custom-agent
+#   cursor: /path/to/custom-cursor-agent
 
 # Native agent CLI arg overrides (optional)
 # ACP targets do not support path or arg overrides.
@@ -33,7 +33,7 @@ agent: claude
 #     - high
 #   cursor:
 #     - --model
-#     - composer-2
+#     - composer-2.5
 
 # Custom ACP target commands (optional)
 # Maps acp:<target> names to spawn commands. Useful for naming a

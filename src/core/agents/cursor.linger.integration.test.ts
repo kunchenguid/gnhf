@@ -44,8 +44,11 @@ setTimeout(() => {}, 60_000);
     chmodSync(bin, 0o755);
 
     const started = Date.now();
+    // Spawn the script through the current Node binary: a bare `.mjs` path is
+    // not directly executable on Windows and fails with spawn EFTYPE.
     const agent = new CursorAgent({
-      bin,
+      bin: process.execPath,
+      extraArgs: [bin],
       finalResultGraceMs: 200,
       platform: process.platform === "win32" ? "win32" : "darwin",
     });
