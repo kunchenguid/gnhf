@@ -75,7 +75,10 @@ describe("CursorAgent", () => {
         const proc = createMockProcess();
         mockSpawn.mockReturnValue(proc);
 
-        new CursorAgent({ platform: "linux" }).run("test prompt", "/work/dir");
+        new CursorAgent({ platform: process.platform }).run(
+          "test prompt",
+          "/work/dir",
+        );
 
         expect(mockSpawn).toHaveBeenCalledWith(
           expectedBin,
