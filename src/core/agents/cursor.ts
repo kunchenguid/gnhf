@@ -80,9 +80,7 @@ function candidateExistsOnPath(
 
 function resolveCursorBin(platform: NodeJS.Platform): string {
   const delimiter = platform === "win32" ? ";" : ":";
-  const directories = (process.env.PATH ?? "")
-    .split(delimiter)
-    .filter(Boolean);
+  const directories = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
 
   for (const candidate of CURSOR_BIN_CANDIDATES) {
     if (
@@ -315,7 +313,9 @@ function textFromAssistantMessage(message: { content?: unknown }): string {
  * itself authored, never from agent output that may merely quote the phrase.
  */
 function isPermanentCursorError(output: string): boolean {
-  return /authentication required|not (?:logged in|authenticated)/i.test(output);
+  return /authentication required|not (?:logged in|authenticated)/i.test(
+    output,
+  );
 }
 
 export class CursorAgent implements Agent {

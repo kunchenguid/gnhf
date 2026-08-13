@@ -22,7 +22,9 @@ const mockCursorAgentPath = join(
   process.platform === "win32" ? "mock-cursor-agent.cmd" : "mock-cursor-agent",
 );
 
-const emptyGitConfigDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-cursor-gitconfig-"));
+const emptyGitConfigDir = mkdtempSync(
+  join(tmpdir(), "gnhf-e2e-cursor-gitconfig-"),
+);
 const emptyGitConfigPath = join(emptyGitConfigDir, "gitconfig");
 writeFileSync(emptyGitConfigPath, "", "utf-8");
 

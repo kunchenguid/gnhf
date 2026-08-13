@@ -42,7 +42,11 @@ appendLog({
   stdinLen: stdin.length,
 });
 
-writeFileSync(join(process.cwd(), "hello.txt"), "hello from cursor mock\n", "utf-8");
+writeFileSync(
+  join(process.cwd(), "hello.txt"),
+  "hello from cursor mock\n",
+  "utf-8",
+);
 
 const output = {
   success: true,

@@ -1,11 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import {
-  chmodSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,10 +33,7 @@ function emitJson(proc: ReturnType<typeof createMockProcess>, event: unknown) {
   proc.stdout.emit("data", Buffer.from(`${JSON.stringify(event)}\n`));
 }
 
-function withTemporaryPath(
-  candidates: string[],
-  callback: () => void,
-): void {
+function withTemporaryPath(candidates: string[], callback: () => void): void {
   const directory = mkdtempSync(join(tmpdir(), "gnhf-cursor-path-"));
   const originalPath = process.env.PATH;
   try {
@@ -83,10 +75,7 @@ describe("CursorAgent", () => {
         const proc = createMockProcess();
         mockSpawn.mockReturnValue(proc);
 
-        new CursorAgent({ platform: "linux" }).run(
-          "test prompt",
-          "/work/dir",
-        );
+        new CursorAgent({ platform: "linux" }).run("test prompt", "/work/dir");
 
         expect(mockSpawn).toHaveBeenCalledWith(
           expectedBin,
@@ -106,10 +95,7 @@ describe("CursorAgent", () => {
         const proc = createMockProcess();
         mockSpawn.mockReturnValue(proc);
 
-        new CursorAgent({ platform: "linux" }).run(
-          "test prompt",
-          "/work/dir",
-        );
+        new CursorAgent({ platform: "linux" }).run("test prompt", "/work/dir");
 
         expect(mockSpawn).toHaveBeenCalledWith(
           "agent",
