@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.44](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.43...gnhf-v0.1.44) (2026-08-13)
+
+
+### Features
+
+* **agents:** add native Cursor CLI support ([#203](https://github.com/kunchenguid/gnhf/issues/203)) ([06ae1cf](https://github.com/kunchenguid/gnhf/commit/06ae1cf025704fe3ca669983b0a68b8dbb99c23b))
+
+
+### Bug Fixes
+
+* **agents:** recover wrapped Pi JSON output ([#195](https://github.com/kunchenguid/gnhf/issues/195)) ([f47d916](https://github.com/kunchenguid/gnhf/commit/f47d916fd3d98d6784305fca3931c77c6e068121))
+* **agents:** surface Claude CLI exit errors ([#190](https://github.com/kunchenguid/gnhf/issues/190)) ([3041614](https://github.com/kunchenguid/gnhf/commit/3041614ba7f45fc758eb156716a1343942b4a052))
+
 ## [0.1.43](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.42...gnhf-v0.1.43) (2026-07-23)
 
 
