@@ -89,6 +89,11 @@ const RATE_LIMIT_RESUME_BUFFER_MS = 60_000;
 // loop, and bounded so recovery is never far away.
 const RATE_LIMIT_MIN_WAIT_MS = 60_000;
 const RATE_LIMIT_MAX_FALLBACK_WAIT_MS = 30 * 60_000;
+// Cap provider-derived waits well under Node's 2^31-1 ms setTimeout limit -
+// larger delays fire after ~1 ms, turning a far-future reset (e.g. a monthly
+// limit) into a hot retry loop. The retry after a capped wait re-reads the
+// reset time, so long waits self-correct in daily chunks.
+const RATE_LIMIT_MAX_WAIT_MS = 24 * 60 * 60_000;
 
 type RunIterationResult =
   | {
@@ -338,6 +343,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           // rate-limit waits don't consume --max-iterations or the
           // consecutive-failure budget.
           this.state.currentIteration--;
+          if (this.stopForGracefulShutdown()) {
+            break;
+          }
           this.state.status = "waiting";
           this.state.waitingUntil = new Date(Date.now() + waitMs);
           this.emit("state", this.getState());
@@ -788,7 +796,7 @@ ${this.pendingCommitFailure}
       const waitMs =
         resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
       if (waitMs >= RATE_LIMIT_MIN_WAIT_MS) {
-        return waitMs;
+        return Math.min(waitMs, RATE_LIMIT_MAX_WAIT_MS);
       }
     }
     return Math.min(

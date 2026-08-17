@@ -1340,6 +1340,104 @@ describe("Orchestrator backoff behavior", () => {
     });
   });
 
+  it("honors a graceful stop requested mid-iteration instead of entering the rate-limit wait", async () => {
+    vi.useFakeTimers();
+
+    let rejectRun!: (error: Error) => void;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            rejectRun = reject;
+          }),
+      ),
+      close: vi.fn(() => Promise.resolve()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+
+    orchestrator.requestGracefulStop();
+    rejectRun(
+      new RateLimitAgentError(
+        "claude usage limit reached",
+        "detail",
+        new Date(Date.now() + 60 * 60_000),
+      ),
+    );
+    await startPromise;
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(orchestrator.getState().status).toBe("stopped");
+  });
+
+  it("caps the wait for a far-future rate limit reset so the timer cannot overflow", async () => {
+    vi.useFakeTimers();
+
+    const resumeAt = new Date(Date.now() + 40 * 24 * 60 * 60_000);
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new RateLimitAgentError(
+            "claude usage limit reached",
+            "detail",
+            resumeAt,
+          );
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+
+    const waitingUntil = orchestrator.getState().waitingUntil;
+    expect(waitingUntil!.getTime() - Date.now()).toBeLessThanOrEqual(
+      24 * 60 * 60_000,
+    );
+
+    // An overflowed setTimeout fires after ~1 ms; a capped wait must hold.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(agent.run).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 1,
+      failCount: 0,
+    });
+  });
+
   it("uses a bounded fallback wait when the rate limit reset time is missing", async () => {
     vi.useFakeTimers();
 
