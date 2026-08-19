@@ -24,6 +24,7 @@ export interface ExitSummaryOptions {
   color: boolean;
   terminalColumns?: number;
   hasPendingCommitFailure?: boolean;
+  hasCheckpointCommit?: boolean;
 }
 
 const MIN_CARD_WIDTH = 62;
@@ -218,6 +219,14 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
           commandLine(
             s.yellow("uncommitted"),
             "commit failed; changes were left for repair",
+          ),
+        ]
+      : []),
+    ...(options.hasCheckpointCommit
+      ? [
+          commandLine(
+            s.yellow("checkpoint"),
+            "in-flight work committed at the token cap; verify before building on it",
           ),
         ]
       : []),

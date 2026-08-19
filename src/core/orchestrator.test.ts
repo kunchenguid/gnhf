@@ -4,7 +4,7 @@ vi.mock("./git.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./git.js")>();
   return {
     ...actual,
-    commitAll: vi.fn(),
+    commitAll: vi.fn(() => true),
     getBranchCommitCount: vi.fn(() => 0),
     getCurrentBranch: vi.fn(() => "gnhf/run-abc"),
     getHeadCommit: vi.fn(() => "head123"),
@@ -38,6 +38,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 import {
   CommitFailedError,
   commitAll,
+  getBranchCommitCount,
   pushCurrentBranch,
   resetHard,
 } from "./git.js";
@@ -54,6 +55,7 @@ import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
 
 const mockCommitAll = vi.mocked(commitAll);
+const mockGetBranchCommitCount = vi.mocked(getBranchCommitCount);
 const mockPushCurrentBranch = vi.mocked(pushCurrentBranch);
 const mockAppendNotes = vi.mocked(appendNotes);
 const mockResetHard = vi.mocked(resetHard);
@@ -488,7 +490,8 @@ describe("Orchestrator stop limits", () => {
     expect(orchestrator.getState().status).toBe("aborted");
   });
 
-  it("aborts when reported token usage reaches the configured cap", async () => {
+  it("checkpoints in-flight work when reported token usage reaches the configured cap", async () => {
+    mockGetBranchCommitCount.mockReturnValueOnce(0).mockReturnValueOnce(5);
     const agent: Agent = {
       name: "claude",
       run: vi.fn(
@@ -522,14 +525,230 @@ describe("Orchestrator stop limits", () => {
     await orchestrator.start();
 
     expect(agent.run).toHaveBeenCalledTimes(1);
-    expect(mockAppendNotes).not.toHaveBeenCalled();
-    expect(mockCommitAll).not.toHaveBeenCalled();
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledWith(
+      "gnhf 1: checkpoint (max tokens reached)",
+      "/repo",
+    );
+    expect(mockAppendNotes).toHaveBeenCalledTimes(1);
+    expect(mockAppendNotes).toHaveBeenCalledWith(
+      runInfo.notesPath,
+      1,
+      expect.stringContaining("[CHECKPOINT] max tokens reached (11/10)"),
+      [],
+      [],
+    );
     expect(abort).toHaveBeenCalledWith("max tokens reached (11/10)");
     expect(orchestrator.getState()).toMatchObject({
       status: "aborted",
       totalInputTokens: 7,
       totalOutputTokens: 4,
+      commitCount: 5,
+      hasCheckpointCommit: true,
     });
+  });
+
+  it("skips the checkpoint entry when there is nothing to commit at the cap", async () => {
+    mockCommitAll.mockReturnValueOnce(false);
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        (_prompt, _cwd, options) =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(new Error("Agent was aborted"));
+            });
+            options?.onUsage?.({
+              inputTokens: 11,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            });
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 10 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockAppendNotes).not.toHaveBeenCalled();
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(mockGetBranchCommitCount).toHaveBeenCalledTimes(1);
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasCheckpointCommit: false,
+    });
+  });
+
+  it("falls back to preserve-for-repair when the checkpoint commit fails", async () => {
+    mockCommitAll.mockImplementationOnce(() => {
+      throw new CommitFailedError(new Error("hook failed"));
+    });
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        (_prompt, _cwd, options) =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(new Error("Agent was aborted"));
+            });
+            options?.onUsage?.({
+              inputTokens: 11,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            });
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 10 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(mockAppendNotes).toHaveBeenCalledTimes(1);
+    expect(mockAppendNotes).toHaveBeenCalledWith(
+      runInfo.notesPath,
+      1,
+      expect.stringContaining("the checkpoint commit failed"),
+      [],
+      [expect.stringContaining("hook failed")],
+    );
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasPendingCommitFailure: true,
+      hasCheckpointCommit: false,
+    });
+  });
+
+  it("lets the turn finish and aborts post-iteration when usage enters the token buffer", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onUsage?.({
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 100, tokenBuffer: 90 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
+    expect(mockCommitAll).toHaveBeenCalledWith("gnhf 1: done", "/repo");
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(abort).toHaveBeenCalledWith(
+      "token budget reached (15/100, buffer 90)",
+    );
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      hasCheckpointCommit: false,
+    });
+  });
+
+  it("still hard-aborts and checkpoints when a turn burns through the buffer", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        (_prompt, _cwd, options) =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(new Error("Agent was aborted"));
+            });
+            options?.onUsage?.({
+              inputTokens: 11,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            });
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 10, tokenBuffer: 5 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(mockCommitAll).toHaveBeenCalledWith(
+      "gnhf 1: checkpoint (max tokens reached)",
+      "/repo",
+    );
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(abort).toHaveBeenCalledWith("max tokens reached (11/10)");
+    expect(orchestrator.getState().hasCheckpointCommit).toBe(true);
+  });
+
+  it("aborts before starting an iteration when totals are already within the buffer", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 100, tokenBuffer: 100 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).not.toHaveBeenCalled();
+    expect(mockCommitAll).not.toHaveBeenCalled();
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(abort).toHaveBeenCalledWith(
+      "token budget reached (0/100, buffer 100)",
+    );
+    expect(orchestrator.getState().status).toBe("aborted");
   });
 
   it("marks in-flight usage as estimated until authoritative usage arrives", async () => {
@@ -1124,6 +1343,9 @@ describe("Orchestrator stop limits", () => {
     await orchestrator.start();
 
     expect(mockResetHard).not.toHaveBeenCalled();
+    // The original failing commit is the only commitAll call: no checkpoint
+    // is attempted while a commit failure awaits repair.
+    expect(mockCommitAll).toHaveBeenCalledTimes(1);
     expect(orchestrator.getState()).toMatchObject({
       status: "aborted",
       hasPendingCommitFailure: true,

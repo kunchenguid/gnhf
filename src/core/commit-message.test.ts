@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildCommitMessage } from "./commit-message.js";
+import {
+  buildCheckpointCommitMessage,
+  buildCommitMessage,
+} from "./commit-message.js";
 import type { AgentOutput } from "./agents/types.js";
 
 type CommitMessageTestOutput = AgentOutput & {
@@ -106,5 +109,22 @@ describe("buildCommitMessage", () => {
     );
 
     expect(message).toBe("feat: add parser with extra spacing");
+  });
+});
+
+describe("buildCheckpointCommitMessage", () => {
+  it("renders the default checkpoint subject with the iteration number", () => {
+    const message = buildCheckpointCommitMessage(undefined, { iteration: 3 });
+
+    expect(message).toBe("gnhf 3: checkpoint (max tokens reached)");
+  });
+
+  it("renders a chore subject for the conventional preset", () => {
+    const message = buildCheckpointCommitMessage(
+      { preset: "conventional" },
+      { iteration: 3 },
+    );
+
+    expect(message).toBe("chore: checkpoint (max tokens reached)");
   });
 });

@@ -147,13 +147,22 @@ function emitCompletedEvents(sessionId, summary) {
       },
     },
   });
-  broadcast({
+  const idleEvent = {
     directory: "/repo",
     payload: {
       type: "session.idle",
       properties: { sessionID: sessionId },
     },
-  });
+  };
+  // GNHF_MOCK_OPENCODE_IDLE_DELAY_MS delays session.idle after step-finish so
+  // tests can deterministically win the race between gnhf's mid-iteration
+  // token abort (fired on step-finish usage) and iteration completion.
+  const idleDelayMs = Number(process.env.GNHF_MOCK_OPENCODE_IDLE_DELAY_MS ?? 0);
+  if (idleDelayMs > 0) {
+    setTimeout(() => broadcast(idleEvent), idleDelayMs).unref();
+  } else {
+    broadcast(idleEvent);
+  }
   return output;
 }
 

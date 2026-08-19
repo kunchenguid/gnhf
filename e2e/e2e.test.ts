@@ -519,6 +519,99 @@ describe("gnhf e2e", () => {
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
   }, 30_000);
 
+  it("checkpoints in-flight work at the token cap and resumes on top of it", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const env = createTestEnv(mockLogPath, tempDirs);
+
+    // The mock reports 15 tokens on step-finish, tripping --max-tokens 1
+    // mid-iteration. Delaying session.idle guarantees the abort wins the race
+    // against iteration completion.
+    const firstRun = await runCli(
+      cwd,
+      ["checkpoint probe", "--agent", "opencode", "--max-tokens", "1"],
+      {
+        env: { ...env, GNHF_MOCK_OPENCODE_IDLE_DELAY_MS: "3000" },
+      },
+    );
+
+    expect(firstRun.code).toBe(0);
+    expect(firstRun.stdout).toContain("gnhf stopped");
+    expect(firstRun.stdout).toContain("max tokens reached");
+    expect(firstRun.stdout).toContain(
+      "in-flight work committed at the token cap",
+    );
+
+    // The in-flight README change is committed as a checkpoint, leaving a
+    // clean tree instead of being destroyed by a hard reset.
+    expect(git(["status", "--porcelain"], cwd)).toBe("");
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+    expect(git(["log", "-1", "--format=%s"], cwd)).toBe(
+      "gnhf 1: checkpoint (max tokens reached)",
+    );
+    expect(git(["show", "HEAD", "--stat"], cwd)).toContain("README.md");
+
+    const debugLogPath = findRunLogPath(cwd);
+    const debugEvents = readJsonLines(debugLogPath).map((entry) => entry.event);
+    expect(debugEvents).toContain("git:checkpoint:success");
+
+    const runsDir = join(cwd, ".gnhf", "runs");
+    const runId = readdirSync(runsDir)[0]!;
+    expect(readFileSync(join(runsDir, runId, "notes.md"), "utf-8")).toContain(
+      "[CHECKPOINT] max tokens reached",
+    );
+
+    // Resume through the normal gnhf-branch flow: the aborted iteration wrote
+    // iteration-1.jsonl, so the next invocation continues at iteration 2.
+    const secondRun = await runCli(
+      cwd,
+      ["--agent", "opencode", "--max-iterations", "2"],
+      { env },
+    );
+    expect(secondRun.code).toBe(0);
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
+    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 2:");
+  }, 60_000);
+
+  it("stops between iterations with a normal commit when usage enters the token buffer", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    // Iteration 1's 15 tokens exceed the soft threshold (100 - 90 = 10) but
+    // not the cap, so the iteration finishes and commits normally and the run
+    // aborts post-iteration.
+    const result = await runCli(
+      cwd,
+      [
+        "buffer probe",
+        "--agent",
+        "opencode",
+        "--max-tokens",
+        "100",
+        "--token-buffer",
+        "90",
+      ],
+      {
+        env: createTestEnv(mockLogPath, tempDirs),
+      },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("gnhf stopped");
+    expect(result.stdout).toContain("token budget reached (15/100, buffer 90)");
+    expect(result.stdout).not.toContain("checkpoint");
+    expect(git(["status", "--porcelain"], cwd)).toBe("");
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+    expect(git(["log", "-1", "--format=%s"], cwd)).toContain("gnhf 1:");
+  }, 30_000);
+
   it.skipIf(process.platform === "win32")(
     "runs one iteration in --worktree mode and preserves the worktree with commits",
     async () => {
