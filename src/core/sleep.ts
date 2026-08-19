@@ -214,6 +214,11 @@ function buildPowerShellCommand(parentPid: number): string {
     "  public static extern uint SetThreadExecutionState(uint flags);",
     "}",
     "'@;",
+    // ES_CONTINUOUS (0x80000000) and ES_SYSTEM_REQUIRED (0x00000001), written
+    // as [uint32]-typed decimals on purpose: Windows PowerShell parses the hex
+    // literal 0x80000000 as a signed Int32, so the P/Invoke uint conversion
+    // throws while the helper stays alive, silently leaving the machine free to
+    // sleep. Covered by sleep.windows.test.ts.
     "[uint32]$ES_CONTINUOUS = 2147483648;",
     "[uint32]$ES_SYSTEM_REQUIRED = 1;",
     "[SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED) | Out-Null;",
