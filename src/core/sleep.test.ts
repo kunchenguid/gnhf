@@ -603,24 +603,21 @@ describe("startSleepPrevention", () => {
 
   it("does not wait for the Windows handshake before the run can start", async () => {
     const child = createWindowsChildProcess();
-    let readyEmitted = false;
     mockSpawn.mockImplementation(() => {
       queueMicrotask(() => child.emit("spawn"));
       return child as never;
     });
 
+    // Resolving before the helper has said anything is the point: the run
+    // must not be blocked behind the PowerShell compile.
     const result = await startSleepPrevention(["ship it"], {
       pid: 42,
       platform: "win32",
     });
 
-    // Returning before the helper has said anything is the point: the run
-    // must not be blocked behind the PowerShell compile.
-    expect(readyEmitted).toBe(false);
     expect(result.type).toBe("active");
     if (result.type !== "active") return;
 
-    readyEmitted = true;
     child.stdout?.push("gnhf-sleep-ready\n");
     await expect(result.confirmed).resolves.toBe(true);
   });
@@ -677,6 +674,50 @@ describe("startSleepPrevention", () => {
 
   it("reports the Windows helper as unconfirmed when it never reports ready", async () => {
     vi.useFakeTimers();
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-sleep-"));
+    const logPath = join(tempDir, "gnhf.log");
+    initDebugLog(logPath);
+
+    const child = createWindowsChildProcess();
+    mockSpawn.mockImplementation(() => {
+      queueMicrotask(() => child.emit("spawn"));
+      return child as never;
+    });
+
+    try {
+      const result = await startSleepPrevention(["ship it"], {
+        pid: 42,
+        platform: "win32",
+      });
+
+      expect(result.type).toBe("active");
+      if (result.type !== "active") return;
+
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      // The deadline is a reporting deadline: a helper that is only slow to
+      // start must be left alive, or the run loses its inhibitor for good.
+      expect(child.kill).not.toHaveBeenCalled();
+
+      const cleanupPromise = result.cleanup();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await cleanupPromise;
+
+      await expect(result.confirmed).resolves.toBe(false);
+      expect(readDebugLogEvents(logPath, "sleep:unavailable")).toEqual([
+        expect.objectContaining({
+          command: "powershell.exe",
+          reason: "ready-timeout",
+          timeoutMs: 15_000,
+        }),
+      ]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("still confirms a Windows helper that reports ready after the deadline", async () => {
+    vi.useFakeTimers();
     const child = createWindowsChildProcess();
     mockSpawn.mockImplementation(() => {
       queueMicrotask(() => child.emit("spawn"));
@@ -692,10 +733,11 @@ describe("startSleepPrevention", () => {
     if (result.type !== "active") return;
 
     await vi.advanceTimersByTimeAsync(15_000);
-    await vi.advanceTimersByTimeAsync(1_100);
+    child.stdout?.push("gnhf-sleep-ready\n");
+    await vi.advanceTimersByTimeAsync(0);
 
-    await expect(result.confirmed).resolves.toBe(false);
-    expect(child.kill).toHaveBeenCalled();
+    await expect(result.confirmed).resolves.toBe(true);
+    expect(child.kill).not.toHaveBeenCalled();
   });
 
   it("does not blame a Windows helper that cleanup tore down before it was ready", async () => {

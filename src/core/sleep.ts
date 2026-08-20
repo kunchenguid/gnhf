@@ -293,24 +293,31 @@ function collectStderrTail(child: ChildProcess): () => string {
   return () => tail.trim();
 }
 
+interface HelperReadyOutcome {
+  ready: boolean;
+  timedOut: boolean;
+}
+
 async function waitForHelperReady(
   child: ChildProcess,
   readiness: HelperReadiness,
-): Promise<boolean> {
+  stopped: Promise<void>,
+): Promise<HelperReadyOutcome> {
   const stdout = child.stdout;
-  if (!stdout) return false;
+  if (!stdout) return { ready: false, timedOut: false };
 
   return await new Promise((resolve) => {
     let settled = false;
+    let timedOut = false;
     let buffered = "";
-    const settle = (value: boolean) => {
+    const settle = (ready: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       stdout.off("data", onData);
       child.off("exit", onEnd);
       child.off("error", onEnd);
-      resolve(value);
+      resolve({ ready, timedOut });
     };
     const onData = (chunk: string) => {
       buffered = (buffered + chunk).slice(-HELPER_STDERR_TAIL_LIMIT);
@@ -320,8 +327,11 @@ async function waitForHelperReady(
       settle(false);
     };
 
+    // The deadline only decides what gets reported. A helper that is merely
+    // slow to compile still holds the machine awake once it catches up, so it
+    // is left running until it exits on its own or cleanup tears it down.
     const timer = setTimeout(() => {
-      settle(false);
+      timedOut = true;
     }, readiness.timeoutMs);
     timer.unref?.();
 
@@ -329,6 +339,7 @@ async function waitForHelperReady(
     stdout.on("data", onData);
     child.once("exit", onEnd);
     child.once("error", onEnd);
+    void stopped.then(() => settle(false));
 
     if (child.exitCode != null || child.signalCode != null) settle(false);
   });
@@ -341,37 +352,40 @@ async function confirmHelperReadiness(options: {
   isStopping: () => boolean;
   readiness: HelperReadiness;
   stderrTail: () => string;
+  stopped: Promise<void>;
 }): Promise<boolean> {
-  const { child, closed, command, isStopping, readiness, stderrTail } = options;
+  const { child, closed, command, isStopping, readiness, stderrTail, stopped } =
+    options;
 
   try {
-    if (await waitForHelperReady(child, readiness)) {
-      child.stdout?.resume();
+    const { ready, timedOut } = await waitForHelperReady(
+      child,
+      readiness,
+      stopped,
+    );
+    child.stdout?.resume();
+
+    if (ready) {
       appendDebugLog("sleep:ready", { command });
       return true;
     }
 
-    // A helper torn down by our own cleanup never failed; only a helper that
-    // gave up on its own counts as a failure worth reporting.
-    if (isStopping()) return true;
+    // A helper torn down by our own cleanup before the deadline never failed;
+    // only a helper that gave up on its own, or that stayed silent past the
+    // deadline, counts as a failure worth reporting.
+    if (isStopping() && !timedOut) return true;
 
     const exited = child.exitCode != null || child.signalCode != null;
     const exitCode = child.exitCode;
     // The pipes are only guaranteed to have drained once "close" fires, so
     // the helper's stderr is read after the stream is done, not on "exit".
-    child.stdout?.resume();
-    if (!exited) {
-      await shutdownChildProcess(child, {
-        detached: false,
-        timeoutMs: 1_000,
-      });
-    }
     await waitForStdioFlush(closed, HELPER_STDIO_FLUSH_TIMEOUT_MS);
 
     const stderr = stderrTail();
     appendDebugLog("sleep:unavailable", {
       command,
       reason: exited ? "early-exit" : "ready-timeout",
+      ...(exited ? {} : { timeoutMs: readiness.timeoutMs }),
       ...(exitCode != null ? { exitCode } : {}),
       ...(stderr ? { stderr } : {}),
     });
@@ -408,6 +422,10 @@ async function startHelperProcess(
 
   if (readiness) {
     let stopping = false;
+    let resolveStopped = () => {};
+    const stopped = new Promise<void>((resolve) => {
+      resolveStopped = resolve;
+    });
     return {
       child,
       confirmed: confirmHelperReadiness({
@@ -417,9 +435,11 @@ async function startHelperProcess(
         isStopping: () => stopping,
         readiness,
         stderrTail,
+        stopped,
       }),
       markStopping: () => {
         stopping = true;
+        resolveStopped();
       },
     };
   }
