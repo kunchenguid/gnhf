@@ -31,7 +31,6 @@ const STAR_DENSITY = 0.035;
 const DEFAULT_METEOR_FREQUENCY = 3;
 const METEOR_SEED_OFFSET = 101;
 const TICK_MS = 200;
-const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
 const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
@@ -209,6 +208,7 @@ export function renderMoonStripCells(
   iterations: { success: boolean }[],
   isRunning: boolean,
   now: number,
+  contentWidth = CONTENT_WIDTH,
 ): Cell[][] {
   const moons: string[] = iterations.map((iter) =>
     getMoonPhase(iter.success ? "success" : "fail"),
@@ -217,9 +217,13 @@ export function renderMoonStripCells(
     moons.push(getMoonPhase("active", now, MOON_PHASE_PERIOD));
   }
   if (moons.length === 0) return [[]];
+
+  // Moon emoji occupy two terminal cells, so fit only complete moons per row.
+  const moonsPerRow = Math.max(1, Math.floor(contentWidth / 2));
+
   const rows: Cell[][] = [];
-  for (let i = 0; i < moons.length; i += MOONS_PER_ROW) {
-    const slice = moons.slice(i, i + MOONS_PER_ROW);
+  for (let i = 0; i < moons.length; i += moonsPerRow) {
+    const slice = moons.slice(i, i + moonsPerRow);
     const cells: Cell[] = [];
     for (const moon of slice) {
       cells.push(...textToCells(moon, "normal"));
@@ -267,8 +271,11 @@ export function renderMoonStrip(
   iterations: { success: boolean }[],
   isRunning: boolean,
   now: number,
+  contentWidth = CONTENT_WIDTH,
 ): string[] {
-  return renderMoonStripCells(iterations, isRunning, now).map(rowToString);
+  return renderMoonStripCells(iterations, isRunning, now, contentWidth).map(
+    rowToString,
+  );
 }
 
 // ── Star rendering (cell-based) ─────────────────────────────
@@ -486,15 +493,21 @@ export function buildContentCells(
   elapsed: string,
   now: number,
   availableHeight?: number,
+  contentWidth = CONTENT_WIDTH,
 ): Cell[][] {
   const isRunning = state.status === "running" || state.status === "waiting";
-  const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
+  const moonRows = renderMoonStripCells(
+    state.iterations,
+    isRunning,
+    now,
+    contentWidth,
+  );
   const maxRows = availableHeight ?? Infinity;
   if (maxRows <= 0) return [];
 
   const titleCells = renderTitleCells(agentName);
   const titleSpacer = titleCells[1] ?? [];
-  const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
+  const promptLines = wordWrap(prompt, contentWidth, MAX_PROMPT_LINES);
   const promptRows: Cell[][] = [];
   for (let i = 0; i < MAX_PROMPT_LINES; i++) {
     const pl = promptLines[i] ?? "";
@@ -592,6 +605,11 @@ export function buildFrameCells(
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
+  const sideWidth = Math.max(
+    0,
+    Math.floor((terminalWidth - CONTENT_WIDTH) / 2),
+  );
+  const contentWidth = Math.max(1, terminalWidth - 2 * sideWidth);
   const contentRows = buildContentCells(
     prompt,
     agentName,
@@ -599,6 +617,7 @@ export function buildFrameCells(
     elapsed,
     now,
     availableHeight,
+    contentWidth,
   );
 
   while (contentRows.length < Math.min(BASE_CONTENT_ROWS, availableHeight)) {
@@ -626,11 +645,6 @@ export function buildFrameCells(
     maxMeteorStartRow,
   );
 
-  const sideWidth = Math.max(
-    0,
-    Math.floor((terminalWidth - CONTENT_WIDTH) / 2),
-  );
-
   const frame: Cell[][] = [];
 
   for (let y = 0; y < topHeight; y++) {
@@ -648,7 +662,7 @@ export function buildFrameCells(
       sideWidth,
       now,
     );
-    const center = centerLineCells(contentRows[i], CONTENT_WIDTH);
+    const center = centerLineCells(contentRows[i], contentWidth);
     const right = renderSideStarsCells(
       sideStars,
       visibleSideMeteors,
