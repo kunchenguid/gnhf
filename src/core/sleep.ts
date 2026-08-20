@@ -214,8 +214,8 @@ function buildPowerShellCommand(parentPid: number): string {
     "  public static extern uint SetThreadExecutionState(uint flags);",
     "}",
     "'@;",
-    "$ES_CONTINUOUS = 0x80000000;",
-    "$ES_SYSTEM_REQUIRED = 0x00000001;",
+    "[uint32]$ES_CONTINUOUS = 2147483648;",
+    "[uint32]$ES_SYSTEM_REQUIRED = 1;",
     "[SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED) | Out-Null;",
     `try { Wait-Process -Id ${parentPid} } catch { } finally { [SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS) | Out-Null }`,
   ].join("\n");
