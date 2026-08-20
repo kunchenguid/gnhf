@@ -101,12 +101,13 @@ function waitForReadyOrExit(
   });
 }
 
-function waitForClose(child: ChildProcess): Promise<number | null> {
+/**
+ * Registered before the helper can emit anything, so awaiting it is a real
+ * flush guarantee: "close" fires only after every stdio pipe has drained,
+ * whereas "exit" can arrive while stderr is still buffered.
+ */
+function trackClose(child: ChildProcess): Promise<number | null> {
   return new Promise((resolveCode) => {
-    if (child.exitCode != null) {
-      resolveCode(child.exitCode);
-      return;
-    }
     child.once("close", (code) => resolveCode(code));
   });
 }
@@ -150,6 +151,7 @@ describeWindows("Windows sleep prevention helper", () => {
         windowsHide: true,
       });
       started.push(helper);
+      const closed = trackClose(helper);
       await waitForSpawn(helper);
 
       const state = { stdout: "", stderr: "" };
@@ -166,7 +168,7 @@ describeWindows("Windows sleep prevention helper", () => {
       const outcome = await waitForReadyOrExit(helper, state);
       // On the failure path, close flushes the helper's stderr so the
       // assertion below reports the actual PowerShell error.
-      if (outcome === "exit") await waitForClose(helper);
+      if (outcome === "exit") await closed;
       expect(state.stderr).toBe("");
       expect(outcome).toBe("ready");
 
@@ -174,8 +176,7 @@ describeWindows("Windows sleep prevention helper", () => {
       expect(helper.exitCode).toBeNull();
 
       parent.kill("SIGKILL");
-      // Waiting for close (not exit) guarantees stderr has been fully flushed.
-      const exitCode = await waitForClose(helper);
+      const exitCode = await closed;
       expect(state.stderr).toBe("");
       expect(exitCode).toBe(0);
     },

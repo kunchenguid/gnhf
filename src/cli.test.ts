@@ -1321,6 +1321,60 @@ describe("cli", () => {
     });
   });
 
+  it("warns when sleep prevention was requested but is unavailable", async () => {
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "skipped" as const,
+        reason: "unavailable" as const,
+      }),
+    );
+
+    const { consoleErrorCalls, orchestratorCtor } = await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      { startSleepPrevention },
+    );
+
+    expect(startSleepPrevention).toHaveBeenCalledTimes(1);
+    expect(consoleErrorCalls.flat().join("\n")).toContain(
+      "sleep prevention is unavailable",
+    );
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays quiet about sleep prevention when the helper is active", async () => {
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "active" as const,
+        cleanup: () => Promise.resolve(),
+      }),
+    );
+
+    const { consoleErrorCalls } = await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      { startSleepPrevention },
+    );
+
+    expect(consoleErrorCalls.flat().join("\n")).not.toContain(
+      "sleep prevention",
+    );
+  });
+
   it("does not emit run:start from the Linux sleep-prevention wrapper process", async () => {
     const appendDebugLog = vi.fn();
     const startSleepPrevention = vi.fn(() =>

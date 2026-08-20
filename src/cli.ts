@@ -960,6 +960,15 @@ program
           if (sleepPrevention.type === "active") {
             sleepPreventionCleanup = sleepPrevention.cleanup;
           }
+          if (
+            sleepPrevention.type === "skipped" &&
+            sleepPrevention.reason === "unavailable"
+          ) {
+            console.error(
+              "\n  gnhf: sleep prevention is unavailable on this machine;" +
+                " it may sleep during the run.\n",
+            );
+          }
         } finally {
           if (!reexeced) {
             persistedPrompt?.cleanup();

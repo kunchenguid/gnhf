@@ -43,6 +43,7 @@ const GNHF_SLEEP_REEXEC_READY_DIR_PREFIX = "gnhf-sleep-";
 const GNHF_SLEEP_REEXEC_READY_FILENAME = "reexec-ready";
 const HELPER_STARTUP_GRACE_MS = 100;
 const HELPER_READY_TIMEOUT_MS = 15_000;
+const HELPER_STDIO_FLUSH_TIMEOUT_MS = 1_000;
 const HELPER_STDERR_TAIL_LIMIT = 2_000;
 const WINDOWS_HELPER_READY_MARKER = "gnhf-sleep-ready";
 
@@ -245,6 +246,29 @@ function buildPowerShellCommand(parentPid: number): string {
   ].join("\n");
 }
 
+function trackStdioClose(child: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    child.once("close", () => resolve());
+  });
+}
+
+async function waitForStdioFlush(
+  closed: Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+  });
+
+  try {
+    await Promise.race([closed, expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function collectStderrTail(child: ChildProcess): () => string {
   let tail = "";
   const stderr = child.stderr;
@@ -310,6 +334,7 @@ async function startHelperProcess(
     stdio: readiness ? ["ignore", "pipe", "pipe"] : "ignore",
   });
   const stderrTail = collectStderrTail(child);
+  const closed = trackStdioClose(child);
 
   const spawned = await waitForSpawn(child);
   if (!spawned) {
@@ -324,16 +349,24 @@ async function startHelperProcess(
     }
 
     const exited = child.exitCode != null || child.signalCode != null;
+    const exitCode = child.exitCode;
+    // The pipes are only guaranteed to have drained once "close" fires, so
+    // the helper's stderr is read after the stream is done, not on "exit".
+    child.stdout?.resume();
+    if (!exited) {
+      await shutdownChildProcess(child, {
+        detached: false,
+        timeoutMs: 1_000,
+      });
+    }
+    await waitForStdioFlush(closed, HELPER_STDIO_FLUSH_TIMEOUT_MS);
+
     const stderr = stderrTail();
     appendDebugLog("sleep:unavailable", {
       command,
       reason: exited ? "early-exit" : "ready-timeout",
-      ...(child.exitCode != null ? { exitCode: child.exitCode } : {}),
+      ...(exitCode != null ? { exitCode } : {}),
       ...(stderr ? { stderr } : {}),
-    });
-    await shutdownChildProcess(child, {
-      detached: false,
-      timeoutMs: 1_000,
     });
     return null;
   }

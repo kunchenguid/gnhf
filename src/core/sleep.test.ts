@@ -17,6 +17,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
+import { initDebugLog } from "./debug-log.js";
 import { startSleepPrevention } from "./sleep.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -32,6 +33,17 @@ function createChildProcess(pid = 1234): ChildProcess {
     signalCode: null,
   });
   return child as unknown as ChildProcess;
+}
+
+function readDebugLogEvents(
+  logPath: string,
+  event: string,
+): Array<Record<string, unknown>> {
+  return readFileSync(logPath, "utf-8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((entry) => entry.event === event);
 }
 
 function createWindowsChildProcess(pid = 1234): ChildProcess {
@@ -586,26 +598,49 @@ describe("startSleepPrevention", () => {
     expect(result.type).toBe("active");
   });
 
-  it("skips sleep prevention when the Windows helper exits before it is ready", async () => {
+  it("records the Windows helper's stderr when it exits before reporting ready", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-sleep-"));
+    const logPath = join(tempDir, "gnhf.log");
+    initDebugLog(logPath);
+
     const child = createWindowsChildProcess();
     mockSpawn.mockImplementation(() => {
       queueMicrotask(() => {
         child.emit("spawn");
-        child.stderr?.push('Cannot convert argument "flags"\n');
-        queueMicrotask(() => {
-          Object.assign(child, { exitCode: 1 });
-          child.emit("exit", 1, null);
+        Object.assign(child, { exitCode: 1 });
+        child.emit("exit", 1, null);
+        // Real pipes deliver their buffered output on a later loop turn,
+        // after "exit" and before "close", so the diagnostic is only
+        // complete once the stream has actually ended.
+        setImmediate(() => {
+          child.stderr?.once("end", () => {
+            child.emit("close", 1, null);
+          });
+          child.stderr?.push('Cannot convert argument "flags"\n');
+          child.stderr?.push(null);
         });
       });
       return child as never;
     });
 
-    const result = await startSleepPrevention(["ship it"], {
-      pid: 42,
-      platform: "win32",
-    });
+    try {
+      const result = await startSleepPrevention(["ship it"], {
+        pid: 42,
+        platform: "win32",
+      });
 
-    expect(result).toEqual({ type: "skipped", reason: "unavailable" });
+      expect(result).toEqual({ type: "skipped", reason: "unavailable" });
+      expect(readDebugLogEvents(logPath, "sleep:unavailable").at(-1)).toEqual(
+        expect.objectContaining({
+          command: "powershell.exe",
+          reason: "early-exit",
+          exitCode: 1,
+          stderr: 'Cannot convert argument "flags"',
+        }),
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("skips sleep prevention when the Windows helper never reports ready", async () => {
