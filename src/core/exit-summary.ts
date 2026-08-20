@@ -4,6 +4,13 @@ import { formatTokens } from "../utils/tokens.js";
 
 type RunStatus = OrchestratorState["status"];
 
+/**
+ * "unstarted": no inhibitor could be launched at all, so nothing about the
+ * machine's sleep behavior is known. "unconfirmed": an inhibitor was launched
+ * but never reported that it holds the machine awake.
+ */
+export type SleepPreventionNotice = "unstarted" | "unconfirmed";
+
 export interface ExitSummaryOptions {
   agentName: string;
   branchName: string;
@@ -24,7 +31,7 @@ export interface ExitSummaryOptions {
   color: boolean;
   terminalColumns?: number;
   hasPendingCommitFailure?: boolean;
-  sleepPreventionUnavailable?: boolean;
+  sleepPreventionNotice?: SleepPreventionNotice;
 }
 
 const MIN_CARD_WIDTH = 62;
@@ -222,11 +229,13 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
           ),
         ]
       : []),
-    ...(options.sleepPreventionUnavailable
+    ...(options.sleepPreventionNotice
       ? [
           commandLine(
             s.yellow("sleep"),
-            "prevention unavailable; this machine may have slept",
+            options.sleepPreventionNotice === "unstarted"
+              ? "prevention could not be started for this run"
+              : "prevention unavailable; this machine may have slept",
           ),
         ]
       : []),

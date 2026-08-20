@@ -1372,10 +1372,13 @@ describe("cli", () => {
 
     expect(startSleepPrevention).toHaveBeenCalledTimes(1);
     // The summary survives the alt screen the renderer owns for the whole
-    // run, so this is the notice the user actually gets to read.
-    expect(stripExitSummaryAnsi(stdoutWriteCalls.flat().join(""))).toContain(
-      "prevention unavailable; this machine may have slept",
-    );
+    // run, so this is the notice the user actually gets to read. An inhibitor
+    // that never started says nothing about whether the machine could sleep,
+    // which matters on the systemd-less Linux hosts that hit this path on
+    // every run.
+    const output = stripExitSummaryAnsi(stdoutWriteCalls.flat().join(""));
+    expect(output).toContain("prevention could not be started for this run");
+    expect(output).not.toContain("may have slept");
     expect(orchestratorCtor).toHaveBeenCalledTimes(1);
   });
 

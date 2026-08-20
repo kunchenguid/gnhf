@@ -100,11 +100,11 @@ describe("renderExitSummary", () => {
     );
   });
 
-  it("warns when sleep prevention was unavailable for the run", () => {
+  it("warns that the machine may have slept when the inhibitor was never confirmed", () => {
     const summary = stripExitSummaryAnsi(
       renderExitSummary({
         ...baseSummary,
-        sleepPreventionUnavailable: true,
+        sleepPreventionNotice: "unconfirmed",
         color: false,
       }),
     );
@@ -112,6 +112,21 @@ describe("renderExitSummary", () => {
     expect(summary).toContain(
       "sleep           prevention unavailable; this machine may have slept",
     );
+  });
+
+  it("does not claim the machine may have slept when no inhibitor started", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        sleepPreventionNotice: "unstarted",
+        color: false,
+      }),
+    );
+
+    expect(summary).toContain(
+      "sleep           prevention could not be started for this run",
+    );
+    expect(summary).not.toContain("may have slept");
   });
 
   it("omits the sleep warning when prevention held for the run", () => {
