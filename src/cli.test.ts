@@ -1322,6 +1322,33 @@ describe("cli", () => {
     });
   });
 
+  it("reports an unconfirmed sleep helper in the permanent exit summary", async () => {
+    const startSleepPrevention = vi.fn(() =>
+      Promise.resolve({
+        type: "active" as const,
+        cleanup: () => Promise.resolve(),
+        confirmed: Promise.resolve(false),
+      }),
+    );
+
+    const { stdoutWriteCalls } = await runCliWithMocks(
+      ["ship it"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: true,
+      },
+      { startSleepPrevention },
+    );
+
+    expect(stripExitSummaryAnsi(stdoutWriteCalls.flat().join(""))).toContain(
+      "prevention unavailable; this machine may have slept",
+    );
+  });
+
   it("reports unavailable sleep prevention in the permanent exit summary", async () => {
     const startSleepPrevention = vi.fn(() =>
       Promise.resolve({
@@ -1352,11 +1379,12 @@ describe("cli", () => {
     expect(orchestratorCtor).toHaveBeenCalledTimes(1);
   });
 
-  it("stays quiet about sleep prevention when the helper is active", async () => {
+  it("stays quiet about sleep prevention when the helper is confirmed", async () => {
     const startSleepPrevention = vi.fn(() =>
       Promise.resolve({
         type: "active" as const,
         cleanup: () => Promise.resolve(),
+        confirmed: Promise.resolve(true),
       }),
     );
 

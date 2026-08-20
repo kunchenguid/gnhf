@@ -183,7 +183,7 @@ describeWindows("Windows sleep prevention helper", () => {
   );
 
   it(
-    "reports sleep prevention as active only once the helper holds the state",
+    "confirms the real helper is holding the execution state",
     { timeout: 90_000 },
     async () => {
       const parent = await spawnParent();
@@ -194,7 +194,14 @@ describeWindows("Windows sleep prevention helper", () => {
 
       expect(result.type).toBe("active");
       if (result.type !== "active") return;
-      await result.cleanup();
+
+      try {
+        // Confirmation is resolved off the startup path, so this awaits the
+        // real PowerShell handshake rather than a value gnhf assumed.
+        await expect(result.confirmed).resolves.toBe(true);
+      } finally {
+        await result.cleanup();
+      }
     },
   );
 });

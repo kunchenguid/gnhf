@@ -12,6 +12,12 @@ export type SleepPreventionResult =
   | {
       type: "active";
       cleanup: () => Promise<void>;
+      /**
+       * Resolves false once the helper is positively known not to be holding
+       * the machine awake. Readiness is settled off the startup path so the
+       * run is not blocked behind it; the answer is only needed at shutdown.
+       */
+      confirmed: Promise<boolean>;
     }
   | {
       type: "reexeced";
@@ -50,6 +56,12 @@ const WINDOWS_HELPER_READY_MARKER = "gnhf-sleep-ready";
 interface HelperReadiness {
   marker: string;
   timeoutMs: number;
+}
+
+interface HelperProcess {
+  child: ChildProcess;
+  confirmed: Promise<boolean>;
+  markStopping: () => void;
 }
 
 function getSignalExitCode(signal: NodeJS.Signals | null): number {
@@ -322,31 +334,26 @@ async function waitForHelperReady(
   });
 }
 
-async function startHelperProcess(
-  command: string,
-  args: string[],
-  spawnFn: typeof spawn,
-  env: NodeJS.ProcessEnv,
-  readiness?: HelperReadiness,
-): Promise<ChildProcess | null> {
-  const child = spawnFn(command, args, {
-    env,
-    stdio: readiness ? ["ignore", "pipe", "pipe"] : "ignore",
-  });
-  const stderrTail = collectStderrTail(child);
-  const closed = trackStdioClose(child);
+async function confirmHelperReadiness(options: {
+  child: ChildProcess;
+  closed: Promise<void>;
+  command: string;
+  isStopping: () => boolean;
+  readiness: HelperReadiness;
+  stderrTail: () => string;
+}): Promise<boolean> {
+  const { child, closed, command, isStopping, readiness, stderrTail } = options;
 
-  const spawned = await waitForSpawn(child);
-  if (!spawned) {
-    appendDebugLog("sleep:unavailable", { command });
-    return null;
-  }
-
-  if (readiness) {
+  try {
     if (await waitForHelperReady(child, readiness)) {
       child.stdout?.resume();
-      return child;
+      appendDebugLog("sleep:ready", { command });
+      return true;
     }
+
+    // A helper torn down by our own cleanup never failed; only a helper that
+    // gave up on its own counts as a failure worth reporting.
+    if (isStopping()) return true;
 
     const exited = child.exitCode != null || child.signalCode != null;
     const exitCode = child.exitCode;
@@ -368,7 +375,53 @@ async function startHelperProcess(
       ...(exitCode != null ? { exitCode } : {}),
       ...(stderr ? { stderr } : {}),
     });
+    return false;
+  } catch (error) {
+    appendDebugLog("sleep:unavailable", {
+      command,
+      reason: "confirm-failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+async function startHelperProcess(
+  command: string,
+  args: string[],
+  spawnFn: typeof spawn,
+  env: NodeJS.ProcessEnv,
+  readiness?: HelperReadiness,
+): Promise<HelperProcess | null> {
+  const child = spawnFn(command, args, {
+    env,
+    stdio: readiness ? ["ignore", "pipe", "pipe"] : "ignore",
+  });
+  const stderrTail = collectStderrTail(child);
+  const closed = trackStdioClose(child);
+
+  const spawned = await waitForSpawn(child);
+  if (!spawned) {
+    appendDebugLog("sleep:unavailable", { command });
     return null;
+  }
+
+  if (readiness) {
+    let stopping = false;
+    return {
+      child,
+      confirmed: confirmHelperReadiness({
+        child,
+        closed,
+        command,
+        isStopping: () => stopping,
+        readiness,
+        stderrTail,
+      }),
+      markStopping: () => {
+        stopping = true;
+      },
+    };
   }
 
   const stable = await waitForHelperStability(child, HELPER_STARTUP_GRACE_MS);
@@ -380,7 +433,11 @@ async function startHelperProcess(
     return null;
   }
 
-  return child;
+  return {
+    child,
+    confirmed: Promise.resolve(true),
+    markStopping: () => {},
+  };
 }
 
 export async function startSleepPrevention(
@@ -534,20 +591,22 @@ export async function startSleepPrevention(
   }
 
   if (platform === "darwin") {
-    const child = await startHelperProcess(
+    const helper = await startHelperProcess(
       "caffeinate",
       ["-i", "-w", String(pid)],
       spawnFn,
       env,
     );
-    if (!child) return { type: "skipped", reason: "unavailable" };
+    if (!helper) return { type: "skipped", reason: "unavailable" };
 
     appendDebugLog("sleep:active", { command: "caffeinate" });
     return {
       type: "active",
+      confirmed: helper.confirmed,
       cleanup: async () => {
+        helper.markStopping();
         appendDebugLog("sleep:cleanup", { command: "caffeinate" });
-        await shutdownChildProcess(child, {
+        await shutdownChildProcess(helper.child, {
           detached: false,
           timeoutMs: 1_000,
         });
@@ -556,7 +615,7 @@ export async function startSleepPrevention(
   }
 
   if (platform === "win32") {
-    const child = await startHelperProcess(
+    const helper = await startHelperProcess(
       "powershell.exe",
       [
         "-NoLogo",
@@ -574,14 +633,16 @@ export async function startSleepPrevention(
         timeoutMs: HELPER_READY_TIMEOUT_MS,
       },
     );
-    if (!child) return { type: "skipped", reason: "unavailable" };
+    if (!helper) return { type: "skipped", reason: "unavailable" };
 
     appendDebugLog("sleep:active", { command: "powershell.exe" });
     return {
       type: "active",
+      confirmed: helper.confirmed,
       cleanup: async () => {
+        helper.markStopping();
         appendDebugLog("sleep:cleanup", { command: "powershell.exe" });
-        await shutdownChildProcess(child, {
+        await shutdownChildProcess(helper.child, {
           detached: false,
           timeoutMs: 1_000,
         });

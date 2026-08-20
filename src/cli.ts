@@ -934,6 +934,7 @@ program
       }
 
       let sleepPreventionCleanup: (() => Promise<void>) | null = null;
+      let sleepPreventionConfirmed: Promise<boolean> | null = null;
       let sleepPreventionUnavailable = false;
       if (config.preventSleep) {
         const persistedPrompt =
@@ -960,6 +961,7 @@ program
           }
           if (sleepPrevention.type === "active") {
             sleepPreventionCleanup = sleepPrevention.cleanup;
+            sleepPreventionConfirmed = sleepPrevention.confirmed;
           }
           if (
             sleepPrevention.type === "skipped" &&
@@ -1139,6 +1141,9 @@ program
         process.off("SIGINT", handleSigInt);
         process.off("SIGTERM", handleSigTerm);
         await sleepPreventionCleanup?.();
+        if (sleepPreventionConfirmed && !(await sleepPreventionConfirmed)) {
+          sleepPreventionUnavailable = true;
+        }
       }
 
       {
