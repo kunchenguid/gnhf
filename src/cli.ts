@@ -96,6 +96,31 @@ function parseNonNegativeInteger(value: string): number {
   return parsed;
 }
 
+function parseDuration(value: string): number {
+  if (value === "0") return 0;
+
+  const match = /^(\d+)(ms|s|m|h|d)$/i.exec(value);
+  if (!match) {
+    throw new InvalidArgumentError(
+      'must be a duration such as "30m", "2h", or "0"',
+    );
+  }
+
+  const amount = Number.parseInt(match[1]!, 10);
+  const multiplier = {
+    ms: 1,
+    s: 1_000,
+    m: 60_000,
+    h: 60 * 60_000,
+    d: 24 * 60 * 60_000,
+  }[match[2]!.toLowerCase()]!;
+  const duration = amount * multiplier;
+  if (!Number.isSafeInteger(duration)) {
+    throw new InvalidArgumentError("must be a safe duration");
+  }
+  return duration;
+}
+
 function parseMeteorFrequency(value: string): number {
   const parsed = parseNonNegativeInteger(value);
   if (parsed > MAX_METEOR_FREQUENCY) {
@@ -571,6 +596,11 @@ program
     parseNonNegativeInteger,
   )
   .option(
+    "--max-rate-limit-wait <duration>",
+    'Abort after this much total usage-limit wait (e.g. "30m", "2h", or "0")',
+    parseDuration,
+  )
+  .option(
     "--stop-when <condition>",
     'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
@@ -608,6 +638,7 @@ program
         agent?: string;
         maxIterations?: number;
         maxTokens?: number;
+        maxRateLimitWait?: number;
         stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
@@ -940,6 +971,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
+        maxRateLimitWaitMs: options.maxRateLimitWait,
         stopWhen: effectiveStopWhen,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
@@ -977,6 +1009,9 @@ program
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
           stopWhen: effectiveStopWhen,
+          ...(options.maxRateLimitWait === undefined
+            ? {}
+            : { maxRateLimitWaitMs: options.maxRateLimitWait }),
           ...(options.push ? { push: true } : {}),
         },
       );

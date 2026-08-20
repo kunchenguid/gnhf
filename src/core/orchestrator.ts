@@ -75,6 +75,7 @@ export interface OrchestratorEvents {
 export interface RunLimits {
   maxIterations?: number;
   maxTokens?: number;
+  maxRateLimitWaitMs?: number;
   stopWhen?: string;
   push?: boolean;
 }
@@ -94,6 +95,7 @@ const RATE_LIMIT_MAX_FALLBACK_WAIT_MS = 30 * 60_000;
 // limit) into a hot retry loop. The retry after a capped wait re-reads the
 // reset time, so long waits self-correct in daily chunks.
 const RATE_LIMIT_MAX_WAIT_MS = 24 * 60 * 60_000;
+const DEFAULT_RATE_LIMIT_MAX_WAIT_MS = RATE_LIMIT_MAX_WAIT_MS;
 
 type RunIterationResult =
   | {
@@ -121,6 +123,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private pendingCommitFailure: string | null = null;
   private activeIterationTokensEstimated = false;
   private consecutiveRateLimitWaits = 0;
+  private totalRateLimitWaitMs = 0;
   private loopDone = false;
   private stoppedEventEmitted = false;
 
@@ -161,7 +164,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.runInfo = runInfo;
     this.prompt = prompt;
     this.cwd = cwd;
-    this.limits = limits;
+    this.limits = {
+      ...limits,
+      maxRateLimitWaitMs:
+        limits.maxRateLimitWaitMs ?? DEFAULT_RATE_LIMIT_MAX_WAIT_MS,
+    };
     this.state.currentIteration = startIteration;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
@@ -271,6 +278,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
       maxTokens: this.limits.maxTokens,
+      maxRateLimitWaitMs: this.limits.maxRateLimitWaitMs,
       push: this.limits.push === true,
       maxConsecutiveFailures: this.config.maxConsecutiveFailures,
       baseCommit: this.runInfo.baseCommit,
@@ -339,6 +347,25 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         if (result.type === "rate-limited") {
           this.consecutiveRateLimitWaits++;
           const waitMs = this.computeRateLimitWaitMs(result.resumeAt);
+          const nextTotalWaitMs = this.totalRateLimitWaitMs + waitMs;
+          const maxRateLimitWaitMs = this.limits.maxRateLimitWaitMs;
+          if (
+            maxRateLimitWaitMs !== undefined &&
+            nextTotalWaitMs > maxRateLimitWaitMs
+          ) {
+            const reason = `maximum rate-limit wait exceeded (${nextTotalWaitMs}ms > ${maxRateLimitWaitMs}ms)`;
+            appendDebugLog("rate-limit:wait:aborted", {
+              iteration: this.state.currentIteration,
+              message: result.message,
+              resumeAt: result.resumeAt?.toISOString() ?? null,
+              waitMs,
+              totalWaitMs: this.totalRateLimitWaitMs,
+              maxRateLimitWaitMs,
+            });
+            this.abort(reason);
+            break;
+          }
+          this.totalRateLimitWaitMs = nextTotalWaitMs;
           // The attempt did no work; retry under the same iteration number so
           // rate-limit waits don't consume --max-iterations or the
           // consecutive-failure budget.

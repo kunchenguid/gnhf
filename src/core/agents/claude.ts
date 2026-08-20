@@ -286,7 +286,6 @@ export class ClaudeAgent implements Agent {
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
       let rateLimitRejected = false;
       let rateLimitResetsAt: number | null = null;
-      let lastResultText: string | null = null;
       let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
       let closedAfterFinalCleanup = false;
       let stderr = "";
@@ -421,9 +420,6 @@ export class ClaudeAgent implements Agent {
         if (event.type === "result") {
           const next = event as ClaudeResultEvent;
           latestResultUsage = next.usage;
-          if (typeof next.result === "string" && next.result.trim()) {
-            lastResultText = next.result.trim();
-          }
           if (isFinalStructuredResult(next)) {
             finalStructuredResultEvent = next;
             if (finalResultCleanupTimer) {

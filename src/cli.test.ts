@@ -1073,7 +1073,15 @@ describe("cli", () => {
 
   it("passes max iteration and token caps to the orchestrator", async () => {
     const { orchestratorCtor } = await runCliWithMocks(
-      ["ship it", "--max-iterations", "12", "--max-tokens", "3456"],
+      [
+        "ship it",
+        "--max-iterations",
+        "12",
+        "--max-tokens",
+        "3456",
+        "--max-rate-limit-wait",
+        "90m",
+      ],
       {
         agent: "claude",
         agentPathOverride: {},
@@ -1088,6 +1096,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: 12,
       maxTokens: 3456,
+      maxRateLimitWaitMs: 90 * 60_000,
     });
   });
 

@@ -152,7 +152,7 @@ After installing from npm, the skill is available under the installed package di
 
 - **Incremental commits** - each successful iteration is a separate unsigned git commit, so you can cherry-pick or revert individual changes without GPG or SSH signing prompts blocking the run; if `git commit` fails, gnhf preserves the uncommitted work and asks the next agent iteration to repair it
 - **Failure handling** - failed iterations are rolled back with `git reset --hard` except commit failures, which preserve uncommitted work for repair; agent-reported failures proceed to the next iteration immediately, retryable hard agent errors use exponential backoff, and permanent agent errors such as Claude low credit balance abort immediately and print the run log path. Complete no-op iterations are reported as failures and count toward the consecutive-failure abort limit. If the run exits with a pending commit failure, the exit summary warns that uncommitted changes were left for repair.
-- **Usage-limit waits** - when Claude rejects requests because a usage window is exhausted (e.g. the subscription 5-hour window), the iteration is rolled back but not counted as a failure; gnhf reads the reset time from the agent's rate-limit event, waits until shortly after the window resets, then retries the same iteration automatically, so overnight runs resume on their own. If no reset time is reported, it retries on a bounded escalating interval instead. Ctrl+C during the wait works as usual.
+- **Usage-limit waits** - when Claude rejects requests because a usage window is exhausted (e.g. the subscription 5-hour window), the iteration is rolled back but not counted as a failure; gnhf reads the reset time from the agent's rate-limit event, waits until shortly after the window resets, then retries the same iteration automatically, so overnight runs resume on their own. If no reset time is reported, it retries on a bounded escalating interval instead. Use `--max-rate-limit-wait` to set a total wait leash for the run; if the next wait would exceed it, gnhf aborts cleanly. Ctrl+C during the wait works as usual.
 - **Runtime caps** - `--max-iterations` stops before the next iteration begins, `--max-tokens` can abort mid-iteration once reported usage reaches the cap, and `--stop-when` ends the loop after an iteration whose agent output reports the natural-language condition is met unless a commit failure needs repair first; resumed runs reuse the saved stop condition unless you pass a new value, or `--stop-when ""` to clear it; pending commit-failure repair work is preserved and other uncommitted work is rolled back, and in the interactive TUI the final state remains visible until you press Ctrl+C to exit
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
@@ -207,6 +207,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--agent <agent>`        | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)              | config file (`claude`) |
 | `--max-iterations <n>`   | Abort after `n` total iterations                                                                   | unlimited              |
 | `--max-tokens <n>`       | Abort after `n` total input+output tokens                                                          | unlimited              |
+| `--max-rate-limit-wait <duration>` | Abort after this much total Claude usage-limit wait (`30m`, `2h`, or `0`)                     | 24h safety cap          |
 | `--stop-when <cond>`     | End when the agent reports this condition, after any commit-failure repair; persists across resume | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                 | config file (`on`)     |
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                              | `false`                |
@@ -283,7 +284,7 @@ preventSleep: true
 ```
 
 CLI flags override config file values. `--prevent-sleep` accepts `on`/`off` as well as `true`/`false`; the config file always uses a boolean.
-The iteration and token caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
+The iteration, token, and rate-limit-wait caps are runtime-only flags and are not persisted in `config.yml`; `--stop-when` is persisted per run for resume, but not in config.
 
 `agentArgsOverride.<name>` lets you pass through extra CLI flags for any native agent in the [Agents](#agents) table.
 ACP targets do not support path or arg overrides in this version.

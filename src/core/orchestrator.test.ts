@@ -1340,6 +1340,58 @@ describe("Orchestrator backoff behavior", () => {
     });
   });
 
+  it("aborts when the total configured rate-limit wait would be exceeded", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount <= 2) {
+          throw new RateLimitAgentError(
+            "claude usage limit reached",
+            "detail",
+            new Date(Date.now() + 60_000),
+          );
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1, maxRateLimitWaitMs: 3 * 60_000 },
+    );
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+
+    // Let the pre-change implementation finish its unbounded second wait so
+    // this test fails on the assertion below instead of hanging.
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    await startPromise;
+
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(orchestrator.getState().status).toBe("aborted");
+    expect(abort).toHaveBeenCalledWith(
+      expect.stringContaining("maximum rate-limit wait"),
+    );
+  });
+
   it("honors a graceful stop requested mid-iteration instead of entering the rate-limit wait", async () => {
     vi.useFakeTimers();
 
