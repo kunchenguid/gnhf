@@ -42,6 +42,14 @@ const GNHF_SLEEP_REEXEC_READY_PATH = "GNHF_SLEEP_REEXEC_READY_PATH";
 const GNHF_SLEEP_REEXEC_READY_DIR_PREFIX = "gnhf-sleep-";
 const GNHF_SLEEP_REEXEC_READY_FILENAME = "reexec-ready";
 const HELPER_STARTUP_GRACE_MS = 100;
+const HELPER_READY_TIMEOUT_MS = 15_000;
+const HELPER_STDERR_TAIL_LIMIT = 2_000;
+const WINDOWS_HELPER_READY_MARKER = "gnhf-sleep-ready";
+
+interface HelperReadiness {
+  marker: string;
+  timeoutMs: number;
+}
 
 function getSignalExitCode(signal: NodeJS.Signals | null): number {
   if (signal === "SIGINT") return 130;
@@ -206,6 +214,15 @@ function forwardTerminationSignalsToChild(
 
 function buildPowerShellCommand(parentPid: number): string {
   return [
+    "$ErrorActionPreference = 'Stop';",
+    // ES_CONTINUOUS (0x80000000) and ES_SYSTEM_REQUIRED (0x00000001), written
+    // as [uint32]-typed decimals on purpose: Windows PowerShell parses the hex
+    // literal 0x80000000 as a signed Int32, so the P/Invoke uint conversion
+    // throws while the helper stays alive, silently leaving the machine free to
+    // sleep. Covered by sleep.windows.test.ts.
+    "[uint32]$ES_CONTINUOUS = 2147483648;",
+    "[uint32]$ES_SYSTEM_REQUIRED = 1;",
+    "try {",
     "Add-Type @'",
     "using System;",
     "using System.Runtime.InteropServices;",
@@ -214,16 +231,71 @@ function buildPowerShellCommand(parentPid: number): string {
     "  public static extern uint SetThreadExecutionState(uint flags);",
     "}",
     "'@;",
-    // ES_CONTINUOUS (0x80000000) and ES_SYSTEM_REQUIRED (0x00000001), written
-    // as [uint32]-typed decimals on purpose: Windows PowerShell parses the hex
-    // literal 0x80000000 as a signed Int32, so the P/Invoke uint conversion
-    // throws while the helper stays alive, silently leaving the machine free to
-    // sleep. Covered by sleep.windows.test.ts.
-    "[uint32]$ES_CONTINUOUS = 2147483648;",
-    "[uint32]$ES_SYSTEM_REQUIRED = 1;",
-    "[SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED) | Out-Null;",
+    "if ([SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED) -eq 0) { throw 'SetThreadExecutionState returned 0'; }",
+    "} catch {",
+    "[Console]::Error.WriteLine($_.Exception.Message);",
+    "exit 1;",
+    "}",
+    // Only reachable once the execution state is actually held, so a helper
+    // that fails for any reason is reported as unavailable rather than
+    // silently counted as active.
+    `[Console]::Out.WriteLine('${WINDOWS_HELPER_READY_MARKER}');`,
+    "[Console]::Out.Flush();",
     `try { Wait-Process -Id ${parentPid} } catch { } finally { [SleepBlock]::SetThreadExecutionState($ES_CONTINUOUS) | Out-Null }`,
   ].join("\n");
+}
+
+function collectStderrTail(child: ChildProcess): () => string {
+  let tail = "";
+  const stderr = child.stderr;
+  if (!stderr) return () => tail;
+
+  stderr.setEncoding("utf-8");
+  stderr.on("data", (chunk: string) => {
+    tail = (tail + chunk).slice(-HELPER_STDERR_TAIL_LIMIT);
+  });
+  return () => tail.trim();
+}
+
+async function waitForHelperReady(
+  child: ChildProcess,
+  readiness: HelperReadiness,
+): Promise<boolean> {
+  const stdout = child.stdout;
+  if (!stdout) return false;
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    let buffered = "";
+    const settle = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stdout.off("data", onData);
+      child.off("exit", onEnd);
+      child.off("error", onEnd);
+      resolve(value);
+    };
+    const onData = (chunk: string) => {
+      buffered = (buffered + chunk).slice(-HELPER_STDERR_TAIL_LIMIT);
+      if (buffered.includes(readiness.marker)) settle(true);
+    };
+    const onEnd = () => {
+      settle(false);
+    };
+
+    const timer = setTimeout(() => {
+      settle(false);
+    }, readiness.timeoutMs);
+    timer.unref?.();
+
+    stdout.setEncoding("utf-8");
+    stdout.on("data", onData);
+    child.once("exit", onEnd);
+    child.once("error", onEnd);
+
+    if (child.exitCode != null || child.signalCode != null) settle(false);
+  });
 }
 
 async function startHelperProcess(
@@ -231,15 +303,38 @@ async function startHelperProcess(
   args: string[],
   spawnFn: typeof spawn,
   env: NodeJS.ProcessEnv,
+  readiness?: HelperReadiness,
 ): Promise<ChildProcess | null> {
   const child = spawnFn(command, args, {
     env,
-    stdio: "ignore",
+    stdio: readiness ? ["ignore", "pipe", "pipe"] : "ignore",
   });
+  const stderrTail = collectStderrTail(child);
 
   const spawned = await waitForSpawn(child);
   if (!spawned) {
     appendDebugLog("sleep:unavailable", { command });
+    return null;
+  }
+
+  if (readiness) {
+    if (await waitForHelperReady(child, readiness)) {
+      child.stdout?.resume();
+      return child;
+    }
+
+    const exited = child.exitCode != null || child.signalCode != null;
+    const stderr = stderrTail();
+    appendDebugLog("sleep:unavailable", {
+      command,
+      reason: exited ? "early-exit" : "ready-timeout",
+      ...(child.exitCode != null ? { exitCode: child.exitCode } : {}),
+      ...(stderr ? { stderr } : {}),
+    });
+    await shutdownChildProcess(child, {
+      detached: false,
+      timeoutMs: 1_000,
+    });
     return null;
   }
 
@@ -441,6 +536,10 @@ export async function startSleepPrevention(
       ],
       spawnFn,
       env,
+      {
+        marker: WINDOWS_HELPER_READY_MARKER,
+        timeoutMs: HELPER_READY_TIMEOUT_MS,
+      },
     );
     if (!child) return { type: "skipped", reason: "unavailable" };
 

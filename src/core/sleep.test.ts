@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({
@@ -31,6 +32,17 @@ function createChildProcess(pid = 1234): ChildProcess {
     signalCode: null,
   });
   return child as unknown as ChildProcess;
+}
+
+function createWindowsChildProcess(pid = 1234): ChildProcess {
+  const child = createChildProcess(pid) as ChildProcess & {
+    stdout: PassThrough;
+    stderr: PassThrough;
+  };
+  return Object.assign(child, {
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+  });
 }
 
 describe("startSleepPrevention", () => {
@@ -540,9 +552,12 @@ describe("startSleepPrevention", () => {
   });
 
   it("starts a PowerShell helper on Windows", async () => {
-    const child = createChildProcess();
+    const child = createWindowsChildProcess();
     mockSpawn.mockImplementation(() => {
-      queueMicrotask(() => child.emit("spawn"));
+      queueMicrotask(() => {
+        child.emit("spawn");
+        child.stdout?.push("gnhf-sleep-ready\n");
+      });
       return child as never;
     });
 
@@ -569,5 +584,50 @@ describe("startSleepPrevention", () => {
     expect(String(mockSpawn.mock.calls[0]?.[1]?.at(-1))).toContain("\n'@;");
     expect(String(mockSpawn.mock.calls[0]?.[1]?.at(-1))).toContain("42");
     expect(result.type).toBe("active");
+  });
+
+  it("skips sleep prevention when the Windows helper exits before it is ready", async () => {
+    const child = createWindowsChildProcess();
+    mockSpawn.mockImplementation(() => {
+      queueMicrotask(() => {
+        child.emit("spawn");
+        child.stderr?.push('Cannot convert argument "flags"\n');
+        queueMicrotask(() => {
+          Object.assign(child, { exitCode: 1 });
+          child.emit("exit", 1, null);
+        });
+      });
+      return child as never;
+    });
+
+    const result = await startSleepPrevention(["ship it"], {
+      pid: 42,
+      platform: "win32",
+    });
+
+    expect(result).toEqual({ type: "skipped", reason: "unavailable" });
+  });
+
+  it("skips sleep prevention when the Windows helper never reports ready", async () => {
+    vi.useFakeTimers();
+    const child = createWindowsChildProcess();
+    mockSpawn.mockImplementation(() => {
+      queueMicrotask(() => child.emit("spawn"));
+      return child as never;
+    });
+
+    const resultPromise = startSleepPrevention(["ship it"], {
+      pid: 42,
+      platform: "win32",
+    });
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(1_100);
+
+    await expect(resultPromise).resolves.toEqual({
+      type: "skipped",
+      reason: "unavailable",
+    });
+    expect(child.kill).toHaveBeenCalled();
   });
 });
