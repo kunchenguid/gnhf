@@ -100,6 +100,28 @@ describe("renderExitSummary", () => {
     );
   });
 
+  it("warns when sleep prevention was unavailable for the run", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({
+        ...baseSummary,
+        sleepPreventionUnavailable: true,
+        color: false,
+      }),
+    );
+
+    expect(summary).toContain(
+      "sleep           prevention unavailable; this machine may have slept",
+    );
+  });
+
+  it("omits the sleep warning when prevention held for the run", () => {
+    const summary = stripExitSummaryAnsi(
+      renderExitSummary({ ...baseSummary, color: false }),
+    );
+
+    expect(summary).not.toContain("prevention unavailable");
+  });
+
   it("adds ANSI color when requested", () => {
     const summary = renderExitSummary({ ...baseSummary, color: true });
 

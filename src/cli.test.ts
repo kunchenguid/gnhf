@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { CONVENTIONAL_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
+import { stripExitSummaryAnsi } from "./core/exit-summary.js";
 import type { RunInfo } from "./core/run.js";
 
 const TEST_AGENT_NAMES = [
@@ -1321,7 +1322,7 @@ describe("cli", () => {
     });
   });
 
-  it("warns when sleep prevention was requested but is unavailable", async () => {
+  it("reports unavailable sleep prevention in the permanent exit summary", async () => {
     const startSleepPrevention = vi.fn(() =>
       Promise.resolve({
         type: "skipped" as const,
@@ -1329,7 +1330,7 @@ describe("cli", () => {
       }),
     );
 
-    const { consoleErrorCalls, orchestratorCtor } = await runCliWithMocks(
+    const { stdoutWriteCalls, orchestratorCtor } = await runCliWithMocks(
       ["ship it"],
       {
         agent: "claude",
@@ -1343,8 +1344,10 @@ describe("cli", () => {
     );
 
     expect(startSleepPrevention).toHaveBeenCalledTimes(1);
-    expect(consoleErrorCalls.flat().join("\n")).toContain(
-      "sleep prevention is unavailable",
+    // The summary survives the alt screen the renderer owns for the whole
+    // run, so this is the notice the user actually gets to read.
+    expect(stripExitSummaryAnsi(stdoutWriteCalls.flat().join(""))).toContain(
+      "prevention unavailable; this machine may have slept",
     );
     expect(orchestratorCtor).toHaveBeenCalledTimes(1);
   });
@@ -1357,7 +1360,7 @@ describe("cli", () => {
       }),
     );
 
-    const { consoleErrorCalls } = await runCliWithMocks(
+    const { consoleErrorCalls, stdoutWriteCalls } = await runCliWithMocks(
       ["ship it"],
       {
         agent: "claude",
@@ -1370,9 +1373,10 @@ describe("cli", () => {
       { startSleepPrevention },
     );
 
-    expect(consoleErrorCalls.flat().join("\n")).not.toContain(
-      "sleep prevention",
+    const output = stripExitSummaryAnsi(
+      [...stdoutWriteCalls.flat(), ...consoleErrorCalls.flat()].join(""),
     );
+    expect(output).not.toContain("prevention unavailable");
   });
 
   it("does not emit run:start from the Linux sleep-prevention wrapper process", async () => {

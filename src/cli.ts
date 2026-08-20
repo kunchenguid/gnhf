@@ -934,6 +934,7 @@ program
       }
 
       let sleepPreventionCleanup: (() => Promise<void>) | null = null;
+      let sleepPreventionUnavailable = false;
       if (config.preventSleep) {
         const persistedPrompt =
           promptFromStdin && prompt !== undefined
@@ -964,10 +965,7 @@ program
             sleepPrevention.type === "skipped" &&
             sleepPrevention.reason === "unavailable"
           ) {
-            console.error(
-              "\n  gnhf: sleep prevention is unavailable on this machine;" +
-                " it may sleep during the run.\n",
-            );
+            sleepPreventionUnavailable = true;
           }
         } finally {
           if (!reexeced) {
@@ -1183,6 +1181,7 @@ program
           color: shouldUseColor(),
           terminalColumns: process.stdout.columns,
           hasPendingCommitFailure: finalState.hasPendingCommitFailure,
+          sleepPreventionUnavailable,
         });
 
         appendDebugLog("run:complete", {

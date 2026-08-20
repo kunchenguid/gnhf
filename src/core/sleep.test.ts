@@ -17,7 +17,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { spawn } from "node:child_process";
-import { initDebugLog } from "./debug-log.js";
+import { initDebugLog, resetDebugLogForTests } from "./debug-log.js";
 import { startSleepPrevention } from "./sleep.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -61,6 +61,7 @@ describe("startSleepPrevention", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    resetDebugLogForTests();
   });
 
   it("starts caffeinate on macOS and returns a cleanup handle", async () => {
@@ -630,7 +631,9 @@ describe("startSleepPrevention", () => {
       });
 
       expect(result).toEqual({ type: "skipped", reason: "unavailable" });
-      expect(readDebugLogEvents(logPath, "sleep:unavailable").at(-1)).toEqual(
+      const logged = readDebugLogEvents(logPath, "sleep:unavailable");
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toEqual(
         expect.objectContaining({
           command: "powershell.exe",
           reason: "early-exit",

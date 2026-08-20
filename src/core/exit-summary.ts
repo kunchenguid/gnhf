@@ -24,6 +24,7 @@ export interface ExitSummaryOptions {
   color: boolean;
   terminalColumns?: number;
   hasPendingCommitFailure?: boolean;
+  sleepPreventionUnavailable?: boolean;
 }
 
 const MIN_CARD_WIDTH = 62;
@@ -218,6 +219,14 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
           commandLine(
             s.yellow("uncommitted"),
             "commit failed; changes were left for repair",
+          ),
+        ]
+      : []),
+    ...(options.sleepPreventionUnavailable
+      ? [
+          commandLine(
+            s.yellow("sleep"),
+            "prevention unavailable; this machine may have slept",
           ),
         ]
       : []),
