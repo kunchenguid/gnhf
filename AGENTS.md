@@ -48,7 +48,10 @@ All git invocations go through `execFileSync` with explicit argv. `git.injection
 
 ### Sleep prevention (`src/core/sleep.ts`)
 
-When `preventSleep` is on and the process wasn't already re-exec'd under a sleep-inhibitor, gnhf re-execs itself under `caffeinate` (macOS), `systemd-inhibit` (Linux), or a PowerShell `SetThreadExecutionState` helper (Windows). The re-exec uses `GNHF_SLEEP_INHIBITED=1` as the loop-breaker and `GNHF_REEXEC_STDIN_PROMPT_FILE` to pass piped stdin across the re-exec (the original process writes a 0600 temp file, the child reads and unlinks it).
+When `preventSleep` is on, Linux re-execs gnhf under `systemd-inhibit` unless the process was already re-exec'd; macOS and Windows instead spawn a helper child (`caffeinate`, or a PowerShell `SetThreadExecutionState` helper) that releases the inhibit when gnhf exits.
+The Linux re-exec uses `GNHF_SLEEP_INHIBITED=1` as the loop-breaker and `GNHF_REEXEC_STDIN_PROMPT_FILE` to pass piped stdin across the re-exec (the original process writes a 0600 temp file, the child reads and unlinks it).
+The Windows helper prints a ready marker only after `SetThreadExecutionState` actually succeeds, and that handshake is settled at shutdown rather than on the startup path.
+An inhibitor that never starts or never confirms must never abort the run; it is reported through the exit summary's `sleep` line, whose user-facing contract lives in the README's [Sleep Prevention](./README.md#sleep-prevention) section.
 
 ### Telemetry (`src/core/telemetry.ts`)
 
