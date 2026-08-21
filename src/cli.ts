@@ -628,6 +628,11 @@ program
     false,
   )
   .option(
+    "--sign-commits",
+    "Allow git commit signing (default: off to avoid pinentry prompts)",
+    false,
+  )
+  .option(
     "--meteor-frequency <n>",
     "Meteor frequency from 0 to 5 (0 disables, 3 is default)",
     parseMeteorFrequency,
@@ -647,6 +652,7 @@ program
         worktree: boolean;
         currentBranch: boolean;
         push: boolean;
+        signCommits: boolean;
         meteorFrequency: number;
         mock: boolean;
       },
@@ -1016,6 +1022,7 @@ program
         worktreePath,
         currentBranch: options.currentBranch,
         push: options.push,
+        signCommits: options.signCommits,
         platform: process.platform,
         nodeVersion: process.version,
         gnhfVersion: packageVersion,
