@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.45](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.44...gnhf-v0.1.45) (2026-08-21)
+
+
+### Features
+
+* **core:** wait for Claude usage-limit reset instead of aborting on rate limits ([#179](https://github.com/kunchenguid/gnhf/issues/179)) ([2e1dd13](https://github.com/kunchenguid/gnhf/commit/2e1dd137e968f3ec81e85ff6b45db8033667e0eb))
+
+
+### Bug Fixes
+
+* **agents:** surface shared CLI stdout errors ([#202](https://github.com/kunchenguid/gnhf/issues/202)) ([5cc31af](https://github.com/kunchenguid/gnhf/commit/5cc31afd89668ec653d60fd11418625db4d7c5b4))
+* **cli:** keep worktrees across Linux sleep re-exec ([1c2344f](https://github.com/kunchenguid/gnhf/commit/1c2344f0cffb4f34fe5d903ed208abd2a64b3f88))
+* **cli:** preserve committed worktrees on forced shutdown ([#189](https://github.com/kunchenguid/gnhf/issues/189)) ([c12cdbf](https://github.com/kunchenguid/gnhf/commit/c12cdbf5834d1b285954f8760ad2400977a57a78))
+* **core:** make Windows sleep prevention hold the machine awake ([#209](https://github.com/kunchenguid/gnhf/issues/209)) ([b50209a](https://github.com/kunchenguid/gnhf/commit/b50209ae25374034c164ebde66859a32398c1048))
+
 ## [0.1.44](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.43...gnhf-v0.1.44) (2026-08-13)
 
 
