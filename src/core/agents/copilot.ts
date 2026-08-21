@@ -34,6 +34,7 @@ type CopilotEvent =
 interface CopilotAgentDeps {
   bin?: string;
   extraArgs?: string[];
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -128,6 +129,7 @@ function buildCopilotArgs(
   prompt: string,
   schema: AgentOutputSchema,
   extraArgs?: string[],
+  model?: string,
 ): string[] {
   const userArgs = extraArgs ?? [];
 
@@ -139,6 +141,7 @@ function buildCopilotArgs(
     "json",
     "--stream",
     "off",
+    ...(model ? ["--model", model] : []),
     "--no-color",
     ...(userSpecifiedPermissionMode(userArgs) ? [] : ["--allow-all"]),
   ];
@@ -195,6 +198,7 @@ export class CopilotAgent implements Agent {
 
   private bin: string;
   private extraArgs?: string[];
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
@@ -202,6 +206,7 @@ export class CopilotAgent implements Agent {
     const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
     this.bin = deps.bin ?? "copilot";
     this.extraArgs = deps.extraArgs;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -219,7 +224,7 @@ export class CopilotAgent implements Agent {
 
       const child = spawn(
         this.bin,
-        buildCopilotArgs(prompt, this.schema, this.extraArgs),
+        buildCopilotArgs(prompt, this.schema, this.extraArgs, this.model),
         {
           cwd,
           shell: shouldUseWindowsShell(this.bin, this.platform),

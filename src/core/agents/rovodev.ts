@@ -34,6 +34,7 @@ interface RovoDevDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  model?: string;
   platform?: NodeJS.Platform;
   spawn?: typeof spawn;
 }
@@ -175,6 +176,7 @@ export class RovoDevAgent implements Agent {
 
   private bin: string;
   private extraArgs?: string[];
+  private model?: string;
   private schemaPath: string;
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
@@ -187,6 +189,7 @@ export class RovoDevAgent implements Agent {
   constructor(schemaPath: string, deps: RovoDevDeps = {}) {
     this.bin = deps.bin ?? "acli";
     this.extraArgs = deps.extraArgs;
+    this.model = deps.model;
     this.schemaPath = schemaPath;
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
@@ -481,7 +484,7 @@ export class RovoDevAgent implements Agent {
     await this.requestJSON(server, "/v3/set_chat_message", {
       method: "POST",
       sessionId,
-      body: { message: prompt },
+      body: { message: prompt, ...(this.model ? { model: this.model } : {}) },
       signal,
     });
   }

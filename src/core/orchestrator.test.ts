@@ -65,6 +65,7 @@ const config: Config = {
   agentPathOverride: {},
   agentArgsOverride: {},
   acpRegistryOverrides: {},
+  agentModel: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };

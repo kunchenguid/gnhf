@@ -19,6 +19,7 @@ export interface CreateAgentOptions {
   includeStopField: boolean;
   commitFields?: AgentOutputCommitField[];
   acpRegistryOverrides?: Record<string, string>;
+  model?: string;
 }
 
 export function createAgent(
@@ -40,6 +41,7 @@ export function createAgent(
       runId: runInfo.runId,
       sessionStateDir: join(runInfo.runDir, "acp-sessions"),
       registryOverrides: options.acpRegistryOverrides,
+      model: options.model,
     });
   }
 
@@ -50,29 +52,34 @@ export function createAgent(
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,
+        model: options.model,
       });
     case "codex":
       return new CodexAgent(runInfo.schemaPath, {
         bin: pathOverride,
         extraArgs: agentArgsOverride,
+        model: options.model,
       });
     case "copilot":
       return new CopilotAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,
+        model: options.model,
       });
     case "opencode":
       return new OpenCodeAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,
+        model: options.model,
       });
     case "pi":
       return new PiAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         schema,
+        model: options.model,
       });
     case "cursor":
       return new CursorAgent({
@@ -84,6 +91,7 @@ export function createAgent(
       return new RovoDevAgent(runInfo.schemaPath, {
         bin: pathOverride,
         extraArgs: agentArgsOverride,
+        model: options.model,
       });
   }
 }
