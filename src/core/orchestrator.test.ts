@@ -533,6 +533,100 @@ describe("Orchestrator stop limits", () => {
     });
   });
 
+  it("counts cache read and cache creation tokens against the token budget", async () => {
+    // #212: an opencode/claude-sonnet run billed ~41M tokens against a 1M cap
+    // because cache_read and cache_write carried the traffic and neither was
+    // added to the budget. Input+output alone were 22% of the cap while the
+    // run had already spent $48.
+    const agent: Agent = {
+      name: "opencode",
+      run: vi.fn(
+        (_prompt, _cwd, options) =>
+          new Promise<AgentResult>((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(new Error("Agent was aborted"));
+            });
+            options?.onUsage?.({
+              inputTokens: 2,
+              outputTokens: 3,
+              cacheReadTokens: 40,
+              cacheCreationTokens: 30,
+            });
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 50 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    // 2 + 3 + 40 + 30 = 75, over the cap of 50. Counting only input+output
+    // would give 5 and the run would never abort.
+    expect(abort).toHaveBeenCalledWith("max tokens reached (75/50)");
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      totalCacheReadTokens: 40,
+      totalCacheCreationTokens: 30,
+    });
+  });
+
+  it("accumulates cache tokens across iterations rather than overwriting them", async () => {
+    let call = 0;
+    const agent: Agent = {
+      name: "opencode",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        call += 1;
+        options?.onUsage?.({
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 10,
+          cacheCreationTokens: 5,
+        });
+        return {
+          output: {
+            success: true,
+            summary: `iteration ${call}`,
+            key_changes_made: [],
+            key_learnings: [],
+          },
+          usage: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 10,
+            cacheCreationTokens: 5,
+          },
+        } satisfies AgentResult;
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(orchestrator.getState()).toMatchObject({
+      totalCacheReadTokens: 20,
+      totalCacheCreationTokens: 10,
+    });
+  });
+
   it("marks in-flight usage as estimated until authoritative usage arrives", async () => {
     const observedEstimatedStates: boolean[] = [];
     const agent: Agent = {

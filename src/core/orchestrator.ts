@@ -47,6 +47,8 @@ export interface OrchestratorState {
   currentIteration: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
   // Sticky flag: true when at least one iteration's usage was reported as
   // estimated (e.g. an ACP adapter that doesn't emit usage_update). Once set,
   // it stays set for the rest of the run so totals are presented honestly.
@@ -136,6 +138,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     currentIteration: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
+    totalCacheReadTokens: 0,
+    totalCacheCreationTokens: 0,
     tokensEstimated: false,
     commitCount: 0,
     iterations: [],
@@ -515,6 +519,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private async runIteration(prompt: string): Promise<RunIterationResult> {
     const baseInputTokens = this.state.totalInputTokens;
     const baseOutputTokens = this.state.totalOutputTokens;
+    const baseCacheReadTokens = this.state.totalCacheReadTokens;
+    const baseCacheCreationTokens = this.state.totalCacheCreationTokens;
 
     this.activeAbortController = new AbortController();
     this.pendingAbortReason = null;
@@ -523,6 +529,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
+      this.state.totalCacheReadTokens =
+        baseCacheReadTokens + usage.cacheReadTokens;
+      this.state.totalCacheCreationTokens =
+        baseCacheCreationTokens + usage.cacheCreationTokens;
       this.activeIterationTokensEstimated = usage.estimated === true;
       this.emit("state", this.getState());
 
@@ -874,8 +884,14 @@ ${this.pendingCommitFailure}
   private getTokenAbortReason(): string | null {
     if (this.limits.maxTokens === undefined) return null;
 
+    // Cache reads and cache writes are billed tokens, so they belong in the
+    // budget. Counting only input+output let a run bill ~41M tokens against a
+    // 1M cap because the cache fields carried the bulk of the traffic (#212).
     const totalTokens =
-      this.state.totalInputTokens + this.state.totalOutputTokens;
+      this.state.totalInputTokens +
+      this.state.totalOutputTokens +
+      this.state.totalCacheReadTokens +
+      this.state.totalCacheCreationTokens;
     if (totalTokens < this.limits.maxTokens) return null;
 
     return `max tokens reached (${totalTokens}/${this.limits.maxTokens})`;
