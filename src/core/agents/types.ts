@@ -146,6 +146,8 @@ export function buildAgentOutputSchema(opts: {
 }
 
 export interface TokenUsage {
+  // Adapters must keep these buckets mutually exclusive so totals can sum
+  // input, output, cache-read, and cache-write usage without double-counting.
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
