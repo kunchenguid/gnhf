@@ -9,7 +9,7 @@ import {
 } from "./utils/stars.js";
 import { getMoonPhase } from "./utils/moon.js";
 import { formatElapsed } from "./utils/time.js";
-import { formatTokens } from "./utils/tokens.js";
+import { formatTokens, getTotalTokenCount } from "./utils/tokens.js";
 import { wordWrap } from "./utils/wordwrap.js";
 import type { Orchestrator, OrchestratorState } from "./core/orchestrator.js";
 import {
@@ -61,7 +61,7 @@ function spacedLabel(text: string): string {
 
 function formatTokenCount(
   tokens: number,
-  direction: "in" | "out",
+  direction: "total" | "in" | "out",
   estimated = false,
 ): string {
   const prefix = estimated ? "~" : "";
@@ -74,12 +74,19 @@ function formatCommitCount(commitCount: number): string {
 }
 
 function buildTerminalTitle(state: OrchestratorState, now: number): string {
+  const totalTokens = getTotalTokenCount(
+    state.totalInputTokens,
+    state.totalOutputTokens,
+    state.totalCacheReadTokens,
+    state.totalCacheCreationTokens,
+  );
   const lead =
     state.status === "running" || state.status === "waiting"
       ? getMoonPhase("active", now, MOON_PHASE_PERIOD)
       : state.status;
   return (
     `gnhf ${lead}` +
+    ` · ${formatTokenCount(totalTokens, "total", state.tokensEstimated)}` +
     ` · ${formatTokenCount(state.totalInputTokens, "in", state.tokensEstimated)}` +
     ` · ${formatTokenCount(state.totalOutputTokens, "out", state.tokensEstimated)}` +
     ` · ${formatCommitCount(state.commitCount)}`
@@ -147,9 +154,24 @@ export function renderStatsCells(
   outputTokens: number,
   commitCount: number,
   tokensEstimated = false,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0,
 ): Cell[] {
+  const totalTokens = getTotalTokenCount(
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+  );
   return [
     ...textToCells(elapsed, "bold"),
+    ...textToCells("  ", "normal"),
+    ...textToCells("\u00b7", "dim"),
+    ...textToCells("  ", "normal"),
+    ...textToCells(
+      formatTokenCount(totalTokens, "total", tokensEstimated),
+      "normal",
+    ),
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
     ...textToCells("  ", "normal"),
@@ -241,6 +263,8 @@ export function renderStats(
   outputTokens: number,
   commitCount: number,
   tokensEstimated = false,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0,
 ): string {
   return rowToString(
     renderStatsCells(
@@ -249,6 +273,8 @@ export function renderStats(
       outputTokens,
       commitCount,
       tokensEstimated,
+      cacheReadTokens,
+      cacheCreationTokens,
     ),
   );
 }
@@ -513,6 +539,8 @@ export function buildContentCells(
         state.totalOutputTokens,
         state.commitCount,
         state.tokensEstimated,
+        state.totalCacheReadTokens,
+        state.totalCacheCreationTokens,
       ),
     ] as Cell[][],
     agent: [

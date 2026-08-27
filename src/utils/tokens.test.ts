@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatTokens } from "./tokens.js";
+import { formatTokens, getTotalTokenCount } from "./tokens.js";
 
 describe("formatTokens", () => {
   it("returns raw number for values under 1000", () => {
@@ -30,5 +30,15 @@ describe("formatTokens", () => {
   it("formats trillions as T (one decimal)", () => {
     expect(formatTokens(1_000_000_000_000)).toBe("1.0T");
     expect(formatTokens(3_700_000_000_000)).toBe("3.7T");
+  });
+});
+
+describe("getTotalTokenCount", () => {
+  it("includes cache reads and cache writes", () => {
+    expect(getTotalTokenCount(2, 3, 40, 30)).toBe(75);
+  });
+
+  it("defaults cache token counts to zero", () => {
+    expect(getTotalTokenCount(50, 100)).toBe(150);
   });
 });

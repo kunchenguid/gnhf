@@ -28,6 +28,7 @@ import {
 } from "./interrupt-state.js";
 import { buildCommitMessage } from "./commit-message.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
+import { getTotalTokenCount } from "../utils/tokens.js";
 
 export interface IterationRecord {
   number: number;
@@ -884,14 +885,12 @@ ${this.pendingCommitFailure}
   private getTokenAbortReason(): string | null {
     if (this.limits.maxTokens === undefined) return null;
 
-    // Cache reads and cache writes are billed tokens, so they belong in the
-    // budget. Counting only input+output let a run bill ~41M tokens against a
-    // 1M cap because the cache fields carried the bulk of the traffic (#212).
-    const totalTokens =
-      this.state.totalInputTokens +
-      this.state.totalOutputTokens +
-      this.state.totalCacheReadTokens +
-      this.state.totalCacheCreationTokens;
+    const totalTokens = getTotalTokenCount(
+      this.state.totalInputTokens,
+      this.state.totalOutputTokens,
+      this.state.totalCacheReadTokens,
+      this.state.totalCacheCreationTokens,
+    );
     if (totalTokens < this.limits.maxTokens) return null;
 
     return `max tokens reached (${totalTokens}/${this.limits.maxTokens})`;

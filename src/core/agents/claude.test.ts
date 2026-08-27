@@ -528,7 +528,7 @@ describe("ClaudeAgent", () => {
       key_learnings: ["b"],
     });
     expect(result.usage).toEqual({
-      inputTokens: 150,
+      inputTokens: 100,
       outputTokens: 200,
       cacheReadTokens: 50,
       cacheCreationTokens: 10,
@@ -555,7 +555,7 @@ describe("ClaudeAgent", () => {
     });
 
     expect(onUsage).toHaveBeenCalledWith({
-      inputTokens: 70,
+      inputTokens: 50,
       outputTokens: 100,
       cacheReadTokens: 20,
       cacheCreationTokens: 5,
@@ -649,25 +649,25 @@ describe("ClaudeAgent", () => {
     await promise;
 
     expect(onUsage).toHaveBeenNthCalledWith(1, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(2, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(3, {
-      inputTokens: 37,
+      inputTokens: 7,
       outputTokens: 11,
       cacheReadTokens: 30,
       cacheCreationTokens: 4,
     });
     expect(onUsage).toHaveBeenNthCalledWith(4, {
-      inputTokens: 37,
+      inputTokens: 7,
       outputTokens: 20,
       cacheReadTokens: 30,
       cacheCreationTokens: 4,
@@ -738,25 +738,25 @@ describe("ClaudeAgent", () => {
     await promise;
 
     expect(onUsage).toHaveBeenNthCalledWith(1, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(2, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(3, {
-      inputTokens: 37,
+      inputTokens: 7,
       outputTokens: 11,
       cacheReadTokens: 30,
       cacheCreationTokens: 4,
     });
     expect(onUsage).toHaveBeenNthCalledWith(4, {
-      inputTokens: 37,
+      inputTokens: 7,
       outputTokens: 20,
       cacheReadTokens: 30,
       cacheCreationTokens: 4,
@@ -817,19 +817,19 @@ describe("ClaudeAgent", () => {
     await promise;
 
     expect(onUsage).toHaveBeenNthCalledWith(1, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(2, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 10,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(3, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 10,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
@@ -900,25 +900,25 @@ describe("ClaudeAgent", () => {
     await promise;
 
     expect(onUsage).toHaveBeenNthCalledWith(1, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(2, {
-      inputTokens: 16,
+      inputTokens: 6,
       outputTokens: 8,
       cacheReadTokens: 10,
       cacheCreationTokens: 3,
     });
     expect(onUsage).toHaveBeenNthCalledWith(3, {
-      inputTokens: 48,
+      inputTokens: 18,
       outputTokens: 24,
       cacheReadTokens: 30,
       cacheCreationTokens: 9,
     });
     expect(onUsage).toHaveBeenNthCalledWith(4, {
-      inputTokens: 48,
+      inputTokens: 18,
       outputTokens: 24,
       cacheReadTokens: 30,
       cacheCreationTokens: 9,
@@ -1468,7 +1468,7 @@ describe("ClaudeAgent", () => {
       key_learnings: [],
     });
     expect(result.usage).toEqual({
-      inputTokens: 37,
+      inputTokens: 13,
       outputTokens: 47,
       cacheReadTokens: 24,
       cacheCreationTokens: 6,
@@ -1522,7 +1522,7 @@ describe("ClaudeAgent", () => {
       key_learnings: [],
     });
     expect(result.usage).toEqual({
-      inputTokens: 32,
+      inputTokens: 11,
       outputTokens: 42,
       cacheReadTokens: 21,
       cacheCreationTokens: 5,

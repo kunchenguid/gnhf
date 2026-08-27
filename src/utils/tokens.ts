@@ -13,3 +13,14 @@ export function formatTokens(count: number): string {
   }
   return String(count);
 }
+
+export function getTotalTokenCount(
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0,
+): number {
+  return (
+    inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens
+  );
+}
