@@ -64,7 +64,6 @@ import {
 import { MockOrchestrator } from "./mock-orchestrator.js";
 import { Renderer } from "./renderer.js";
 import { slugifyPrompt } from "./utils/slugify.js";
-import { getTotalTokenCount } from "./utils/tokens.js";
 
 const packageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
@@ -1181,8 +1180,6 @@ program
           failCount: finalState.failCount,
           totalInputTokens: finalState.totalInputTokens,
           totalOutputTokens: finalState.totalOutputTokens,
-          totalCacheReadTokens: finalState.totalCacheReadTokens,
-          totalCacheCreationTokens: finalState.totalCacheCreationTokens,
           tokensEstimated: finalState.tokensEstimated,
           commitCount: finalState.commitCount,
           notesPath: runInfo.notesPath,
@@ -1203,14 +1200,6 @@ program
           failCount: finalState.failCount,
           totalInputTokens: finalState.totalInputTokens,
           totalOutputTokens: finalState.totalOutputTokens,
-          totalCacheReadTokens: finalState.totalCacheReadTokens,
-          totalCacheCreationTokens: finalState.totalCacheCreationTokens,
-          totalTokens: getTotalTokenCount(
-            finalState.totalInputTokens,
-            finalState.totalOutputTokens,
-            finalState.totalCacheReadTokens,
-            finalState.totalCacheCreationTokens,
-          ),
           commitCount: finalState.commitCount,
           worktreePath,
         });
@@ -1226,14 +1215,6 @@ program
           commit_count: finalState.commitCount,
           total_input_tokens: finalState.totalInputTokens,
           total_output_tokens: finalState.totalOutputTokens,
-          total_cache_read_tokens: finalState.totalCacheReadTokens,
-          total_cache_creation_tokens: finalState.totalCacheCreationTokens,
-          total_tokens: getTotalTokenCount(
-            finalState.totalInputTokens,
-            finalState.totalOutputTokens,
-            finalState.totalCacheReadTokens,
-            finalState.totalCacheCreationTokens,
-          ),
           duration_ms: Date.now() - runStartedAt,
           prevent_sleep: config.preventSleep === true,
           push_each_iteration: options.push === true,

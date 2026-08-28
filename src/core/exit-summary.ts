@@ -1,6 +1,6 @@
 import type { OrchestratorState } from "./orchestrator.js";
 import type { BranchDiffStats } from "./git.js";
-import { formatTokens, getTotalTokenCount } from "../utils/tokens.js";
+import { formatTokens } from "../utils/tokens.js";
 
 type RunStatus = OrchestratorState["status"];
 
@@ -22,8 +22,6 @@ export interface ExitSummaryOptions {
   failCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
-  totalCacheReadTokens?: number;
-  totalCacheCreationTokens?: number;
   tokensEstimated: boolean;
   commitCount: number;
   notesPath: string;
@@ -119,7 +117,7 @@ function formatNumber(value: number): string {
 
 function formatTokenCount(
   value: number,
-  suffix: "total" | "in" | "out" | "read" | "write",
+  suffix: "in" | "out",
   estimated: boolean,
 ) {
   return `${estimated ? "~" : ""}${formatTokens(value)} ${suffix}`;
@@ -184,16 +182,6 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
   const cardContents = [title, `  ${subtitle}`];
   const cardWidth = resolveCardWidth(cardContents, options.terminalColumns);
   const failed = `${options.failCount} failed`;
-  const totalTokens = formatTokenCount(
-    getTotalTokenCount(
-      options.totalInputTokens,
-      options.totalOutputTokens,
-      options.totalCacheReadTokens,
-      options.totalCacheCreationTokens,
-    ),
-    "total",
-    options.tokensEstimated,
-  );
   const inputTokens = formatTokenCount(
     options.totalInputTokens,
     "in",
@@ -204,8 +192,6 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
     "out",
     options.tokensEstimated,
   );
-  const cacheReadTokens = options.totalCacheReadTokens ?? 0;
-  const cacheCreationTokens = options.totalCacheCreationTokens ?? 0;
   const commits = plural(options.commitCount, "commit");
   const linesAdded = `+${formatNumber(options.diffStats.linesAdded)}`;
   const linesDeleted = `-${formatNumber(options.diffStats.linesDeleted)}`;
@@ -221,31 +207,7 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
       s.green(`${options.successCount} good`),
       stopped ? s.red(failed) : s.yellow(failed),
     ]),
-    metricLine(s.dim("tokens"), [
-      s.bold(totalTokens),
-      s.bold(inputTokens),
-      s.bold(outputTokens),
-    ]),
-    ...(cacheReadTokens > 0 || cacheCreationTokens > 0
-      ? [
-          metricLine(s.dim("cache"), [
-            s.bold(
-              formatTokenCount(
-                cacheReadTokens,
-                "read",
-                options.tokensEstimated,
-              ),
-            ),
-            s.bold(
-              formatTokenCount(
-                cacheCreationTokens,
-                "write",
-                options.tokensEstimated,
-              ),
-            ),
-          ]),
-        ]
-      : []),
+    metricLine(s.dim("tokens"), [s.bold(inputTokens), s.bold(outputTokens)]),
     metricLine(s.dim("branch diff"), [
       s.bold(commits),
       s.green(linesAdded),

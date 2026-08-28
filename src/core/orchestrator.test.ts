@@ -536,20 +536,15 @@ describe("Orchestrator stop limits", () => {
   it("includes cache usage in the configured token cap", async () => {
     const agent: Agent = {
       name: "opencode",
-      run: vi.fn(
-        (_prompt, _cwd, options) =>
-          new Promise<AgentResult>((_resolve, reject) => {
-            options?.signal?.addEventListener("abort", () => {
-              reject(new Error("Agent was aborted"));
-            });
-            options?.onUsage?.({
-              inputTokens: 1,
-              outputTokens: 1,
-              cacheReadTokens: 7,
-              cacheCreationTokens: 3,
-            });
-          }),
-      ),
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onUsage?.({
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 7,
+          cacheCreationTokens: 3,
+        });
+        return createSuccessResult();
+      }),
     };
     const orchestrator = new Orchestrator(
       config,
