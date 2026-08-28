@@ -93,7 +93,6 @@ describe("renderStats", () => {
     const plain = stripAnsi(renderStats("01:23:45", 12400, 8200, 12, false));
     expect(plain).not.toContain("~");
   });
-
 });
 
 describe("renderAgentMessage", () => {
