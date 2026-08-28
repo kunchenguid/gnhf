@@ -230,7 +230,11 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
       ? [
           metricLine(s.dim("cache"), [
             s.bold(
-              formatTokenCount(cacheReadTokens, "read", options.tokensEstimated),
+              formatTokenCount(
+                cacheReadTokens,
+                "read",
+                options.tokensEstimated,
+              ),
             ),
             s.bold(
               formatTokenCount(

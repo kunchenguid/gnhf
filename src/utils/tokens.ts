@@ -20,7 +20,5 @@ export function getTotalTokenCount(
   cacheReadTokens = 0,
   cacheCreationTokens = 0,
 ): number {
-  return (
-    inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens
-  );
+  return inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
 }
