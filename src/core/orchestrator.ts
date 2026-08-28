@@ -528,7 +528,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.activeIterationTokensEstimated = false;
 
     const onUsage = (usage: TokenUsage) => {
-      this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
+      this.state.totalInputTokens =
+        baseInputTokens +
+        usage.inputTokens +
+        usage.cacheReadTokens +
+        usage.cacheCreationTokens;
       this.state.totalOutputTokens = baseOutputTokens + usage.outputTokens;
       this.state.totalCacheReadTokens =
         baseCacheReadTokens + usage.cacheReadTokens;

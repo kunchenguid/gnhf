@@ -596,7 +596,7 @@ program
   )
   .option(
     "--max-tokens <n>",
-    "Abort after N total input+output+cache tokens",
+    "Abort after N total reported input, output, and cache tokens",
     parseNonNegativeInteger,
   )
   .option(
