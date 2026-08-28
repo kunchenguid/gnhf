@@ -1,6 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,10 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
 const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
-const mockCursorAgentPath = join(
-  fixtureBinDir,
-  process.platform === "win32" ? "mock-cursor-agent.cmd" : "mock-cursor-agent",
-);
+const mockCursorAgentPath = join(fixtureBinDir, "mock-cursor-agent.mjs");
 
 const emptyGitConfigDir = mkdtempSync(
   join(tmpdir(), "gnhf-e2e-cursor-gitconfig-"),
@@ -116,7 +112,7 @@ function createCursorEnv(
   tempDirs: string[],
   options: {
     mockLogPath: string;
-    extraConfigYaml?: string;
+    extraAgentArgs?: string[];
   },
 ): NodeJS.ProcessEnv {
   const home = mkdtempSync(join(tmpdir(), "gnhf-e2e-cursor-home-"));
@@ -128,8 +124,13 @@ function createCursorEnv(
       "agent: cursor",
       "preventSleep: false",
       "agentPathOverride:",
-      `  cursor: ${mockCursorAgentPath}`,
-      options.extraConfigYaml ?? "",
+      `  cursor: ${JSON.stringify(process.execPath)}`,
+      "agentArgsOverride:",
+      "  cursor:",
+      `    - ${JSON.stringify(mockCursorAgentPath)}`,
+      ...(options.extraAgentArgs ?? []).map(
+        (arg) => `    - ${JSON.stringify(arg)}`,
+      ),
       "",
     ].join("\n"),
     "utf-8",
@@ -164,7 +165,6 @@ describe("gnhf e2e cursor agent", () => {
   });
 
   it("runs --agent cursor through stream-json with force/trust/approve-mcps defaults", async () => {
-    chmodSync(mockCursorAgentPath, 0o755);
     const cwd = createRepo();
     tempDirs.push(cwd);
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-cursor-logs-"));
@@ -222,7 +222,6 @@ describe("gnhf e2e cursor agent", () => {
   }, 30_000);
 
   it("keeps --force when agentArgsOverride.cursor sets --sandbox=enabled", async () => {
-    chmodSync(mockCursorAgentPath, 0o755);
     const cwd = createRepo();
     tempDirs.push(cwd);
     const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-cursor-logs-"));
@@ -244,11 +243,7 @@ describe("gnhf e2e cursor agent", () => {
       {
         env: createCursorEnv(tempDirs, {
           mockLogPath,
-          extraConfigYaml: [
-            "agentArgsOverride:",
-            "  cursor:",
-            "    - --sandbox=enabled",
-          ].join("\n"),
+          extraAgentArgs: ["--sandbox=enabled"],
         }),
       },
     );
