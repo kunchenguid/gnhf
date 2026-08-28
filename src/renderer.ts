@@ -163,32 +163,29 @@ export function renderStatsCells(
     cacheReadTokens,
     cacheCreationTokens,
   );
+  const separator = [
+    ...textToCells(" ", "normal"),
+    ...textToCells("\u00b7", "dim"),
+    ...textToCells(" ", "normal"),
+  ];
   return [
     ...textToCells(elapsed, "bold"),
-    ...textToCells("  ", "normal"),
-    ...textToCells("\u00b7", "dim"),
-    ...textToCells("  ", "normal"),
+    ...separator,
     ...textToCells(
       formatTokenCount(totalTokens, "total", tokensEstimated),
       "normal",
     ),
-    ...textToCells("  ", "normal"),
-    ...textToCells("\u00b7", "dim"),
-    ...textToCells("  ", "normal"),
+    ...separator,
     ...textToCells(
       formatTokenCount(inputTokens, "in", tokensEstimated),
       "normal",
     ),
-    ...textToCells("  ", "normal"),
-    ...textToCells("\u00b7", "dim"),
-    ...textToCells("  ", "normal"),
+    ...separator,
     ...textToCells(
       formatTokenCount(outputTokens, "out", tokensEstimated),
       "normal",
     ),
-    ...textToCells("  ", "normal"),
-    ...textToCells("\u00b7", "dim"),
-    ...textToCells("  ", "normal"),
+    ...separator,
     ...textToCells(formatCommitCount(commitCount), "normal"),
   ];
 }

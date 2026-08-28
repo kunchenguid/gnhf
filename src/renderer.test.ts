@@ -102,6 +102,15 @@ describe("renderStats", () => {
     expect(plain).toContain("2 in");
     expect(plain).toContain("3 out");
   });
+
+  it("keeps high-token stats rows within the content width", () => {
+    const plain = stripAnsi(renderStats("08:07:17", 87_300_000, 860_000, 11));
+
+    expect(plain).toBe(
+      "08:07:17 · 88.2M total · 87.3M in · 860K out · 11 commits",
+    );
+    expect(plain.length).toBeLessThanOrEqual(63);
+  });
 });
 
 describe("renderAgentMessage", () => {
