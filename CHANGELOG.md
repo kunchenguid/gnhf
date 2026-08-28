@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.46](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.45...gnhf-v0.1.46) (2026-08-28)
+
+
+### Bug Fixes
+
+* **core:** count cache tokens toward the --max-tokens budget ([#213](https://github.com/kunchenguid/gnhf/issues/213)) ([73b9ed7](https://github.com/kunchenguid/gnhf/commit/73b9ed7039a0ee214c4d3549af6ae8b249d07e4b))
+
 ## [0.1.45](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.44...gnhf-v0.1.45) (2026-08-21)
 
 
