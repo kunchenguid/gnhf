@@ -220,4 +220,65 @@ describe("CodexAgent", () => {
       "codex exited with code 1: login required",
     );
   });
+
+  it("reports cached input tokens without double-counting them", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const onUsage = vi.fn();
+    const agent = new CodexAgent("/tmp/schema.json");
+
+    const promise = agent.run("test prompt", "/work/dir", { onUsage });
+    proc.stdout.emit(
+      "data",
+      Buffer.from(
+        `${JSON.stringify({
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1500,
+            cached_input_tokens: 1024,
+            output_tokens: 500,
+          },
+        })}\n`,
+      ),
+    );
+    proc.stdout.emit(
+      "data",
+      Buffer.from(
+        `${JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: JSON.stringify({
+              success: true,
+              summary: "ok",
+              key_changes_made: [],
+              key_learnings: [],
+            }),
+          },
+        })}\n`,
+      ),
+    );
+    proc.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({
+      output: {
+        success: true,
+        summary: "ok",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+      usage: {
+        inputTokens: 476,
+        outputTokens: 500,
+        cacheReadTokens: 1024,
+        cacheCreationTokens: 0,
+      },
+    });
+    expect(onUsage).toHaveBeenCalledWith({
+      inputTokens: 476,
+      outputTokens: 500,
+      cacheReadTokens: 1024,
+      cacheCreationTokens: 0,
+    });
+  });
 });

@@ -117,6 +117,21 @@ function buildCodexArgs(
   ];
 }
 
+function usageFromTurn(
+  usage: CodexTurnCompleted["usage"],
+): Pick<
+  TokenUsage,
+  "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens"
+> {
+  const cacheReadTokens = usage.cached_input_tokens ?? 0;
+  return {
+    inputTokens: Math.max((usage.input_tokens ?? 0) - cacheReadTokens, 0),
+    outputTokens: usage.output_tokens ?? 0,
+    cacheReadTokens,
+    cacheCreationTokens: 0,
+  };
+}
+
 export class CodexAgent implements Agent {
   name = "codex";
 
@@ -181,10 +196,11 @@ export class CodexAgent implements Agent {
         }
 
         if (event.type === "turn.completed" && "usage" in event) {
-          const u = (event as CodexTurnCompleted).usage;
-          cumulative.inputTokens += u.input_tokens ?? 0;
-          cumulative.outputTokens += u.output_tokens ?? 0;
-          cumulative.cacheReadTokens += u.cached_input_tokens ?? 0;
+          const usage = usageFromTurn((event as CodexTurnCompleted).usage);
+          cumulative.inputTokens += usage.inputTokens;
+          cumulative.outputTokens += usage.outputTokens;
+          cumulative.cacheReadTokens += usage.cacheReadTokens;
+          cumulative.cacheCreationTokens += usage.cacheCreationTokens;
           onUsage?.({ ...cumulative });
         }
       });
