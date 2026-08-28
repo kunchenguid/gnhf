@@ -439,6 +439,7 @@ describe("gnhf e2e", () => {
           env: {
             ...createTestEnv(mockLogPath, tempDirs),
             GNHF_MOCK_CLAUDE_MODE: mode,
+            NODE_NO_WARNINGS: "1",
           },
         },
       );
