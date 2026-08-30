@@ -533,6 +533,48 @@ describe("Orchestrator stop limits", () => {
     });
   });
 
+  it("does not commit when an agent resolves after triggering the token cap", async () => {
+    const agent: Agent = {
+      name: "opencode",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onUsage?.({
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 1,
+          cacheCreationTokens: 0,
+        });
+        return createSuccessResult("should not commit");
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxTokens: 15 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(mockAppendNotes).not.toHaveBeenCalled();
+    expect(mockCommitAll).not.toHaveBeenCalled();
+    expect(mockResetHard).toHaveBeenCalledWith("/repo");
+    expect(abort).toHaveBeenCalledWith("max tokens reached (16/15)");
+    expect(orchestrator.getState()).toMatchObject({
+      status: "aborted",
+      totalInputTokens: 10,
+      totalOutputTokens: 5,
+      totalCacheReadTokens: 1,
+      totalCacheCreationTokens: 0,
+    });
+  });
+
   it("counts cache read and cache creation tokens against the token budget", async () => {
     // #212: an opencode/claude-sonnet run billed ~41M tokens against a 1M cap
     // because cache_read and cache_write carried the traffic and neither was

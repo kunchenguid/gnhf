@@ -576,6 +576,18 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       this.activeIterationTokensEstimated = false;
       if (result.usage.estimated) this.state.tokensEstimated = true;
 
+      if (this.pendingAbortReason) {
+        appendDebugLog("agent:run:aborted", {
+          iteration: this.state.currentIteration,
+          elapsedMs: Date.now() - agentStartedAt,
+          reason: this.pendingAbortReason,
+        });
+        if (this.pendingCommitFailure === null) {
+          resetHard(this.cwd);
+        }
+        return { type: "aborted", reason: this.pendingAbortReason };
+      }
+
       appendDebugLog("agent:run:end", {
         iteration: this.state.currentIteration,
         elapsedMs: Date.now() - agentStartedAt,
