@@ -534,18 +534,17 @@ describe("Orchestrator stop limits", () => {
   });
 
   it("does not commit when an agent resolves after triggering the token cap", async () => {
-    let abortSignalObserved = false;
     const agent: Agent = {
       name: "opencode",
-      run: vi.fn(async (_prompt, _cwd, options) => {
+      run: vi.fn((_prompt, _cwd, options) => {
         options?.onUsage?.({
           inputTokens: 10,
           outputTokens: 5,
           cacheReadTokens: 1,
           cacheCreationTokens: 0,
         });
-        abortSignalObserved = options?.signal?.aborted === true;
-        return createSuccessResult("should not commit");
+        expect(options?.signal?.aborted).toBe(true);
+        return Promise.resolve(createSuccessResult("should not commit"));
       }),
     };
     const orchestrator = new Orchestrator(
@@ -564,7 +563,6 @@ describe("Orchestrator stop limits", () => {
     await orchestrator.start();
 
     expect(agent.run).toHaveBeenCalledTimes(1);
-    expect(abortSignalObserved).toBe(true);
     expect(mockAppendNotes).not.toHaveBeenCalled();
     expect(mockCommitAll).not.toHaveBeenCalled();
     expect(mockResetHard).toHaveBeenCalledWith("/repo");
