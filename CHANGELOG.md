@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.47](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.46...gnhf-v0.1.47) (2026-08-30)
+
+
+### Bug Fixes
+
+* **core:** honor pending token abort before success ([#217](https://github.com/kunchenguid/gnhf/issues/217)) ([bf2edd9](https://github.com/kunchenguid/gnhf/commit/bf2edd9aaf89d5cf8085f176edeb9032d0ad3dd6))
+
 ## [0.1.46](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.45...gnhf-v0.1.46) (2026-08-28)
 
 
