@@ -54,6 +54,10 @@ interface ClaudeRateLimitEvent {
   rate_limit_info?: {
     status?: string;
     resetsAt?: number;
+    // True once the included window is spent and requests are being billed to
+    // extra usage. The request is still served, so `status` stays "allowed"
+    // and the run only learns the window ended from this flag.
+    isUsingOverage?: boolean;
   };
 }
 
@@ -285,6 +289,8 @@ export class ClaudeAgent implements Agent {
       let latestResultUsage: ClaudeResultEvent["usage"] | null = null;
       let rateLimitRejected = false;
       let rateLimitResetsAt: number | null = null;
+      let overageActive = false;
+      let overageResetsAt: number | null = null;
       let finalResultCleanupTimer: ReturnType<typeof setTimeout> | null = null;
       let closedAfterFinalCleanup = false;
       let stderr = "";
@@ -404,6 +410,19 @@ export class ClaudeAgent implements Agent {
 
         if (event.type === "rate_limit_event") {
           const info = (event as ClaudeRateLimitEvent).rate_limit_info;
+          // Overage is orthogonal to the rejection status: when extra usage is
+          // enabled the provider serves the request instead of rejecting it,
+          // so this is the only signal that the included window is gone. Only
+          // an explicit `false` clears it, since an older CLI that never sends
+          // the field must not look like the window recovered.
+          if (info?.isUsingOverage === true) {
+            overageActive = true;
+            overageResetsAt =
+              typeof info.resetsAt === "number" ? info.resetsAt : null;
+          } else if (info?.isUsingOverage === false) {
+            overageActive = false;
+            overageResetsAt = null;
+          }
           if (info?.status === "rejected") {
             rateLimitRejected = true;
             rateLimitResetsAt =
@@ -498,7 +517,20 @@ export class ClaudeAgent implements Agent {
         );
 
         onUsage?.(usage);
-        resolve({ output, usage });
+        resolve({
+          output,
+          usage,
+          ...(overageActive
+            ? {
+                overage: {
+                  resumeAt:
+                    overageResetsAt === null
+                      ? null
+                      : new Date(overageResetsAt * 1000),
+                },
+              }
+            : {}),
+        });
       });
     });
   }

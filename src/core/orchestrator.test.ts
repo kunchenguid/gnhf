@@ -1675,6 +1675,124 @@ describe("Orchestrator backoff behavior", () => {
     });
   });
 
+  it("waits for the window to reset after an iteration billed to extra usage", async () => {
+    vi.useFakeTimers();
+
+    const resumeAt = new Date(Date.now() + 10 * 60_000);
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return { ...createSuccessResult(), overage: { resumeAt } };
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+
+    // Unlike a rejection the request was served, so the iteration's work is
+    // real: it is kept, counted, and never rolled back.
+    expect(mockResetHard).not.toHaveBeenCalled();
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 1,
+      failCount: 0,
+      currentIteration: 1,
+    });
+    expect(orchestrator.getState().waitingUntil).toEqual(
+      new Date(resumeAt.getTime() + 60_000),
+    );
+
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 2,
+      currentIteration: 2,
+    });
+  });
+
+  it("honors the configured rate-limit leash for extra-usage waits", async () => {
+    vi.useFakeTimers();
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        ...createSuccessResult(),
+        overage: { resumeAt: new Date(Date.now() + 10 * 60_000) },
+      })),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxRateLimitWaitMs: 0 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledWith(
+      expect.stringContaining("maximum rate-limit wait"),
+    );
+  });
+
+  it("aborts instead of buying more when extra usage reports no reset time", async () => {
+    vi.useFakeTimers();
+
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => ({
+        ...createSuccessResult(),
+        overage: { resumeAt: null },
+      })),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    // Escalating backoff would re-enter overage on every probe, so a flag
+    // whose whole purpose is "stop spending" fails closed.
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledWith(
+      expect.stringContaining("no reset time"),
+    );
+  });
+
   it("aborts immediately for permanent agent errors without backoff", async () => {
     vi.useFakeTimers();
 

@@ -1151,6 +1151,126 @@ describe("ClaudeAgent", () => {
     });
   });
 
+  it("reports overage when the provider bills extra usage instead of rejecting", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    // With usage credits enabled the request is served rather than rejected,
+    // so the status stays "allowed" and the flag is the only signal that the
+    // included window is gone.
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "allowed",
+        resetsAt: 1784702400,
+        rateLimitType: "five_hour",
+        isUsingOverage: true,
+      },
+    });
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 1,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 1,
+      },
+      structured_output: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.output.success).toBe(true);
+    expect(result.overage).toEqual({
+      resumeAt: new Date(1784702400 * 1000),
+    });
+  });
+
+  it("leaves overage unset when the run never touches extra usage", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "allowed", isUsingOverage: false },
+    });
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 1,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 1,
+      },
+      structured_output: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.overage).toBeUndefined();
+  });
+
+  it("clears overage when a later event reports the window recovered", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: {
+        status: "allowed",
+        resetsAt: 1784702400,
+        isUsingOverage: true,
+      },
+    });
+    // The window rolled over mid-iteration, so there is nothing left to wait
+    // for and the run should carry straight on.
+    emitLine(proc, {
+      type: "rate_limit_event",
+      rate_limit_info: { status: "allowed", isUsingOverage: false },
+    });
+    emitLine(proc, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      usage: {
+        input_tokens: 1,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 1,
+      },
+      structured_output: {
+        success: true,
+        summary: "done",
+        key_changes_made: [],
+        key_learnings: [],
+      },
+    });
+    proc.emit("close", 0);
+
+    const result = await promise;
+    expect(result.overage).toBeUndefined();
+  });
+
   it("includes the synthetic result message in exit error details", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

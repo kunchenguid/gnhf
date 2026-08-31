@@ -6,6 +6,7 @@ import {
   type Agent,
   type AgentOutput,
   type TokenUsage,
+  type UsageOverage,
 } from "./agents/types.js";
 import { redactAgentSpecForLogs, type Config } from "./config.js";
 import type { RunInfo } from "./run.js";
@@ -106,6 +107,7 @@ type RunIterationResult =
       record: IterationRecord;
       shouldFullyStop: boolean;
       abortReason?: string;
+      overage?: UsageOverage;
     }
   | { type: "stopped" }
   | { type: "aborted"; reason: string }
@@ -350,62 +352,18 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         }
 
         if (result.type === "rate-limited") {
-          this.consecutiveRateLimitWaits++;
-          const waitMs = this.computeRateLimitWaitMs(result.resumeAt);
-          const nextTotalWaitMs = this.totalRateLimitWaitMs + waitMs;
-          const maxRateLimitWaitMs = this.limits.maxRateLimitWaitMs;
-          if (
-            maxRateLimitWaitMs !== undefined &&
-            nextTotalWaitMs > maxRateLimitWaitMs
-          ) {
-            const reason = `maximum rate-limit wait exceeded (${nextTotalWaitMs}ms > ${maxRateLimitWaitMs}ms)`;
-            appendDebugLog("rate-limit:wait:aborted", {
-              iteration: this.state.currentIteration,
-              message: result.message,
-              resumeAt: result.resumeAt?.toISOString() ?? null,
-              waitMs,
-              totalWaitMs: this.totalRateLimitWaitMs,
-              maxRateLimitWaitMs,
-            });
-            this.abort(reason);
-            break;
-          }
-          this.totalRateLimitWaitMs = nextTotalWaitMs;
           // The attempt did no work; retry under the same iteration number so
           // rate-limit waits don't consume --max-iterations or the
           // consecutive-failure budget.
-          this.state.currentIteration--;
-          if (this.stopForGracefulShutdown()) {
-            break;
-          }
-          this.state.status = "waiting";
-          this.state.waitingUntil = new Date(Date.now() + waitMs);
-          this.emit("state", this.getState());
-
-          appendDebugLog("rate-limit:wait:start", {
-            iteration: this.state.currentIteration + 1,
+          const outcome = await this.waitForUsageWindowReset({
+            resumeAt: result.resumeAt,
+            logPrefix: "rate-limit",
             message: result.message,
-            resumeAt: result.resumeAt?.toISOString() ?? null,
-            waitMs,
-            consecutiveRateLimitWaits: this.consecutiveRateLimitWaits,
+            rollBackIteration: true,
           });
-
-          await this.interruptibleSleep(waitMs);
-
-          appendDebugLog("rate-limit:wait:end", {
-            iteration: this.state.currentIteration + 1,
-            stopRequested: this.stopRequested,
-          });
-
-          this.state.waitingUntil = null;
-          if (this.stopRequested) {
+          if (outcome === "stop") {
             break;
           }
-          if (this.stopForGracefulShutdown()) {
-            break;
-          }
-          this.state.status = "running";
-          this.emit("state", this.getState());
           continue;
         }
 
@@ -485,6 +443,30 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
             }
             this.state.status = "running";
             this.emit("state", this.getState());
+          }
+        }
+
+        if (result.overage && !this.stopRequested) {
+          // The included window is spent and the provider is billing extra
+          // usage instead of rejecting. This iteration's work is already
+          // committed, so keep it and wait for the reset rather than buying
+          // the next one. Waiting here, after the post-iteration checks, means
+          // a run that was going to stop anyway never sleeps first.
+          if (result.overage.resumeAt === null) {
+            appendDebugLog("overage:wait:unknown-reset", {
+              iteration: this.state.currentIteration,
+            });
+            this.abort("extra usage engaged but no reset time was reported");
+            break;
+          }
+          const outcome = await this.waitForUsageWindowReset({
+            resumeAt: result.overage.resumeAt,
+            logPrefix: "overage",
+            message: "iteration billed to extra usage",
+            rollBackIteration: false,
+          });
+          if (outcome === "stop") {
+            break;
           }
         }
       }
@@ -616,6 +598,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           record,
           shouldFullyStop: record.success ? shouldFullyStop : false,
           ...(abortReason === undefined ? {} : { abortReason }),
+          ...(result.overage === undefined ? {} : { overage: result.overage }),
         };
       }
       return {
@@ -627,6 +610,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           "reported",
         ),
         shouldFullyStop,
+        ...(result.overage === undefined ? {} : { overage: result.overage }),
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
@@ -839,6 +823,79 @@ ${this.pendingCommitFailure}
       keyLearnings: toStringArray(learnings),
       timestamp: new Date(),
     };
+  }
+
+  // Shared pause for both ways a usage window ends. A rejection produced no
+  // work, so its attempt is rolled back and retried under the same iteration
+  // number. An iteration billed to extra usage already committed real work, so
+  // it keeps its number and only the next one waits. Returns "stop" when the
+  // run must end, either because the wait budget is spent or a stop arrived.
+  private async waitForUsageWindowReset(options: {
+    resumeAt: Date | null;
+    logPrefix: string;
+    message: string;
+    rollBackIteration: boolean;
+  }): Promise<"resume" | "stop"> {
+    const { resumeAt, logPrefix, message, rollBackIteration } = options;
+    this.consecutiveRateLimitWaits++;
+    const waitMs = this.computeRateLimitWaitMs(resumeAt);
+    const nextTotalWaitMs = this.totalRateLimitWaitMs + waitMs;
+    const maxRateLimitWaitMs = this.limits.maxRateLimitWaitMs;
+    if (
+      maxRateLimitWaitMs !== undefined &&
+      nextTotalWaitMs > maxRateLimitWaitMs
+    ) {
+      appendDebugLog(`${logPrefix}:wait:aborted`, {
+        iteration: this.state.currentIteration,
+        message,
+        resumeAt: resumeAt?.toISOString() ?? null,
+        waitMs,
+        totalWaitMs: this.totalRateLimitWaitMs,
+        maxRateLimitWaitMs,
+      });
+      this.abort(
+        `maximum rate-limit wait exceeded (${nextTotalWaitMs}ms > ${maxRateLimitWaitMs}ms)`,
+      );
+      return "stop";
+    }
+    this.totalRateLimitWaitMs = nextTotalWaitMs;
+    if (rollBackIteration) {
+      this.state.currentIteration--;
+    }
+    if (this.stopForGracefulShutdown()) {
+      return "stop";
+    }
+    const logIteration =
+      this.state.currentIteration + (rollBackIteration ? 1 : 0);
+    this.state.status = "waiting";
+    this.state.waitingUntil = new Date(Date.now() + waitMs);
+    this.emit("state", this.getState());
+
+    appendDebugLog(`${logPrefix}:wait:start`, {
+      iteration: logIteration,
+      message,
+      resumeAt: resumeAt?.toISOString() ?? null,
+      waitMs,
+      consecutiveRateLimitWaits: this.consecutiveRateLimitWaits,
+    });
+
+    await this.interruptibleSleep(waitMs);
+
+    appendDebugLog(`${logPrefix}:wait:end`, {
+      iteration: logIteration,
+      stopRequested: this.stopRequested,
+    });
+
+    this.state.waitingUntil = null;
+    if (this.stopRequested) {
+      return "stop";
+    }
+    if (this.stopForGracefulShutdown()) {
+      return "stop";
+    }
+    this.state.status = "running";
+    this.emit("state", this.getState());
+    return "resume";
   }
 
   private computeRateLimitWaitMs(resumeAt: Date | null): number {
