@@ -535,11 +535,7 @@ export class ClaudeAgent implements Agent {
         );
 
         onUsage?.(usage);
-        resolve({
-          output,
-          usage,
-          ...(overage === null ? {} : { overage }),
-        });
+        resolve({ output, usage });
       });
     });
   }

@@ -107,7 +107,6 @@ type RunIterationResult =
       record: IterationRecord;
       shouldFullyStop: boolean;
       abortReason?: string;
-      overage?: UsageOverage;
     }
   | { type: "stopped" }
   | { type: "aborted"; reason: string }
@@ -127,6 +126,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private pendingAbortReason: string | null = null;
   private pendingCommitFailure: string | null = null;
   private activeIterationTokensEstimated = false;
+  private activeIterationOverage: UsageOverage | null = null;
   private consecutiveRateLimitWaits = 0;
   private totalRateLimitWaitMs = 0;
   private loopDone = false;
@@ -446,29 +446,24 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           }
         }
 
-        if (result.overage && !this.stopRequested) {
+        const overage = this.activeIterationOverage;
+        if (overage && !this.stopRequested) {
           // The included window is spent and the provider is billing extra
           // usage instead of rejecting. This iteration's work is already
           // committed, so keep it and wait for the reset rather than buying
           // the next one. Waiting here, after the post-iteration checks, means
           // a run that was going to stop anyway never sleeps first.
-          if (result.overage.resumeAt === null) {
+          if (overage.resumeAt === null) {
             appendDebugLog("overage:wait:unknown-reset", {
               iteration: this.state.currentIteration,
             });
             this.abort("extra usage engaged but no reset time was reported");
             break;
           }
-          // The pause follows an iteration that already reported its
-          // outcome, so name the reason here: otherwise the TUI shows a bare
-          // backoff and never says the window is gone and this iteration was
-          // billed to extra usage.
-          const message = `extra usage engaged - waiting for the usage window to reset at ${result.overage.resumeAt.toISOString()}`;
-          this.state.lastAgentError = message;
           const outcome = await this.waitForUsageWindowReset({
-            resumeAt: result.overage.resumeAt,
+            resumeAt: overage.resumeAt,
             logPrefix: "overage",
-            message,
+            message: `extra usage engaged - waiting for the usage window to reset at ${overage.resumeAt.toISOString()}`,
             rollBackIteration: false,
           });
           if (outcome === "stop") {
@@ -514,6 +509,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.activeAbortController = new AbortController();
     this.pendingAbortReason = null;
     this.activeIterationTokensEstimated = false;
+    this.activeIterationOverage = null;
 
     const onUsage = (usage: TokenUsage) => {
       this.state.totalInputTokens = baseInputTokens + usage.inputTokens;
@@ -544,15 +540,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     // Agents report overage out-of-band so it survives a terminal path that
     // throws: an iteration that failed after the included window was spent
     // must still pause instead of buying the next one.
-    const reportedOverage: { current: UsageOverage | null } = { current: null };
     const onOverage = (overage: UsageOverage | null) => {
-      reportedOverage.current = overage;
-    };
-    const overageFields = (
-      fromResult?: UsageOverage,
-    ): { overage?: UsageOverage } => {
-      const overage = fromResult ?? reportedOverage.current;
-      return overage === null ? {} : { overage };
+      this.activeIterationOverage = overage;
     };
 
     const logPath = join(
@@ -619,7 +608,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           record,
           shouldFullyStop: record.success ? shouldFullyStop : false,
           ...(abortReason === undefined ? {} : { abortReason }),
-          ...overageFields(result.overage),
         };
       }
       return {
@@ -631,7 +619,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           "reported",
         ),
         shouldFullyStop,
-        ...overageFields(result.overage),
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
@@ -699,7 +686,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         type: "completed",
         record: this.recordFailure(`[ERROR] ${summary}`, summary, [], "error"),
         shouldFullyStop: false,
-        ...overageFields(),
       };
     } finally {
       this.activeAbortController = null;
@@ -889,8 +875,14 @@ ${this.pendingCommitFailure}
     }
     const logIteration =
       this.state.currentIteration + (rollBackIteration ? 1 : 0);
+    // Naming the pause is what tells an overage wait apart from an error
+    // backoff in the TUI, but it is a status notice, not an error: it is
+    // restored once the pause ends so it can never be reported as the reason
+    // the run finished.
+    const agentErrorBeforeWait = this.state.lastAgentError ?? null;
     this.state.status = "waiting";
     this.state.waitingUntil = new Date(Date.now() + waitMs);
+    this.state.lastAgentError = message;
     this.emit("state", this.getState());
 
     appendDebugLog(`${logPrefix}:wait:start`, {
@@ -901,7 +893,11 @@ ${this.pendingCommitFailure}
       consecutiveRateLimitWaits: this.consecutiveRateLimitWaits,
     });
 
-    await this.interruptibleSleep(waitMs);
+    try {
+      await this.interruptibleSleep(waitMs);
+    } finally {
+      this.state.lastAgentError = agentErrorBeforeWait;
+    }
 
     appendDebugLog(`${logPrefix}:wait:end`, {
       iteration: logIteration,

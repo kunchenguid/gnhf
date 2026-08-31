@@ -1155,7 +1155,8 @@ describe("ClaudeAgent", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const promise = agent.run("prompt", "/cwd");
+    const onOverage = vi.fn();
+    const promise = agent.run("prompt", "/cwd", { onOverage });
 
     // With usage credits enabled the request is served rather than rejected,
     // so the status stays "allowed" and the flag is the only signal that the
@@ -1190,7 +1191,7 @@ describe("ClaudeAgent", () => {
 
     const result = await promise;
     expect(result.output.success).toBe(true);
-    expect(result.overage).toEqual({
+    expect(onOverage).toHaveBeenCalledWith({
       resumeAt: new Date(1784702400 * 1000),
     });
   });
@@ -1199,7 +1200,8 @@ describe("ClaudeAgent", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const promise = agent.run("prompt", "/cwd");
+    const onOverage = vi.fn();
+    const promise = agent.run("prompt", "/cwd", { onOverage });
 
     emitLine(proc, {
       type: "rate_limit_event",
@@ -1224,15 +1226,16 @@ describe("ClaudeAgent", () => {
     });
     proc.emit("close", 0);
 
-    const result = await promise;
-    expect(result.overage).toBeUndefined();
+    await promise;
+    expect(onOverage).toHaveBeenCalledWith(null);
   });
 
   it("clears overage when a later event reports the window recovered", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const promise = agent.run("prompt", "/cwd");
+    const onOverage = vi.fn();
+    const promise = agent.run("prompt", "/cwd", { onOverage });
 
     emitLine(proc, {
       type: "rate_limit_event",
@@ -1267,8 +1270,8 @@ describe("ClaudeAgent", () => {
     });
     proc.emit("close", 0);
 
-    const result = await promise;
-    expect(result.overage).toBeUndefined();
+    await promise;
+    expect(onOverage).toHaveBeenLastCalledWith(null);
   });
 
   it("reports overage through onOverage when the iteration exits non-zero", async () => {
@@ -1349,7 +1352,8 @@ describe("ClaudeAgent", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const promise = agent.run("prompt", "/cwd");
+    const onOverage = vi.fn();
+    const promise = agent.run("prompt", "/cwd", { onOverage });
 
     emitLine(proc, {
       type: "rate_limit_event",
@@ -1384,8 +1388,10 @@ describe("ClaudeAgent", () => {
     });
     proc.emit("close", 0);
 
-    const result = await promise;
-    expect(result.overage).toEqual({ resumeAt: new Date(1784702400 * 1000) });
+    await promise;
+    expect(onOverage).toHaveBeenCalledWith({
+      resumeAt: new Date(1784702400 * 1000),
+    });
   });
 
   it("includes the synthetic result message in exit error details", async () => {

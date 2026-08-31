@@ -161,7 +161,9 @@ export interface TokenUsage {
 // The provider served this iteration from paid extra usage (Claude "usage
 // credits") because the included window was exhausted. Unlike a rejection the
 // request was still served, so the iteration's work is real and is kept; only
-// the next one waits for the window to reset.
+// the next one waits for the window to reset. Reported through `onOverage`
+// rather than the result, since an iteration can spend the window and still
+// end in an error.
 export interface UsageOverage {
   resumeAt: Date | null;
 }
@@ -169,7 +171,6 @@ export interface UsageOverage {
 export interface AgentResult {
   output: AgentOutput;
   usage: TokenUsage;
-  overage?: UsageOverage;
 }
 
 export class PermanentAgentError extends Error {
