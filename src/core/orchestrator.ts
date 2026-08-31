@@ -453,17 +453,31 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           // committed, so keep it and wait for the reset rather than buying
           // the next one. Waiting here, after the post-iteration checks, means
           // a run that was going to stop anyway never sleeps first.
-          if (overage.resumeAt === null) {
+          // A reset time that is missing or already past leaves nothing to
+          // wait for, and probing on a timer buys a billed iteration every
+          // time, so fail closed instead of guessing.
+          const resumeAt = overage.resumeAt;
+          if (resumeAt === null) {
             appendDebugLog("overage:wait:unknown-reset", {
               iteration: this.state.currentIteration,
             });
             this.abort("extra usage engaged but no reset time was reported");
             break;
           }
+          if (this.computeProviderResumeWaitMs(resumeAt) === null) {
+            appendDebugLog("overage:wait:elapsed-reset", {
+              iteration: this.state.currentIteration,
+              resumeAt: resumeAt.toISOString(),
+            });
+            this.abort(
+              `extra usage engaged but the reported reset time (${resumeAt.toISOString()}) has already passed`,
+            );
+            break;
+          }
           const outcome = await this.waitForUsageWindowReset({
-            resumeAt: overage.resumeAt,
+            resumeAt,
             logPrefix: "overage",
-            message: `extra usage engaged - waiting for the usage window to reset at ${overage.resumeAt.toISOString()}`,
+            message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
             rollBackIteration: false,
           });
           if (outcome === "stop") {
@@ -916,18 +930,25 @@ ${this.pendingCommitFailure}
     return "resume";
   }
 
+  // The provider-reported reset time is only usable while it is far enough
+  // ahead to wait for; once it has passed, resuming on it is a blind probe
+  // rather than a wait. Null leaves that choice to the caller.
+  private computeProviderResumeWaitMs(resumeAt: Date | null): number | null {
+    if (!resumeAt) return null;
+    const waitMs =
+      resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
+    if (waitMs < RATE_LIMIT_MIN_WAIT_MS) return null;
+    return Math.min(waitMs, RATE_LIMIT_MAX_WAIT_MS);
+  }
+
   private computeRateLimitWaitMs(resumeAt: Date | null): number {
-    if (resumeAt) {
-      const waitMs =
-        resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
-      if (waitMs >= RATE_LIMIT_MIN_WAIT_MS) {
-        return Math.min(waitMs, RATE_LIMIT_MAX_WAIT_MS);
-      }
-    }
-    return Math.min(
-      RATE_LIMIT_MIN_WAIT_MS *
-        Math.pow(2, Math.max(0, this.consecutiveRateLimitWaits - 1)),
-      RATE_LIMIT_MAX_FALLBACK_WAIT_MS,
+    return (
+      this.computeProviderResumeWaitMs(resumeAt) ??
+      Math.min(
+        RATE_LIMIT_MIN_WAIT_MS *
+          Math.pow(2, Math.max(0, this.consecutiveRateLimitWaits - 1)),
+        RATE_LIMIT_MAX_FALLBACK_WAIT_MS,
+      )
     );
   }
 
