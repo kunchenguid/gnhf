@@ -1891,6 +1891,45 @@ describe("Orchestrator backoff behavior", () => {
     );
   });
 
+  it("waits when the extra-usage reset time is still ahead, however close", async () => {
+    vi.useFakeTimers();
+
+    const resumeAt = new Date(Date.now() + 1_000);
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onOverage?.({ resumeAt });
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    const startPromise = orchestrator.start();
+
+    // A reset time in the future is usable no matter how soon it lands; only
+    // one already behind us leaves nothing to wait for.
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+    expect(abort).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await startPromise;
+
+    expect(agent.run).toHaveBeenCalledTimes(2);
+  });
+
   it("waits for the window to reset when an errored iteration was billed to extra usage", async () => {
     vi.useFakeTimers();
 

@@ -464,7 +464,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
             this.abort("extra usage engaged but no reset time was reported");
             break;
           }
-          if (this.computeProviderResumeWaitMs(resumeAt) === null) {
+          if (resumeAt.getTime() <= Date.now()) {
             appendDebugLog("overage:wait:elapsed-reset", {
               iteration: this.state.currentIteration,
               resumeAt: resumeAt.toISOString(),
