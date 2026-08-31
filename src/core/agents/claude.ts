@@ -8,6 +8,7 @@ import {
   type AgentResult,
   type AgentRunOptions,
   type TokenUsage,
+  type UsageOverage,
   PermanentAgentError,
   RateLimitAgentError,
 } from "./types.js";
@@ -259,7 +260,7 @@ export class ClaudeAgent implements Agent {
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
-    const { onUsage, onMessage, signal, logPath } = options ?? {};
+    const { onUsage, onMessage, onOverage, signal, logPath } = options ?? {};
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
@@ -417,8 +418,12 @@ export class ClaudeAgent implements Agent {
           // the field must not look like the window recovered.
           if (info?.isUsingOverage === true) {
             overageActive = true;
-            overageResetsAt =
-              typeof info.resetsAt === "number" ? info.resetsAt : null;
+            // A later overage event without a reset time must not discard a
+            // reset time an earlier one reported: the run would then fail
+            // closed on a value it actually knows.
+            if (typeof info.resetsAt === "number") {
+              overageResetsAt = info.resetsAt;
+            }
           } else if (info?.isUsingOverage === false) {
             overageActive = false;
             overageResetsAt = null;
@@ -464,6 +469,19 @@ export class ClaudeAgent implements Agent {
           clearTimeout(finalResultCleanupTimer);
         }
         logStream?.end();
+
+        // Report before dispatching so every terminal path carries the
+        // signal. An iteration that ends in an error still spent the window,
+        // and continuing would keep buying extra usage.
+        const overage: UsageOverage | null = overageActive
+          ? {
+              resumeAt:
+                overageResetsAt === null
+                  ? null
+                  : new Date(overageResetsAt * 1000),
+            }
+          : null;
+        onOverage?.(overage);
         if (code !== 0 && !closedAfterFinalCleanup) {
           const failure = describeChildProcessExit(
             "claude",
@@ -520,16 +538,7 @@ export class ClaudeAgent implements Agent {
         resolve({
           output,
           usage,
-          ...(overageActive
-            ? {
-                overage: {
-                  resumeAt:
-                    overageResetsAt === null
-                      ? null
-                      : new Date(overageResetsAt * 1000),
-                },
-              }
-            : {}),
+          ...(overage === null ? {} : { overage }),
         });
       });
     });

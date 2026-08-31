@@ -1717,6 +1717,11 @@ describe("Orchestrator backoff behavior", () => {
     expect(orchestrator.getState().waitingUntil).toEqual(
       new Date(resumeAt.getTime() + 60_000),
     );
+    // The pause must explain itself, otherwise it is indistinguishable from
+    // an error backoff in the TUI.
+    expect(orchestrator.getState().lastAgentError).toBe(
+      `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
+    );
 
     await vi.advanceTimersByTimeAsync(11 * 60_000);
 
@@ -1760,6 +1765,62 @@ describe("Orchestrator backoff behavior", () => {
     expect(abort).toHaveBeenCalledWith(
       expect.stringContaining("maximum rate-limit wait"),
     );
+  });
+
+  it("waits for the window to reset when an errored iteration was billed to extra usage", async () => {
+    vi.useFakeTimers();
+
+    const resumeAt = new Date(Date.now() + 10 * 60_000);
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        callCount++;
+        if (callCount === 1) {
+          options?.onOverage?.({ resumeAt });
+          throw new Error("claude returned no structured_output");
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    // The error backoff runs first; the window is still spent afterwards, so
+    // the run must wait for the reset instead of buying the next iteration.
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().waitingUntil).toEqual(
+        new Date(resumeAt.getTime() + 60_000),
+      );
+    });
+    expect(agent.run).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 1,
+      failCount: 1,
+      currentIteration: 2,
+    });
   });
 
   it("aborts instead of buying more when extra usage reports no reset time", async () => {

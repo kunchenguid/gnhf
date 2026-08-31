@@ -459,10 +459,16 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
             this.abort("extra usage engaged but no reset time was reported");
             break;
           }
+          // The pause follows an iteration that already reported its
+          // outcome, so name the reason here: otherwise the TUI shows a bare
+          // backoff and never says the window is gone and this iteration was
+          // billed to extra usage.
+          const message = `extra usage engaged - waiting for the usage window to reset at ${result.overage.resumeAt.toISOString()}`;
+          this.state.lastAgentError = message;
           const outcome = await this.waitForUsageWindowReset({
             resumeAt: result.overage.resumeAt,
             logPrefix: "overage",
-            message: "iteration billed to extra usage",
+            message,
             rollBackIteration: false,
           });
           if (outcome === "stop") {
@@ -535,6 +541,20 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       this.emit("state", this.getState());
     };
 
+    // Agents report overage out-of-band so it survives a terminal path that
+    // throws: an iteration that failed after the included window was spent
+    // must still pause instead of buying the next one.
+    const reportedOverage: { current: UsageOverage | null } = { current: null };
+    const onOverage = (overage: UsageOverage | null) => {
+      reportedOverage.current = overage;
+    };
+    const overageFields = (
+      fromResult?: UsageOverage,
+    ): { overage?: UsageOverage } => {
+      const overage = fromResult ?? reportedOverage.current;
+      return overage === null ? {} : { overage };
+    };
+
     const logPath = join(
       this.runInfo.runDir,
       `iteration-${this.state.currentIteration}.jsonl`,
@@ -551,6 +571,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       const result = await this.agent.run(prompt, this.cwd, {
         onUsage,
         onMessage,
+        onOverage,
         signal: this.activeAbortController.signal,
         logPath,
       });
@@ -598,7 +619,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           record,
           shouldFullyStop: record.success ? shouldFullyStop : false,
           ...(abortReason === undefined ? {} : { abortReason }),
-          ...(result.overage === undefined ? {} : { overage: result.overage }),
+          ...overageFields(result.overage),
         };
       }
       return {
@@ -610,7 +631,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           "reported",
         ),
         shouldFullyStop,
-        ...(result.overage === undefined ? {} : { overage: result.overage }),
+        ...overageFields(result.overage),
       };
     } catch (err) {
       const elapsedMs = Date.now() - agentStartedAt;
@@ -678,6 +699,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         type: "completed",
         record: this.recordFailure(`[ERROR] ${summary}`, summary, [], "error"),
         shouldFullyStop: false,
+        ...overageFields(),
       };
     } finally {
       this.activeAbortController = null;

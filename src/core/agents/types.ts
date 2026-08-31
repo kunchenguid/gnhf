@@ -202,9 +202,16 @@ export type OnUsage = (usage: TokenUsage) => void;
 
 export type OnMessage = (text: string) => void;
 
+// Reported out-of-band because overage is orthogonal to how the iteration
+// ends: the window can be spent on an attempt that later fails, and the
+// orchestrator must still wait rather than buy the next iteration. `null`
+// means the provider reported the window recovered.
+export type OnOverage = (overage: UsageOverage | null) => void;
+
 export interface AgentRunOptions {
   onUsage?: OnUsage;
   onMessage?: OnMessage;
+  onOverage?: OnOverage;
   signal?: AbortSignal;
   logPath?: string;
 }
