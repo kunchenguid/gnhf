@@ -96,8 +96,10 @@ const RATE_LIMIT_MIN_WAIT_MS = 60_000;
 const RATE_LIMIT_MAX_FALLBACK_WAIT_MS = 30 * 60_000;
 // Cap provider-derived waits well under Node's 2^31-1 ms setTimeout limit -
 // larger delays fire after ~1 ms, turning a far-future reset (e.g. a monthly
-// limit) into a hot retry loop. The retry after a capped wait re-reads the
-// reset time, so long waits self-correct in daily chunks.
+// limit) into a hot retry loop. A capped wait ends before the window actually
+// returns, so resuming on it is a probe: free after a rejection, which re-reads
+// the reset time and self-corrects in daily chunks, but a billed iteration
+// after overage, which fails closed instead.
 const RATE_LIMIT_MAX_WAIT_MS = 24 * 60 * 60_000;
 const DEFAULT_RATE_LIMIT_MAX_WAIT_MS = RATE_LIMIT_MAX_WAIT_MS;
 
@@ -354,8 +356,14 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         if (result.type === "rate-limited") {
           // The attempt did no work; retry under the same iteration number so
           // rate-limit waits don't consume --max-iterations or the
-          // consecutive-failure budget.
+          // consecutive-failure budget. A reset time that cannot be waited for
+          // costs only a wasted retry here, so fall back to escalating backoff
+          // and probe again.
+          this.consecutiveRateLimitWaits++;
           const outcome = await this.waitForUsageWindowReset({
+            waitMs:
+              this.providerResumeWait(result.resumeAt)?.waitMs ??
+              this.fallbackResumeWaitMs(),
             resumeAt: result.resumeAt,
             logPrefix: "rate-limit",
             message: result.message,
@@ -416,6 +424,49 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           break;
         }
 
+        const overage = this.activeIterationOverage;
+        if (overage && !this.stopRequested) {
+          // The included window is spent and the provider is billing extra
+          // usage instead of rejecting. This iteration's work is already
+          // committed, so keep it and wait for the reset rather than buying
+          // the next one. Deciding here, after the post-iteration checks but
+          // before any backoff of gnhf's own, means a run that was going to
+          // stop anyway never sleeps first and a pause we choose to take can
+          // never consume a reset time that was usable when it arrived.
+          // Unlike a rejection, resuming without a reset to wait out buys a
+          // billed iteration every time, so anything we cannot wait out here
+          // fails closed.
+          const resumeAt = overage.resumeAt;
+          const wait = this.providerResumeWait(resumeAt);
+          if (resumeAt === null || wait === null || wait.truncated) {
+            appendDebugLog("overage:wait:unusable-reset", {
+              iteration: this.state.currentIteration,
+              resumeAt: resumeAt?.toISOString() ?? null,
+              truncated: wait?.truncated ?? false,
+            });
+            this.abort(
+              `extra usage engaged but ${
+                resumeAt === null
+                  ? "no reset time was reported"
+                  : wait === null
+                    ? `the reported reset time (${resumeAt.toISOString()}) leaves nothing to wait for`
+                    : `the reported reset time (${resumeAt.toISOString()}) is further out than a single wait can cover`
+              }`,
+            );
+            break;
+          }
+          const outcome = await this.waitForUsageWindowReset({
+            waitMs: wait.waitMs,
+            resumeAt,
+            logPrefix: "overage",
+            message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
+            rollBackIteration: false,
+          });
+          if (outcome === "stop") {
+            break;
+          }
+        }
+
         if (this.state.consecutiveErrors > 0 && !this.stopRequested) {
           const backoffMs =
             60_000 * Math.pow(2, this.state.consecutiveErrors - 1);
@@ -443,45 +494,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
             }
             this.state.status = "running";
             this.emit("state", this.getState());
-          }
-        }
-
-        const overage = this.activeIterationOverage;
-        if (overage && !this.stopRequested) {
-          // The included window is spent and the provider is billing extra
-          // usage instead of rejecting. This iteration's work is already
-          // committed, so keep it and wait for the reset rather than buying
-          // the next one. Waiting here, after the post-iteration checks, means
-          // a run that was going to stop anyway never sleeps first.
-          // A reset time that is missing or already past leaves nothing to
-          // wait for, and probing on a timer buys a billed iteration every
-          // time, so fail closed instead of guessing.
-          const resumeAt = overage.resumeAt;
-          if (resumeAt === null) {
-            appendDebugLog("overage:wait:unknown-reset", {
-              iteration: this.state.currentIteration,
-            });
-            this.abort("extra usage engaged but no reset time was reported");
-            break;
-          }
-          if (resumeAt.getTime() <= Date.now()) {
-            appendDebugLog("overage:wait:elapsed-reset", {
-              iteration: this.state.currentIteration,
-              resumeAt: resumeAt.toISOString(),
-            });
-            this.abort(
-              `extra usage engaged but the reported reset time (${resumeAt.toISOString()}) has already passed`,
-            );
-            break;
-          }
-          const outcome = await this.waitForUsageWindowReset({
-            resumeAt,
-            logPrefix: "overage",
-            message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
-            rollBackIteration: false,
-          });
-          if (outcome === "stop") {
-            break;
           }
         }
       }
@@ -853,14 +865,13 @@ ${this.pendingCommitFailure}
   // it keeps its number and only the next one waits. Returns "stop" when the
   // run must end, either because the wait budget is spent or a stop arrived.
   private async waitForUsageWindowReset(options: {
+    waitMs: number;
     resumeAt: Date | null;
     logPrefix: string;
     message: string;
     rollBackIteration: boolean;
   }): Promise<"resume" | "stop"> {
-    const { resumeAt, logPrefix, message, rollBackIteration } = options;
-    this.consecutiveRateLimitWaits++;
-    const waitMs = this.computeRateLimitWaitMs(resumeAt);
+    const { waitMs, resumeAt, logPrefix, message, rollBackIteration } = options;
     const nextTotalWaitMs = this.totalRateLimitWaitMs + waitMs;
     const maxRateLimitWaitMs = this.limits.maxRateLimitWaitMs;
     if (
@@ -930,25 +941,28 @@ ${this.pendingCommitFailure}
     return "resume";
   }
 
-  // The provider-reported reset time is only usable while it is far enough
-  // ahead to wait for; once it has passed, resuming on it is a blind probe
-  // rather than a wait. Null leaves that choice to the caller.
-  private computeProviderResumeWaitMs(resumeAt: Date | null): number | null {
+  // The single definition of what a provider-reported reset time is worth.
+  // Null means there is nothing to wait for: no reset time, or one so close
+  // that sleeping on it is a blind probe rather than a wait. `truncated` marks
+  // a reset so far out that the cap cuts the sleep short, so it too ends in a
+  // probe. Callers decide what a probe costs them.
+  private providerResumeWait(
+    resumeAt: Date | null,
+  ): { waitMs: number; truncated: boolean } | null {
     if (!resumeAt) return null;
     const waitMs =
       resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
     if (waitMs < RATE_LIMIT_MIN_WAIT_MS) return null;
-    return Math.min(waitMs, RATE_LIMIT_MAX_WAIT_MS);
+    return waitMs > RATE_LIMIT_MAX_WAIT_MS
+      ? { waitMs: RATE_LIMIT_MAX_WAIT_MS, truncated: true }
+      : { waitMs, truncated: false };
   }
 
-  private computeRateLimitWaitMs(resumeAt: Date | null): number {
-    return (
-      this.computeProviderResumeWaitMs(resumeAt) ??
-      Math.min(
-        RATE_LIMIT_MIN_WAIT_MS *
-          Math.pow(2, Math.max(0, this.consecutiveRateLimitWaits - 1)),
-        RATE_LIMIT_MAX_FALLBACK_WAIT_MS,
-      )
+  private fallbackResumeWaitMs(): number {
+    return Math.min(
+      RATE_LIMIT_MIN_WAIT_MS *
+        Math.pow(2, Math.max(0, this.consecutiveRateLimitWaits - 1)),
+      RATE_LIMIT_MAX_FALLBACK_WAIT_MS,
     );
   }
 
