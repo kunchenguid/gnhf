@@ -433,37 +433,48 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           // before any backoff of gnhf's own, means a run that was going to
           // stop anyway never sleeps first and a pause we choose to take can
           // never consume a reset time that was usable when it arrived.
-          // Unlike a rejection, resuming without a reset to wait out buys a
-          // billed iteration every time, so anything we cannot wait out here
-          // fails closed.
+          // A reset time that has already elapsed says the included window is
+          // back - a long iteration routinely outlives its own reset - so the
+          // run just continues; if the provider is still billing, the next
+          // iteration reports overage again with a fresh reset time. Only a
+          // reset nothing can be done with, none reported or one so far out
+          // the wait would end short of it, leaves probing as the alternative,
+          // and probing buys a billed iteration every time, so those fail
+          // closed.
           const resumeAt = overage.resumeAt;
           const wait = this.providerResumeWait(resumeAt);
-          if (resumeAt === null || wait === null || wait.truncated) {
+          if (resumeAt === null || wait?.truncated === true) {
             appendDebugLog("overage:wait:unusable-reset", {
               iteration: this.state.currentIteration,
               resumeAt: resumeAt?.toISOString() ?? null,
               truncated: wait?.truncated ?? false,
             });
+            this.state.lastAgentError = null;
             this.abort(
               `extra usage engaged but ${
                 resumeAt === null
                   ? "no reset time was reported"
-                  : wait === null
-                    ? `the reported reset time (${resumeAt.toISOString()}) leaves nothing to wait for`
-                    : `the reported reset time (${resumeAt.toISOString()}) is further out than a single wait can cover`
+                  : `the reported reset time (${resumeAt.toISOString()}) is further out than a single wait can cover`
               }`,
             );
             break;
           }
-          const outcome = await this.waitForUsageWindowReset({
-            waitMs: wait.waitMs,
-            resumeAt,
-            logPrefix: "overage",
-            message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
-            rollBackIteration: false,
-          });
-          if (outcome === "stop") {
-            break;
+          if (wait === null) {
+            appendDebugLog("overage:window-returned", {
+              iteration: this.state.currentIteration,
+              resumeAt: resumeAt.toISOString(),
+            });
+          } else {
+            const outcome = await this.waitForUsageWindowReset({
+              waitMs: wait.waitMs,
+              resumeAt,
+              logPrefix: "overage",
+              message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
+              rollBackIteration: false,
+            });
+            if (outcome === "stop") {
+              break;
+            }
           }
         }
 
@@ -886,6 +897,7 @@ ${this.pendingCommitFailure}
         totalWaitMs: this.totalRateLimitWaitMs,
         maxRateLimitWaitMs,
       });
+      this.state.lastAgentError = null;
       this.abort(
         `maximum rate-limit wait exceeded (${nextTotalWaitMs}ms > ${maxRateLimitWaitMs}ms)`,
       );
@@ -942,10 +954,10 @@ ${this.pendingCommitFailure}
   }
 
   // The single definition of what a provider-reported reset time is worth.
-  // Null means there is nothing to wait for: no reset time, or one so close
-  // that sleeping on it is a blind probe rather than a wait. `truncated` marks
-  // a reset so far out that the cap cuts the sleep short, so it too ends in a
-  // probe. Callers decide what a probe costs them.
+  // Null means there is no wait to take: no reset time at all, or one that has
+  // already elapsed. `truncated` marks a reset so far out that the cap cuts the
+  // sleep short, so it would end before the window returns. Callers decide what
+  // each of those is worth to them.
   private providerResumeWait(
     resumeAt: Date | null,
   ): { waitMs: number; truncated: boolean } | null {

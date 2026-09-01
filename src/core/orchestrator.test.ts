@@ -1744,7 +1744,9 @@ describe("Orchestrator backoff behavior", () => {
       name: "claude",
       run: vi.fn(async (_prompt, _cwd, options) => {
         options?.onOverage?.({ resumeAt: new Date(Date.now() + 10 * 60_000) });
-        return createSuccessResult();
+        // The billed iteration also errored, so lastAgentError is set when the
+        // leash trips.
+        throw new Error("claude returned no structured_output");
       }),
     };
     const orchestrator = new Orchestrator(
@@ -1855,9 +1857,12 @@ describe("Orchestrator backoff behavior", () => {
     expect(orchestrator.getState().lastAgentError).toBeNull();
   });
 
-  it("aborts instead of probing when the extra-usage reset time has already passed", async () => {
+  it("continues immediately when the extra-usage reset time has already elapsed", async () => {
     vi.useFakeTimers();
 
+    // An elapsed reset instant is the provider saying the included window is
+    // already back, so the next iteration is free: continue without pausing
+    // and without ending the run.
     const resumeAt = new Date(Date.now() - 60_000);
     const agent: Agent = {
       name: "claude",
@@ -1873,22 +1878,67 @@ describe("Orchestrator backoff behavior", () => {
       "ship it",
       "/repo",
       0,
-      { maxIterations: 3 },
+      { maxIterations: 2 },
     );
 
     const abort = vi.fn();
     orchestrator.on("abort", abort);
 
-    const startPromise = orchestrator.start();
-    // A reset time in the past cannot be waited for, so pausing on it would
-    // be a short probe that buys another billed iteration every time.
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
-    await startPromise;
+    // No timer advancing: a pause here would leave this promise unresolved.
+    await orchestrator.start();
 
-    expect(agent.run).toHaveBeenCalledTimes(1);
-    expect(abort).toHaveBeenCalledWith(
-      expect.stringContaining("leaves nothing to wait for"),
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(abort).not.toHaveBeenCalledWith(
+      expect.stringContaining("extra usage"),
     );
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 2,
+      currentIteration: 2,
+    });
+  });
+
+  it("continues when the window returned while the billed iteration was still running", async () => {
+    vi.useFakeTimers();
+
+    // The realistic shape: the window flips to overage five minutes before it
+    // resets, and the iteration then runs for another twenty. By the time the
+    // orchestrator sees the signal the window is long back.
+    const resumeAt = new Date(Date.now() + 5 * 60_000);
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        callCount++;
+        if (callCount === 1) {
+          options?.onOverage?.({ resumeAt });
+          vi.setSystemTime(resumeAt.getTime() + 20 * 60_000);
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 2 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(abort).not.toHaveBeenCalledWith(
+      expect.stringContaining("extra usage"),
+    );
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 2,
+      currentIteration: 2,
+    });
   });
 
   it("aborts instead of resuming into a billed iteration when the extra-usage reset is beyond the wait cap", async () => {
@@ -2106,7 +2156,9 @@ describe("Orchestrator backoff behavior", () => {
       name: "claude",
       run: vi.fn(async (_prompt, _cwd, options) => {
         options?.onOverage?.({ resumeAt: null });
-        return createSuccessResult();
+        // The billed iteration also errored, so lastAgentError is set when the
+        // overage abort happens.
+        throw new Error("claude returned no structured_output");
       }),
     };
     const orchestrator = new Orchestrator(
@@ -2127,6 +2179,13 @@ describe("Orchestrator backoff behavior", () => {
     expect(agent.run).toHaveBeenCalledTimes(1);
     expect(abort).toHaveBeenCalledWith(
       expect.stringContaining("no reset time"),
+    );
+    // cli.ts reports `lastAgentError ?? lastMessage` in the permanent stdout
+    // summary, so the agent's own error must not displace the reason gnhf
+    // stopped to protect the user's credits.
+    const finalState = orchestrator.getState();
+    expect(finalState.lastAgentError ?? finalState.lastMessage).toContain(
+      "no reset time was reported",
     );
   });
 
