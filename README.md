@@ -135,7 +135,8 @@ After installing from npm, the skill is available under the installed package di
               ┌──────────┐  ┌───────────┐                  │
               │  commit  │  │ reset or  │                  │
               │  append  │  │  repair   │                  │
-              │ notes.md │  │ maybe wait│                  │
+              │ notes.md │  │           │                  │
+              │maybe wait│  │ maybe wait│                  │
               └────┬─────┘  └─────┬─────┘                  │
                    │              │                        │
                    │   ┌──────────┘                        │
