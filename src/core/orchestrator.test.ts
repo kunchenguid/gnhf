@@ -1527,6 +1527,13 @@ describe("Orchestrator backoff behavior", () => {
     expect(abort).toHaveBeenCalledWith(
       expect.stringContaining("maximum rate-limit wait"),
     );
+    // On a rejection the standing agent error is the provider's own account of
+    // the wait - which limit, and until when - so the leash abort must leave it
+    // for cli.ts to report as the reason the run ended.
+    const finalState = orchestrator.getState();
+    expect(finalState.lastAgentError ?? finalState.lastMessage).toContain(
+      "claude usage limit reached",
+    );
   });
 
   it("honors a graceful stop requested mid-iteration instead of entering the rate-limit wait", async () => {

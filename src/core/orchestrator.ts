@@ -375,6 +375,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
             logPrefix: "rate-limit",
             message: result.message,
             rollBackIteration: true,
+            clearAgentErrorOnAbort: false,
           });
           if (outcome === "stop") {
             break;
@@ -481,6 +482,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
               logPrefix: "overage",
               message: `extra usage engaged - waiting for the usage window to reset at ${wait.resumeAt.toISOString()}`,
               rollBackIteration: false,
+              clearAgentErrorOnAbort: true,
             });
             if (outcome === "stop") {
               break;
@@ -883,16 +885,28 @@ ${this.pendingCommitFailure}
   // Shared pause for both ways a usage window ends. A rejection produced no
   // work, so its attempt is rolled back and retried under the same iteration
   // number. An iteration billed to extra usage already committed real work, so
-  // it keeps its number and only the next one waits. Returns "stop" when the
-  // run must end, either because the wait budget is spent or a stop arrived.
+  // it keeps its number and only the next one waits. On a rejection the
+  // standing `lastAgentError` is the provider's own account of the wait, worth
+  // keeping if the leash aborts; on the overage path it is an unrelated
+  // leftover, so `clearAgentErrorOnAbort` stops it displacing the abort reason.
+  // Returns "stop" when the run must end, either because the wait budget is
+  // spent or a stop arrived.
   private async waitForUsageWindowReset(options: {
     waitMs: number;
     resumeAt: Date | null;
     logPrefix: string;
     message: string;
     rollBackIteration: boolean;
+    clearAgentErrorOnAbort: boolean;
   }): Promise<"resume" | "stop"> {
-    const { waitMs, resumeAt, logPrefix, message, rollBackIteration } = options;
+    const {
+      waitMs,
+      resumeAt,
+      logPrefix,
+      message,
+      rollBackIteration,
+      clearAgentErrorOnAbort,
+    } = options;
     const nextTotalWaitMs = this.totalRateLimitWaitMs + waitMs;
     const maxRateLimitWaitMs = this.limits.maxRateLimitWaitMs;
     if (
@@ -907,7 +921,9 @@ ${this.pendingCommitFailure}
         totalWaitMs: this.totalRateLimitWaitMs,
         maxRateLimitWaitMs,
       });
-      this.state.lastAgentError = null;
+      if (clearAgentErrorOnAbort) {
+        this.state.lastAgentError = null;
+      }
       this.abort(
         `maximum rate-limit wait exceeded (${nextTotalWaitMs}ms > ${maxRateLimitWaitMs}ms)`,
       );
