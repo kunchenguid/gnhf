@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.48](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.47...gnhf-v0.1.48) (2026-09-01)
+
+
+### Bug Fixes
+
+* **core:** wait for the usage window instead of billing extra usage ([#221](https://github.com/kunchenguid/gnhf/issues/221)) ([1689ace](https://github.com/kunchenguid/gnhf/commit/1689ace19d91db7636a6eef1a8b385495858826d))
+
 ## [0.1.47](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.46...gnhf-v0.1.47) (2026-08-30)
 
 
