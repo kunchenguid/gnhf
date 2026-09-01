@@ -465,6 +465,89 @@ describe("gnhf e2e", () => {
     30_000,
   );
 
+  it("keeps going through extra usage when the reported reset time has already elapsed", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "ship it",
+        "--agent",
+        "claude",
+        "--max-iterations",
+        "3",
+        "--prevent-sleep",
+        "off",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_CLAUDE_MODE: "overage-elapsed-reset",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    // An elapsed reset instant is the provider saying the included window is
+    // back, so the run neither pauses nor stops early.
+    expect(result.stdout).toContain("max iterations reached (3)");
+    expect(result.stdout).not.toContain("extra usage engaged");
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("4");
+
+    const debugEvents = readJsonLines(findRunLogPath(cwd)).map(
+      (entry) => entry.event,
+    );
+    expect(debugEvents).toContain("overage:window-returned");
+    expect(debugEvents).not.toContain("overage:wait:start");
+    expect(debugEvents).not.toContain("overage:wait:unusable-reset");
+  }, 60_000);
+
+  it("stops and names extra usage in the exit summary when no reset time is reported", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      [
+        "ship it",
+        "--agent",
+        "claude",
+        "--max-iterations",
+        "3",
+        "--prevent-sleep",
+        "off",
+      ],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_MOCK_CLAUDE_MODE: "overage-no-reset",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    // The permanent stdout summary is what the user reads in the morning, so
+    // the reason gnhf stopped spending has to be in it.
+    expect(result.stdout).toContain("gnhf stopped");
+    expect(result.stdout).toContain(
+      "extra usage engaged but no reset time was reported",
+    );
+    // The billed iteration's work is kept; nothing after it runs.
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("2");
+
+    const debugEvents = readJsonLines(findRunLogPath(cwd)).map(
+      (entry) => entry.event,
+    );
+    expect(debugEvents).toContain("overage:wait:unusable-reset");
+  }, 60_000);
+
   it("reads the objective from stdin", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);

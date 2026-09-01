@@ -103,6 +103,11 @@ const RATE_LIMIT_MAX_FALLBACK_WAIT_MS = 30 * 60_000;
 const RATE_LIMIT_MAX_WAIT_MS = 24 * 60 * 60_000;
 const DEFAULT_RATE_LIMIT_MAX_WAIT_MS = RATE_LIMIT_MAX_WAIT_MS;
 
+type ProviderResumeWait =
+  | { kind: "none" }
+  | { kind: "elapsed"; resumeAt: Date }
+  | { kind: "wait"; resumeAt: Date; waitMs: number; truncated: boolean };
+
 type RunIterationResult =
   | {
       type: "completed";
@@ -360,10 +365,12 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           // costs only a wasted retry here, so fall back to escalating backoff
           // and probe again.
           this.consecutiveRateLimitWaits++;
+          const rejectionWait = this.providerResumeWait(result.resumeAt);
           const outcome = await this.waitForUsageWindowReset({
             waitMs:
-              this.providerResumeWait(result.resumeAt)?.waitMs ??
-              this.fallbackResumeWaitMs(),
+              rejectionWait.kind === "wait"
+                ? rejectionWait.waitMs
+                : this.fallbackResumeWaitMs(),
             resumeAt: result.resumeAt,
             logPrefix: "rate-limit",
             message: result.message,
@@ -441,35 +448,38 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           // the wait would end short of it, leaves probing as the alternative,
           // and probing buys a billed iteration every time, so those fail
           // closed.
-          const resumeAt = overage.resumeAt;
-          const wait = this.providerResumeWait(resumeAt);
-          if (resumeAt === null || wait?.truncated === true) {
+          const wait = this.providerResumeWait(overage.resumeAt);
+          if (
+            wait.kind === "none" ||
+            (wait.kind === "wait" && wait.truncated)
+          ) {
             appendDebugLog("overage:wait:unusable-reset", {
               iteration: this.state.currentIteration,
-              resumeAt: resumeAt?.toISOString() ?? null,
-              truncated: wait?.truncated ?? false,
+              resumeAt:
+                wait.kind === "none" ? null : wait.resumeAt.toISOString(),
+              truncated: wait.kind === "wait",
             });
             this.state.lastAgentError = null;
             this.abort(
               `extra usage engaged but ${
-                resumeAt === null
+                wait.kind === "none"
                   ? "no reset time was reported"
-                  : `the reported reset time (${resumeAt.toISOString()}) is further out than a single wait can cover`
+                  : `the reported reset time (${wait.resumeAt.toISOString()}) is further out than a single wait can cover`
               }`,
             );
             break;
           }
-          if (wait === null) {
+          if (wait.kind === "elapsed") {
             appendDebugLog("overage:window-returned", {
               iteration: this.state.currentIteration,
-              resumeAt: resumeAt.toISOString(),
+              resumeAt: wait.resumeAt.toISOString(),
             });
           } else {
             const outcome = await this.waitForUsageWindowReset({
               waitMs: wait.waitMs,
-              resumeAt,
+              resumeAt: wait.resumeAt,
               logPrefix: "overage",
-              message: `extra usage engaged - waiting for the usage window to reset at ${resumeAt.toISOString()}`,
+              message: `extra usage engaged - waiting for the usage window to reset at ${wait.resumeAt.toISOString()}`,
               rollBackIteration: false,
             });
             if (outcome === "stop") {
@@ -953,21 +963,25 @@ ${this.pendingCommitFailure}
     return "resume";
   }
 
-  // The single definition of what a provider-reported reset time is worth.
-  // Null means there is no wait to take: no reset time at all, or one that has
-  // already elapsed. `truncated` marks a reset so far out that the cap cuts the
-  // sleep short, so it would end before the window returns. Callers decide what
-  // each of those is worth to them.
-  private providerResumeWait(
-    resumeAt: Date | null,
-  ): { waitMs: number; truncated: boolean } | null {
-    if (!resumeAt) return null;
+  // The single owner of what a provider-reported reset time is worth. "none"
+  // is no reset time at all; "elapsed" is the provider's own instant saying the
+  // window has already come back, tested against that instant directly rather
+  // than inferred from the wait constants; "wait" carries the sleep to take,
+  // with `truncated` set when the cap ends it short of the reset. Each variant
+  // carries the instant it describes, so callers never re-derive any of this.
+  private providerResumeWait(resumeAt: Date | null): ProviderResumeWait {
+    if (!resumeAt) return { kind: "none" };
+    if (resumeAt.getTime() <= Date.now()) return { kind: "elapsed", resumeAt };
     const waitMs =
       resumeAt.getTime() + RATE_LIMIT_RESUME_BUFFER_MS - Date.now();
-    if (waitMs < RATE_LIMIT_MIN_WAIT_MS) return null;
     return waitMs > RATE_LIMIT_MAX_WAIT_MS
-      ? { waitMs: RATE_LIMIT_MAX_WAIT_MS, truncated: true }
-      : { waitMs, truncated: false };
+      ? {
+          kind: "wait",
+          resumeAt,
+          waitMs: RATE_LIMIT_MAX_WAIT_MS,
+          truncated: true,
+        }
+      : { kind: "wait", resumeAt, waitMs, truncated: false };
   }
 
   private fallbackResumeWaitMs(): number {
