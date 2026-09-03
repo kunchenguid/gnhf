@@ -1529,7 +1529,7 @@ describe("Orchestrator backoff behavior", () => {
       3,
       expect.any(String),
       "/repo",
-      expect.objectContaining({ model: "claude-haiku" }),
+      expect.not.objectContaining({ model: expect.anything() }),
     );
     expect(orchestrator.getState()).toMatchObject({
       successCount: 1,

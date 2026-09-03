@@ -1187,14 +1187,20 @@ program
         }
 
         const abortReason = finalState.lastAgentError ?? finalState.lastMessage;
-        writeRunEndState(runInfo, {
-          status: finalState.status,
-          stopCondition: finalState.lastMessage,
-          agentError: finalState.lastAgentError ?? null,
-          iterations: finalState.currentIteration,
-          successCount: finalState.successCount,
-          failCount: finalState.failCount,
-        });
+        try {
+          writeRunEndState(runInfo, {
+            status: finalState.status,
+            stopCondition: finalState.lastMessage,
+            agentError: finalState.lastAgentError ?? null,
+            iterations: finalState.currentIteration,
+            successCount: finalState.successCount,
+            failCount: finalState.failCount,
+          });
+        } catch (error) {
+          appendDebugLog("run:end-state-error", {
+            error: serializeError(error),
+          });
+        }
 
         const exitSummary = renderExitSummary({
           agentName: redactAgentSpecForLogs(config.agent),

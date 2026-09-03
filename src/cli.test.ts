@@ -76,6 +76,7 @@ interface CliMockOverrides {
   rendererStop?: ReturnType<typeof vi.fn>;
   rendererCtor?: ReturnType<typeof vi.fn>;
   startSleepPrevention?: ReturnType<typeof vi.fn>;
+  writeRunEndState?: ReturnType<typeof vi.fn>;
   telemetry?: {
     track: ReturnType<typeof vi.fn>;
     pageview: ReturnType<typeof vi.fn>;
@@ -130,6 +131,7 @@ async function runCliWithMocks(
   const getLastIterationNumber =
     overrides.getLastIterationNumber ?? vi.fn(() => 0);
   const ensureCleanWorkingTree = overrides.ensureCleanWorkingTree ?? vi.fn();
+  const writeRunEndState = overrides.writeRunEndState ?? vi.fn();
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -208,7 +210,7 @@ async function runCliWithMocks(
     peekRunMetadata,
     resumeRun,
     getLastIterationNumber,
-    writeRunEndState: vi.fn(),
+    writeRunEndState,
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
@@ -750,6 +752,40 @@ describe("cli", () => {
     expect(stdout).toContain("branch diff");
     expect(stdout).toContain("6 commits");
     expect(stdout).toContain("git push no-mistakes");
+  });
+
+  it("continues finalization when the end-state sidecar cannot be written", async () => {
+    const writeRunEndState = vi.fn(() => {
+      throw new Error("disk full");
+    });
+    const { appendDebugLog, stdoutWriteCalls, telemetry } =
+      await runCliWithMocks(
+        ["ship it"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          acpRegistryOverrides: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        { writeRunEndState },
+      );
+
+    expect(writeRunEndState).toHaveBeenCalledWith(
+      stubRunInfo,
+      expect.any(Object),
+    );
+    expect(telemetry.close).toHaveBeenCalledWith(1_000);
+    expect(stdoutWriteCalls.map(([chunk]) => String(chunk)).join("")).toContain(
+      "gnhf wrapped",
+    );
+    expect(appendDebugLog).toHaveBeenCalledWith(
+      "run:end-state-error",
+      expect.objectContaining({
+        error: expect.objectContaining({ message: "disk full" }),
+      }),
+    );
   });
 
   it("redacts raw ACP command specs in the exit summary", async () => {
