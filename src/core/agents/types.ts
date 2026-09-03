@@ -210,6 +210,8 @@ export type OnMessage = (text: string) => void;
 export type OnOverage = (overage: UsageOverage | null) => void;
 
 export interface AgentRunOptions {
+  /** Opt-in provider model override for the current iteration. */
+  model?: string;
   onUsage?: OnUsage;
   onMessage?: OnMessage;
   onOverage?: OnOverage;

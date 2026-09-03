@@ -158,8 +158,15 @@ function buildClaudeArgs(
   prompt: string,
   schema: AgentOutputSchema,
   extraArgs?: string[],
+  model?: string,
 ): string[] {
-  const userArgs = extraArgs ?? [];
+  const userArgs = (extraArgs ?? []).filter(
+    (arg, index, args) =>
+      model === undefined ||
+      (arg !== "--model" &&
+        !arg.startsWith("--model=") &&
+        args[index - 1] !== "--model"),
+  );
   const userSpecifiedPermissionMode = userArgs.some(
     (arg) =>
       arg === "--dangerously-skip-permissions" ||
@@ -171,6 +178,7 @@ function buildClaudeArgs(
 
   return [
     ...userArgs,
+    ...(model === undefined ? [] : ["--model", model]),
     "-p",
     prompt,
     "--verbose",
@@ -260,14 +268,15 @@ export class ClaudeAgent implements Agent {
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
-    const { onUsage, onMessage, onOverage, signal, logPath } = options ?? {};
+    const { onUsage, onMessage, onOverage, signal, logPath, model } =
+      options ?? {};
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
       const child = spawn(
         this.bin,
-        buildClaudeArgs(prompt, this.schema, this.extraArgs),
+        buildClaudeArgs(prompt, this.schema, this.extraArgs, model),
         {
           cwd,
           detached: this.platform !== "win32",

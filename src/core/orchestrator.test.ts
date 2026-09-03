@@ -1477,6 +1477,67 @@ describe("Orchestrator backoff behavior", () => {
     });
   });
 
+  it("uses the configured fallback model once before returning to the rate-limit wait", async () => {
+    vi.useFakeTimers();
+
+    const resumeAt = new Date(Date.now() + 10 * 60_000);
+    let callCount = 0;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        callCount++;
+        if (callCount < 3) {
+          throw new RateLimitAgentError(
+            "claude usage limit reached",
+            "claude exited with code 1: usage limit",
+            resumeAt,
+          );
+        }
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { fallbackModel: "claude-haiku", maxIterations: 1 },
+    );
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(2);
+    });
+    expect(agent.run).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      "/repo",
+      expect.objectContaining({ model: "claude-haiku" }),
+    );
+    await vi.waitFor(() => {
+      expect(orchestrator.getState().status).toBe("waiting");
+    });
+
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+    await startPromise;
+
+    expect(agent.run).toHaveBeenCalledTimes(3);
+    expect(agent.run).toHaveBeenNthCalledWith(
+      3,
+      expect.any(String),
+      "/repo",
+      expect.objectContaining({ model: "claude-haiku" }),
+    );
+    expect(orchestrator.getState()).toMatchObject({
+      successCount: 1,
+      failCount: 0,
+      currentIteration: 1,
+    });
+  });
+
   it("aborts when the total configured rate-limit wait would be exceeded", async () => {
     vi.useFakeTimers();
 

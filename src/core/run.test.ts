@@ -31,6 +31,7 @@ import {
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 import {
   setupRun,
+  writeRunEndState,
   appendNotes,
   resumeRun,
   peekRunMetadata,
@@ -283,6 +284,38 @@ describe("setupRun", () => {
       stopWhen: undefined,
       commitMessagePath: join(runDir, "commit-message"),
       commitMessage: undefined,
+    });
+  });
+});
+
+describe("writeRunEndState", () => {
+  it("writes the final machine-readable state beside the run metadata", () => {
+    const runInfo = setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: false,
+    });
+
+    writeRunEndState(runInfo, {
+      status: "aborted",
+      stopCondition: "3 consecutive failures",
+      agentError: "claude exited with code 1",
+      iterations: 3,
+      successCount: 0,
+      failCount: 3,
+    });
+
+    const call = mockWriteFileSync.mock.calls.find(
+      ([path]) =>
+        path === join(P, ".gnhf", "runs", "run-abc", "end-state.json"),
+    );
+    expect(call).toBeDefined();
+    expect(JSON.parse(call![1] as string)).toMatchObject({
+      status: "aborted",
+      stopCondition: "3 consecutive failures",
+      agentError: "claude exited with code 1",
+      iterations: 3,
+      successCount: 0,
+      failCount: 3,
+      endedAt: expect.any(String),
     });
   });
 });

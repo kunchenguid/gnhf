@@ -45,6 +45,7 @@ export interface RunMetadata {
 }
 
 const LOG_FILENAME = "gnhf.log";
+const END_STATE_FILENAME = "end-state.json";
 const STOP_WHEN_FILENAME = "stop-when";
 const COMMIT_MESSAGE_FILENAME = "commit-message";
 
@@ -72,6 +73,23 @@ export interface RunSchemaOptions {
   commitMessage?: CommitMessageConfig;
   stopWhen?: string;
   clearStopWhen?: boolean;
+}
+
+export interface RunEndState {
+  status: string;
+  stopCondition: string | null;
+  agentError: string | null;
+  iterations: number;
+  successCount: number;
+  failCount: number;
+}
+
+export function writeRunEndState(runInfo: RunInfo, state: RunEndState): void {
+  writeFileSync(
+    join(runInfo.runDir, END_STATE_FILENAME),
+    `${JSON.stringify({ ...state, endedAt: new Date().toISOString() }, null, 2)}\n`,
+    "utf-8",
+  );
 }
 
 function readStopWhen(stopWhenPath: string): string | undefined {

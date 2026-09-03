@@ -227,6 +227,33 @@ describe("ClaudeAgent", () => {
     );
   });
 
+  it("uses an iteration model override after configured args", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({
+      extraArgs: ["--model", "sonnet"],
+    });
+
+    configuredAgent.run("test prompt", "/work/dir", { model: "haiku" });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "--model",
+        "haiku",
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      expect.any(Object),
+    );
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 5678 });
@@ -955,6 +982,31 @@ describe("ClaudeAgent", () => {
 
     await expect(promise).rejects.toThrow(
       "claude exited with code 1: Invalid model name: claude-nonexistent-5",
+    );
+  });
+
+  it("surfaces a streamed assistant error when the process exits", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = agent.run("prompt", "/cwd");
+
+    emitLine(proc, {
+      type: "assistant",
+      message: {
+        usage: { input_tokens: 0, output_tokens: 0 },
+        content: [
+          {
+            type: "text",
+            text: "You've hit your session limit · resets 3:40am",
+          },
+        ],
+      },
+    });
+    proc.emit("close", 1);
+
+    await expect(promise).rejects.toThrow(
+      "claude exited with code 1: You've hit your session limit · resets 3:40am",
     );
   });
 

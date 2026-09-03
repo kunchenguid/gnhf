@@ -47,6 +47,7 @@ import {
   resumeRun,
   peekRunMetadata,
   getLastIterationNumber,
+  writeRunEndState,
 } from "./core/run.js";
 import { readStdinText } from "./core/stdin.js";
 import { startSleepPrevention } from "./core/sleep.js";
@@ -605,6 +606,10 @@ program
     parseDuration,
   )
   .option(
+    "--fallback-model <model>",
+    "Retry a Claude usage-limit rejection with this model instead of waiting",
+  )
+  .option(
     "--stop-when <condition>",
     'End when the agent reports this condition, after any commit-failure repair; resumes reuse it, pass a new value to overwrite or "" to clear',
   )
@@ -643,6 +648,7 @@ program
         maxIterations?: number;
         maxTokens?: number;
         maxRateLimitWait?: number;
+        fallbackModel?: string;
         stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
@@ -705,6 +711,12 @@ program
       if (!isAgentSpec(config.agent)) {
         console.error(
           `Unknown agent: ${config.agent}. Use ${AGENT_SPEC_LIST}.`,
+        );
+        process.exit(1);
+      }
+      if (options.fallbackModel !== undefined && config.agent !== "claude") {
+        console.error(
+          "--fallback-model is only supported with --agent claude.",
         );
         process.exit(1);
       }
@@ -1007,6 +1019,7 @@ program
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
         maxRateLimitWaitMs: options.maxRateLimitWait,
+        fallbackModel: options.fallbackModel,
         stopWhen: effectiveStopWhen,
         commitMessage: effectiveCommitMessage,
         preventSleep: config.preventSleep,
@@ -1047,6 +1060,9 @@ program
           ...(options.maxRateLimitWait === undefined
             ? {}
             : { maxRateLimitWaitMs: options.maxRateLimitWait }),
+          ...(options.fallbackModel === undefined
+            ? {}
+            : { fallbackModel: options.fallbackModel }),
           ...(options.push ? { push: true } : {}),
         },
       );
@@ -1170,12 +1186,22 @@ program
           });
         }
 
+        const abortReason = finalState.lastAgentError ?? finalState.lastMessage;
+        writeRunEndState(runInfo, {
+          status: finalState.status,
+          stopCondition: finalState.lastMessage,
+          agentError: finalState.lastAgentError ?? null,
+          iterations: finalState.currentIteration,
+          successCount: finalState.successCount,
+          failCount: finalState.failCount,
+        });
+
         const exitSummary = renderExitSummary({
           agentName: redactAgentSpecForLogs(config.agent),
           branchName: finalBranchName,
           elapsedMs: Date.now() - finalState.startTime.getTime(),
           status: finalState.status,
-          abortReason: finalState.lastAgentError ?? finalState.lastMessage,
+          abortReason,
           iterations: finalState.currentIteration,
           successCount: finalState.successCount,
           failCount: finalState.failCount,

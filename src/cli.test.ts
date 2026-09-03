@@ -208,6 +208,7 @@ async function runCliWithMocks(
     peekRunMetadata,
     resumeRun,
     getLastIterationNumber,
+    writeRunEndState: vi.fn(),
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
   vi.doMock("./core/agents/factory.js", () => ({ createAgent }));
@@ -410,6 +411,7 @@ async function runSigintCliTest({
     peekRunMetadata: vi.fn(() => stubRunInfo),
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
+    writeRunEndState: vi.fn(),
   }));
   vi.doMock("./core/agents/factory.js", () => ({
     createAgent: vi.fn(() => ({ name: "claude" })),
@@ -1106,6 +1108,27 @@ describe("cli", () => {
     });
   });
 
+  it("passes an opt-in Claude fallback model to the orchestrator", async () => {
+    const { orchestratorCtor } = await runCliWithMocks(
+      ["ship it", "--fallback-model", "claude-haiku"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+      fallbackModel: "claude-haiku",
+    });
+  });
+
   it("passes push mode to the orchestrator when --push is set", async () => {
     const { orchestratorCtor } = await runCliWithMocks(["ship it", "--push"], {
       agent: "claude",
@@ -1684,6 +1707,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/stdin.js", () => ({
       readStdinText: vi.fn(() => Promise.resolve("")),
@@ -1841,6 +1865,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -1978,6 +2003,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2111,6 +2137,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2239,6 +2266,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2364,6 +2392,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2482,6 +2511,7 @@ describe("cli", () => {
       peekRunMetadata,
       resumeRun,
       getLastIterationNumber: vi.fn(() => 3),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2654,6 +2684,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2801,6 +2832,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -2975,6 +3007,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),
@@ -3128,6 +3161,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
       createAgent: vi.fn(() => ({ name: "claude" })),

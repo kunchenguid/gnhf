@@ -40,6 +40,31 @@ function errorTextFromEvent(event: unknown): string | null {
   return null;
 }
 
+function assistantTextFromEvent(event: unknown): string | null {
+  if (!event || typeof event !== "object") return null;
+  const record = event as Record<string, unknown>;
+  if (record.type !== "assistant") return null;
+
+  const content =
+    record.message && typeof record.message === "object"
+      ? (record.message as Record<string, unknown>).content
+      : undefined;
+  if (!Array.isArray(content)) return null;
+
+  const text = content
+    .flatMap((block) =>
+      block &&
+      typeof block === "object" &&
+      (block as Record<string, unknown>).type === "text" &&
+      typeof (block as Record<string, unknown>).text === "string"
+        ? [(block as Record<string, unknown>).text as string]
+        : [],
+    )
+    .join("\n")
+    .trim();
+  return text || null;
+}
+
 function elideRawTail(raw: string): string {
   return raw.length > MAX_RAW_TAIL_CHARS
     ? `${RAW_TAIL_ELISION}${raw.slice(raw.length - MAX_RAW_TAIL_CHARS)}`
@@ -52,20 +77,29 @@ interface StdoutFailure {
 }
 
 function extractStdoutError(stdoutTail: string): StdoutFailure {
-  const messages: string[] = [];
+  const structuredMessages: string[] = [];
+  const reportedMessages: string[] = [];
   for (const line of stdoutTail.split("\n")) {
     if (!line.trim()) continue;
     try {
-      const message = errorTextFromEvent(JSON.parse(line));
-      if (message) messages.push(message);
+      const event = JSON.parse(line);
+      const error = errorTextFromEvent(event);
+      if (error) {
+        structuredMessages.push(error);
+        reportedMessages.push(error);
+        continue;
+      }
+      const assistantText = assistantTextFromEvent(event);
+      if (assistantText) reportedMessages.push(assistantText);
     } catch {
       // Not JSON: covered by the raw-tail fallback below.
     }
   }
-  const structured = messages.join("\n");
+  const structured = structuredMessages.join("\n");
+  const reported = reportedMessages.join("\n");
   return {
     structured,
-    reported: structured || elideRawTail(stdoutTail.trim()),
+    reported: reported || elideRawTail(stdoutTail.trim()),
   };
 }
 
