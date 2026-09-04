@@ -207,7 +207,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | Flag                               | Description                                                                                        | Default                |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------- |
 | `--agent <agent>`                  | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)              | config file (`claude`) |
-| `--model <model>`                  | Model for the agent; overrides `agentModel.<agent>` from the config file                            | config file             |
+| `--model <model>`                  | Model for the agent; overrides `agentModel.<agent>` from the config file                           | config file            |
 | `--max-iterations <n>`             | Abort after `n` total iterations                                                                   | unlimited              |
 | `--max-tokens <n>`                 | Abort after `n` total input+output+cache tokens                                                    | unlimited              |
 | `--max-rate-limit-wait <duration>` | Abort after this much total Claude usage-limit wait (`30m`, `2h`, or `0`)                          | 24h safety cap         |
@@ -266,10 +266,9 @@ agent: claude
 #     - --model
 #     - composer-2.5
 
-# Models per agent (optional)
-# Sets the model for the default agent without extra CLI args.
-# Each agent plumbs the string where it belongs: spawn arg for
-# claude/codex/copilot/pi/cursor, request body for opencode.
+# Models for supported native agents (optional)
+# Values are forwarded to the CLI except opencode, which receives
+# its model in the request body.
 # agentModel:
 #   claude: sonnet
 #   codex: gpt-5.4
@@ -303,7 +302,7 @@ ACP targets do not support path or arg overrides in this version.
 Use `acpRegistryOverrides` to map `acp:<target>` names to custom spawn commands for local, forked, or beta ACP agents.
 You can also pass a raw custom ACP server command directly as a quoted `acp:` spec, for example `gnhf --agent 'acp:./bin/dev-acp --profile ci' "fix the tests"`.
 
-- Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one. The model itself has a dedicated option: set `agentModel.<name>` in config or pass `--model <model>` to pin it for the run. `--model` wins over the config value. `opencode` sends a required `provider/model` pair in its request body, and `--model`/`-m` inside `agentArgsOverride.opencode` is rejected with a pointer to `agentModel.opencode` because `opencode serve` does not accept it. Rovo Dev model overrides are unsupported; set `agent.modelId` in Rovo Dev settings instead.
+- Use it for agent-specific profiles or reasoning settings that lack a dedicated `gnhf` config field. Set a model with `agentModel.<name>` in config or `--model <model>` for a run; `--model` wins. OpenCode requires a `provider/model` pair, and its `--model`/`-m` overrides are rejected because `opencode serve` does not accept them. Rovo Dev model overrides are unsupported; set `agent.modelId` in Rovo Dev settings instead.
 - For `codex`, `claude`, `copilot`, and `cursor`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
 - Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` and `cursor`, `--api-key` is also blocked; configure credentials via Pi's own config or the `CURSOR_API_KEY` environment variable, not via `agentArgsOverride`.
 

@@ -67,7 +67,7 @@ gnhf \
   "<worker prompt>"
 ```
 
-If GNHF has no `--model` flag, put model requirements in the worker prompt or backend config. Do not invent unsupported flags.
+Use `--model <model>` to select a model for a run. For config defaults and agent-specific restrictions, follow the README [Configuration](../../README.md#configuration).
 
 Before launch:
 

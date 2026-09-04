@@ -35,10 +35,9 @@ agent: claude
 #     - --model
 #     - composer-2.5
 
-# Models per agent (optional)
-# Sets the model for the default agent without extra CLI args.
-# Each agent plumbs the string where it belongs: spawn arg for
-# claude/codex/copilot/pi/cursor, request body for opencode.
+# Models for supported native agents (optional)
+# Values are forwarded to the CLI except opencode, which receives
+# its model in the request body.
 # agentModel:
 #   claude: sonnet
 #   codex: gpt-5.4

@@ -496,11 +496,14 @@ describe("loadConfig", () => {
       model: "claude-sonnet-4-5",
       error: /configure agent\.modelId in Rovo Dev settings instead/,
     },
-  ])("rejects unsupported agentModel.$agent values", ({ agent, model, error }) => {
-    mockReadFileSync.mockReturnValue(`agentModel:\n  ${agent}: ${model}\n`);
+  ])(
+    "rejects unsupported agentModel.$agent values",
+    ({ agent, model, error }) => {
+      mockReadFileSync.mockReturnValue(`agentModel:\n  ${agent}: ${model}\n`);
 
-    expect(() => loadConfig()).toThrow(error);
-  });
+      expect(() => loadConfig()).toThrow(error);
+    },
+  );
 
   it("rejects unknown agents and non-string values in agentModel", () => {
     mockReadFileSync.mockReturnValue("agentModel:\n  unknown-agent: sonnet\n");
