@@ -63,6 +63,7 @@ const mockAppendDebugLog = vi.mocked(appendDebugLog);
 const config: Config = {
   agent: "claude",
   agentPathOverride: {},
+  agentModel: {},
   agentArgsOverride: {},
   acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,

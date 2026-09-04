@@ -156,6 +156,33 @@ describe("CodexAgent", () => {
     );
   });
 
+  it("adds the configured model after extra args", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CodexAgent("/tmp/schema.json", {
+      model: "gpt-5.4",
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "codex",
+      [
+        "exec",
+        "--model",
+        "gpt-5.4",
+        "test prompt",
+        "--json",
+        "--output-schema",
+        "/tmp/schema.json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--color",
+        "never",
+      ],
+      expect.any(Object),
+    );
+  });
+
   it("suppresses the default dangerous flag when the user sets sandbox mode with = syntax", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

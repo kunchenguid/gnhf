@@ -115,6 +115,19 @@ describe("CopilotAgent", () => {
     expect(args).not.toContain("--allow-all");
   });
 
+  it("adds the configured model before the prompt flag", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CopilotAgent({
+      model: "gpt-5.4",
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    const args = mockSpawn.mock.calls[0]![1] as string[];
+    expect(args.slice(0, 3)).toEqual(["--model", "gpt-5.4", "-p"]);
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 6789 });

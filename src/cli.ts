@@ -591,6 +591,10 @@ program
     `Agent to use (${AGENT_NAMES.join(", ")}, or acp:<target-or-command>)`,
   )
   .option(
+    "--model <model>",
+    "Model for the agent; overrides agentModel.<agent> from config",
+  )
+  .option(
     "--max-iterations <n>",
     "Abort after N total iterations",
     parseNonNegativeInteger,
@@ -645,6 +649,7 @@ program
       promptArg: string | undefined,
       options: {
         agent?: string;
+        model?: string;
         maxIterations?: number;
         maxTokens?: number;
         maxRateLimitWait?: number;
@@ -1036,6 +1041,9 @@ program
       });
 
       const nativeAgent = getNativeAgentName(config.agent);
+      const model =
+        options.model ??
+        (nativeAgent ? config.agentModel?.[nativeAgent] : undefined);
       const agent = createAgent(
         config.agent,
         runInfo,
@@ -1044,6 +1052,7 @@ program
         {
           ...schemaOptions,
           acpRegistryOverrides: config.acpRegistryOverrides,
+          model,
         },
       );
       const orchestrator = new Orchestrator(

@@ -19,6 +19,7 @@ import {
 interface PiAgentDeps {
   bin?: string;
   extraArgs?: string[];
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -93,8 +94,14 @@ When the iteration is complete, your final assistant response must be only valid
 ${JSON.stringify(schema, null, 2)}`;
 }
 
-function buildPiArgs(extraArgs?: string[]): string[] {
-  return [...(extraArgs ?? []), "--mode", "json", "--no-session"];
+function buildPiArgs(extraArgs?: string[], model?: string): string[] {
+  return [
+    ...(extraArgs ?? []),
+    ...(model ? ["--model", model] : []),
+    "--mode",
+    "json",
+    "--no-session",
+  ];
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -202,12 +209,14 @@ export class PiAgent implements Agent {
 
   private bin: string;
   private extraArgs?: string[];
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
   constructor(deps: PiAgentDeps = {}) {
     this.bin = deps.bin ?? "pi";
     this.extraArgs = deps.extraArgs;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -222,7 +231,7 @@ export class PiAgent implements Agent {
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
-      const child = spawn(this.bin, buildPiArgs(this.extraArgs), {
+      const child = spawn(this.bin, buildPiArgs(this.extraArgs, this.model), {
         cwd,
         detached: this.platform !== "win32",
         shell: shouldUseWindowsShell(this.bin, this.platform),

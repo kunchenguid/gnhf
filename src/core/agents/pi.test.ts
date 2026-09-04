@@ -92,6 +92,26 @@ describe("PiAgent", () => {
     );
   });
 
+  it("adds the configured model before the mode flags", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new PiAgent({ model: "gpt-5.5" });
+
+    agent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "pi",
+      ["--model", "gpt-5.5", "--mode", "json", "--no-session"],
+      {
+        cwd: "/work/dir",
+        detached: process.platform !== "win32",
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
   it("uses a shell on Windows for cmd wrapper paths", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

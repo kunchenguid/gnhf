@@ -196,6 +196,19 @@ describe("CursorAgent", () => {
     expect(args).toContain("--approve-mcps");
   });
 
+  it("adds the configured model before the print flag", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const agent = new CursorAgent({
+      model: "composer-2.5",
+    });
+
+    agent.run("test prompt", "/work/dir");
+
+    const args = mockSpawn.mock.calls[0]![1] as string[];
+    expect(args.slice(0, 3)).toEqual(["--model", "composer-2.5", "-p"]);
+  });
+
   it("keeps default force when user only sets --sandbox", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

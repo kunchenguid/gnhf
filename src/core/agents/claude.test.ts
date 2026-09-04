@@ -254,6 +254,37 @@ describe("ClaudeAgent", () => {
     );
   });
 
+  it("uses the configured model as the default and lets a per-run override win", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new ClaudeAgent({ model: "sonnet" });
+
+    configuredAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "--model",
+        "sonnet",
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      expect.any(Object),
+    );
+
+    configuredAgent.run("test prompt", "/work/dir", { model: "haiku" });
+
+    const fallbackArgs = mockSpawn.mock.calls[1]![1] as string[];
+    expect(fallbackArgs).toContain("haiku");
+    expect(fallbackArgs).not.toContain("sonnet");
+  });
+
   it("kills the full process tree on Windows when aborted", async () => {
     const proc = createMockProcess();
     Object.defineProperty(proc, "pid", { value: 5678 });

@@ -137,6 +137,7 @@ interface OpenCodeDeps {
   fetch?: typeof fetch;
   getPort?: () => Promise<number>;
   killProcess?: typeof process.kill;
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
   spawn?: typeof spawn;
@@ -192,6 +193,26 @@ function buildStructuredOutputFormat(schema: AgentOutputSchema) {
     schema,
     retryCount: 1,
   } as const;
+}
+
+/**
+ * The opencode prompt API takes the model as `{ providerID, modelID }`,
+ * while users configure it as a single `provider/model` string (the same
+ * form opencode itself uses everywhere). Split on the first slash so the
+ * modelID keeps any further slashes; a bare model name has no provider.
+ */
+function toOpenCodeModel(model: string): {
+  providerID?: string;
+  modelID: string;
+} {
+  const slashIndex = model.indexOf("/");
+  if (slashIndex === -1) {
+    return { modelID: model };
+  }
+  return {
+    providerID: model.slice(0, slashIndex),
+    modelID: model.slice(slashIndex + 1),
+  };
 }
 
 function buildOpencodeChildEnv(): NodeJS.ProcessEnv {
@@ -321,6 +342,7 @@ export class OpenCodeAgent implements Agent {
   private fetchFn: typeof fetch;
   private getPortFn: () => Promise<number>;
   private killProcessFn: typeof process.kill;
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
   private spawnFn: typeof spawn;
@@ -333,6 +355,7 @@ export class OpenCodeAgent implements Agent {
     this.fetchFn = deps.fetch ?? fetch;
     this.getPortFn = deps.getPort ?? getAvailablePort;
     this.killProcessFn = deps.killProcess ?? process.kill.bind(process);
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -749,6 +772,7 @@ export class OpenCodeAgent implements Agent {
             role: "user",
             parts: [{ type: "text", text: prompt }],
             format: buildStructuredOutputFormat(this.schema),
+            ...(this.model ? { model: toOpenCodeModel(this.model) } : {}),
           },
           signal,
         });

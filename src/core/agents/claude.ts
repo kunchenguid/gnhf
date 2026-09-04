@@ -72,6 +72,7 @@ interface ClaudeAgentDeps {
   bin?: string;
   extraArgs?: string[];
   finalResultGraceMs?: number;
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -249,6 +250,7 @@ export class ClaudeAgent implements Agent {
   private bin: string;
   private extraArgs?: string[];
   private finalResultGraceMs: number;
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
@@ -258,6 +260,7 @@ export class ClaudeAgent implements Agent {
     this.extraArgs = deps.extraArgs;
     this.finalResultGraceMs =
       deps.finalResultGraceMs ?? DEFAULT_FINAL_RESULT_EXIT_GRACE_MS;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schema =
       deps.schema ?? buildAgentOutputSchema({ includeStopField: false });
@@ -268,15 +271,19 @@ export class ClaudeAgent implements Agent {
     cwd: string,
     options?: AgentRunOptions,
   ): Promise<AgentResult> {
-    const { onUsage, onMessage, onOverage, signal, logPath, model } =
-      options ?? {};
+    const { onUsage, onMessage, onOverage, signal, logPath } = options ?? {};
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
       const child = spawn(
         this.bin,
-        buildClaudeArgs(prompt, this.schema, this.extraArgs, model),
+        buildClaudeArgs(
+          prompt,
+          this.schema,
+          this.extraArgs,
+          options?.model ?? this.model,
+        ),
         {
           cwd,
           detached: this.platform !== "win32",

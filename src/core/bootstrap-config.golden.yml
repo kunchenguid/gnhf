@@ -35,6 +35,15 @@ agent: claude
 #     - --model
 #     - composer-2.5
 
+# Models per agent (optional)
+# Sets the model for the default agent without extra CLI args.
+# Each agent plumbs the string where it belongs: spawn arg for
+# claude/codex/copilot/pi/cursor, request body for opencode/rovodev.
+# agentModel:
+#   claude: sonnet
+#   codex: gpt-5.4
+#   opencode: fireworks-ai/accounts/fireworks/models/qwen3p6-plus
+
 # Custom ACP target commands (optional)
 # Maps acp:<target> names to spawn commands. Useful for naming a
 # local or beta build of an ACP agent.

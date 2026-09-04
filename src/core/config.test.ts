@@ -59,6 +59,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -82,6 +83,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -106,6 +108,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "codex",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -164,6 +167,7 @@ describe("loadConfig", () => {
         claude: resolvedClaude,
         codex: resolvedCodex,
       },
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -199,6 +203,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 10,
@@ -214,6 +219,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -229,6 +235,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -244,6 +251,7 @@ describe("loadConfig", () => {
     const config = loadConfig({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -252,6 +260,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -273,8 +282,8 @@ describe("loadConfig", () => {
         "    - --profile",
         "    - work",
         "  opencode:",
-        "    - --model",
-        "    - gpt-5",
+        "    - --cors",
+        "    - https://example.com",
         "  copilot:",
         "    - --model",
         "    - gpt-5.4",
@@ -298,7 +307,7 @@ describe("loadConfig", () => {
       claude: ["--model", "sonnet"],
       codex: ["-m", "gpt-5.4"],
       rovodev: ["--profile", "work"],
-      opencode: ["--model", "gpt-5"],
+      opencode: ["--cors", "https://example.com"],
       copilot: ["--model", "gpt-5.4"],
       pi: [
         "--provider",
@@ -319,6 +328,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -335,6 +345,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
@@ -443,6 +454,61 @@ describe("loadConfig", () => {
 
     expect(config.agentArgsOverride).toEqual({
       cursor: ["--model", "composer-2", "--force"],
+    });
+  });
+
+  it("reads agentModel from config", () => {
+    mockReadFileSync.mockReturnValue(
+      [
+        "agentModel:",
+        "  claude: sonnet",
+        "  opencode: fireworks-ai/accounts/fireworks/models/qwen3p6-plus",
+        "",
+      ].join("\n"),
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentModel).toEqual({
+      claude: "sonnet",
+      opencode: "fireworks-ai/accounts/fireworks/models/qwen3p6-plus",
+    });
+  });
+
+  it("rejects unknown agents and non-string values in agentModel", () => {
+    mockReadFileSync.mockReturnValue("agentModel:\n  unknown-agent: sonnet\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid agent name in agentModel: "unknown-agent"/,
+    );
+
+    mockReadFileSync.mockReturnValue("agentModel:\n  claude: 42\n");
+
+    expect(() => loadConfig()).toThrow(
+      /Invalid model for agentModel\.claude: expected a string/,
+    );
+  });
+
+  it.each(["--model", "--model=sonnet", "-m"])(
+    "throws when agentArgsOverride.opencode contains model flag %s",
+    (flag) => {
+      mockReadFileSync.mockReturnValue(
+        `agentArgsOverride:\n  opencode:\n    - ${flag}\n`,
+      );
+
+      expect(() => loadConfig()).toThrow(/Use --model or agentModel\.opencode/);
+    },
+  );
+
+  it("allows --model in agentArgsOverride for other agents", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  copilot:\n    - --model\n    - gpt-5.4\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      copilot: ["--model", "gpt-5.4"],
     });
   });
 

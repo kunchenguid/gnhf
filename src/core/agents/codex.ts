@@ -32,6 +32,7 @@ type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 interface CodexAgentDeps {
   bin?: string;
   extraArgs?: string[];
+  model?: string;
   platform?: NodeJS.Platform;
 }
 
@@ -88,6 +89,7 @@ function buildCodexArgs(
   prompt: string,
   schemaPath: string,
   extraArgs?: string[],
+  model?: string,
 ): string[] {
   const userArgs = extraArgs ?? [];
   const userSpecifiedExecutionMode = userArgs.some(
@@ -105,6 +107,7 @@ function buildCodexArgs(
   return [
     "exec",
     ...userArgs,
+    ...(model ? ["--model", model] : []),
     prompt,
     "--json",
     "--output-schema",
@@ -137,6 +140,7 @@ export class CodexAgent implements Agent {
 
   private bin: string;
   private extraArgs?: string[];
+  private model?: string;
   private platform: NodeJS.Platform;
   private schemaPath: string;
 
@@ -144,6 +148,7 @@ export class CodexAgent implements Agent {
     const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
     this.bin = deps.bin ?? "codex";
     this.extraArgs = deps.extraArgs;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.schemaPath = schemaPath;
   }
@@ -160,7 +165,7 @@ export class CodexAgent implements Agent {
 
       const child = spawn(
         this.bin,
-        buildCodexArgs(prompt, this.schemaPath, this.extraArgs),
+        buildCodexArgs(prompt, this.schemaPath, this.extraArgs, this.model),
         {
           cwd,
           shell: shouldUseWindowsShell(this.bin, this.platform),

@@ -98,6 +98,7 @@ interface CursorAgentDeps {
   bin?: string;
   extraArgs?: string[];
   finalResultGraceMs?: number;
+  model?: string;
   platform?: NodeJS.Platform;
   schema?: AgentOutputSchema;
 }
@@ -230,11 +231,12 @@ ${JSON.stringify(schema, null, 2)}
 Return only the JSON object in the final answer. Do not wrap it in Markdown. Do not include explanatory prose outside the JSON object.`;
 }
 
-function buildCursorArgs(extraArgs?: string[]): string[] {
+function buildCursorArgs(extraArgs?: string[], model?: string): string[] {
   const userArgs = extraArgs ?? [];
 
   return [
     ...userArgs,
+    ...(model ? ["--model", model] : []),
     "-p",
     "--output-format",
     "stream-json",
@@ -324,6 +326,7 @@ export class CursorAgent implements Agent {
   private bin: string;
   private extraArgs?: string[];
   private finalResultGraceMs: number;
+  private model?: string;
   private platform: NodeJS.Platform;
   private schema: AgentOutputSchema;
 
@@ -331,6 +334,7 @@ export class CursorAgent implements Agent {
     this.extraArgs = deps.extraArgs;
     this.finalResultGraceMs =
       deps.finalResultGraceMs ?? DEFAULT_FINAL_RESULT_EXIT_GRACE_MS;
+    this.model = deps.model;
     this.platform = deps.platform ?? process.platform;
     this.bin = deps.bin ?? resolveCursorBin(this.platform);
     this.schema =
@@ -346,13 +350,17 @@ export class CursorAgent implements Agent {
 
     return new Promise((resolve, reject) => {
       const logStream = logPath ? createWriteStream(logPath) : null;
-      const child = spawn(this.bin, buildCursorArgs(this.extraArgs), {
-        cwd,
-        detached: this.platform !== "win32",
-        shell: shouldUseWindowsShell(this.bin, this.platform),
-        stdio: ["pipe", "pipe", "pipe"],
-        env: process.env,
-      });
+      const child = spawn(
+        this.bin,
+        buildCursorArgs(this.extraArgs, this.model),
+        {
+          cwd,
+          detached: this.platform !== "win32",
+          shell: shouldUseWindowsShell(this.bin, this.platform),
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        },
+      );
 
       child.stdin?.write(buildCursorPrompt(prompt, this.schema));
       child.stdin?.end();

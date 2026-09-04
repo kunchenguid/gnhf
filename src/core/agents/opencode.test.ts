@@ -545,11 +545,98 @@ describe("OpenCodeAgent", () => {
     });
   });
 
+  it("sends the configured model in the prompt_async body, split into providerID and modelID", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      model: "fireworks-ai/accounts/fireworks/models/qwen3p6-plus",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "session-123",
+          directory: "/repo",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 100,
+            output: 20,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await configuredAgent.run("test prompt", "/repo");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "opencode",
+      ["serve", "--hostname", "127.0.0.1", "--port", "8765", "--print-logs"],
+      expect.objectContaining({ cwd: "/repo" }),
+    );
+
+    const messageBody = JSON.parse(
+      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    );
+    expect(messageBody.model).toEqual({
+      providerID: "fireworks-ai",
+      modelID: "accounts/fireworks/models/qwen3p6-plus",
+    });
+  });
+
+  it("sends a bare model name as modelID only", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const configuredAgent = new OpenCodeAgent({
+      fetch: fetchMock as typeof fetch,
+      getPort,
+      model: "gpt-5",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: "1.3.13" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "session-123",
+          directory: "/repo",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse(
+          finalAnswerEvents("done", {
+            input: 100,
+            output: 20,
+            read: 0,
+            write: 0,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(promptAsyncResponse())
+      .mockResolvedValueOnce(jsonResponse(true));
+
+    await configuredAgent.run("test prompt", "/repo");
+
+    const messageBody = JSON.parse(
+      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    );
+    expect(messageBody.model).toEqual({ modelID: "gpt-5" });
+  });
+
   it("passes configured extra args through to opencode serve", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const configuredAgent = new OpenCodeAgent({
-      extraArgs: ["--model", "gpt-5"],
+      extraArgs: ["--cors", "https://example.com"],
       fetch: fetchMock as typeof fetch,
       getPort,
     });
@@ -569,8 +656,8 @@ describe("OpenCodeAgent", () => {
       "opencode",
       [
         "serve",
-        "--model",
-        "gpt-5",
+        "--cors",
+        "https://example.com",
         "--hostname",
         "127.0.0.1",
         "--port",
