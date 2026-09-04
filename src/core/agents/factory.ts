@@ -91,7 +91,6 @@ export function createAgent(
       return new RovoDevAgent(runInfo.schemaPath, {
         bin: pathOverride,
         extraArgs: agentArgsOverride,
-        model: options.model,
       });
   }
 }

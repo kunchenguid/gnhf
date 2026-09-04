@@ -311,66 +311,6 @@ describe("RovoDevAgent", () => {
     );
   });
 
-  it("sends the configured model in the set_chat_message body", async () => {
-    const proc = createMockProcess();
-    mockSpawn.mockReturnValue(proc);
-    const configuredAgent = new RovoDevAgent(schemaPath, {
-      fetch: fetchMock as typeof fetch,
-      getPort,
-      model: "claude-sonnet-4-5",
-      platform: "linux",
-    });
-
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ status: "healthy" }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          session_id: "session-123",
-          title: "gnhf",
-          message: "Session created successfully",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          message: "Inline system prompt added successfully",
-          prompt_set: true,
-        }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ response: "Chat message set" }))
-      .mockResolvedValueOnce(
-        textResponse(
-          [
-            "event: user-prompt",
-            'data: {"content":"test","part_kind":"user-prompt"}',
-            "",
-            "event: part_start",
-            'data: {"index":0,"part":{"content":"{\\"success\\":true","part_kind":"text"},"event_kind":"part_start"}',
-            "",
-            "event: part_delta",
-            'data: {"index":0,"delta":{"content_delta":",\\"summary\\":\\"done\\",\\"key_changes_made\\":[\\"a\\"],\\"key_learnings\\":[\\"b\\"]}","part_delta_kind":"text"},"event_kind":"part_delta"}',
-            "",
-            "event: request-usage",
-            'data: {"input_tokens":10,"cache_write_tokens":2,"cache_read_tokens":3,"output_tokens":4}',
-            "",
-            "event: close",
-            "data: ",
-            "",
-          ].join("\n"),
-        ),
-      )
-      .mockResolvedValueOnce(jsonResponse({ message: "deleted" }));
-
-    await configuredAgent.run("test prompt", "/repo");
-
-    const chatBody = JSON.parse(
-      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
-    );
-    expect(chatBody).toEqual({
-      message: expect.stringContaining("test prompt"),
-      model: "claude-sonnet-4-5",
-    });
-  });
-
   it("waits 90 seconds for the server to become healthy before timing out", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

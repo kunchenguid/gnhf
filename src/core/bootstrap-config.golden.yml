@@ -38,7 +38,7 @@ agent: claude
 # Models per agent (optional)
 # Sets the model for the default agent without extra CLI args.
 # Each agent plumbs the string where it belongs: spawn arg for
-# claude/codex/copilot/pi/cursor, request body for opencode/rovodev.
+# claude/codex/copilot/pi/cursor, request body for opencode.
 # agentModel:
 #   claude: sonnet
 #   codex: gpt-5.4

@@ -195,19 +195,13 @@ function buildStructuredOutputFormat(schema: AgentOutputSchema) {
   } as const;
 }
 
-/**
- * The opencode prompt API takes the model as `{ providerID, modelID }`,
- * while users configure it as a single `provider/model` string (the same
- * form opencode itself uses everywhere). Split on the first slash so the
- * modelID keeps any further slashes; a bare model name has no provider.
- */
 function toOpenCodeModel(model: string): {
-  providerID?: string;
+  providerID: string;
   modelID: string;
 } {
   const slashIndex = model.indexOf("/");
-  if (slashIndex === -1) {
-    return { modelID: model };
+  if (slashIndex <= 0 || slashIndex === model.length - 1) {
+    throw new Error("OpenCode model must use provider/model.");
   }
   return {
     providerID: model.slice(0, slashIndex),

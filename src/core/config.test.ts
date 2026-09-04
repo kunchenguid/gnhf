@@ -475,6 +475,33 @@ describe("loadConfig", () => {
     });
   });
 
+  it.each([
+    {
+      agent: "opencode",
+      model: "gpt-5",
+      error: /Invalid model for agentModel\.opencode: expected provider\/model/,
+    },
+    {
+      agent: "opencode",
+      model: "provider/",
+      error: /Invalid model for agentModel\.opencode: expected provider\/model/,
+    },
+    {
+      agent: "opencode",
+      model: "/gpt-5",
+      error: /Invalid model for agentModel\.opencode: expected provider\/model/,
+    },
+    {
+      agent: "rovodev",
+      model: "claude-sonnet-4-5",
+      error: /configure agent\.modelId in Rovo Dev settings instead/,
+    },
+  ])("rejects unsupported agentModel.$agent values", ({ agent, model, error }) => {
+    mockReadFileSync.mockReturnValue(`agentModel:\n  ${agent}: ${model}\n`);
+
+    expect(() => loadConfig()).toThrow(error);
+  });
+
   it("rejects unknown agents and non-string values in agentModel", () => {
     mockReadFileSync.mockReturnValue("agentModel:\n  unknown-agent: sonnet\n");
 

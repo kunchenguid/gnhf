@@ -120,6 +120,11 @@ function isOpencodeModelArg(arg: string): boolean {
   );
 }
 
+function isOpenCodeModel(model: string): boolean {
+  const slashIndex = model.indexOf("/");
+  return slashIndex > 0 && slashIndex < model.length - 1;
+}
+
 function isReservedAgentArg(agent: AgentName, arg: string): boolean {
   switch (agent) {
     case "claude":
@@ -396,7 +401,19 @@ function normalizeAgentModel(
         `Invalid model for agentModel.${key}: expected a non-empty string`,
       );
     }
-    result[key as AgentName] = val.trim();
+    const agent = key as AgentName;
+    const model = val.trim();
+    if (agent === "opencode" && !isOpenCodeModel(model)) {
+      throw new InvalidConfigError(
+        "Invalid model for agentModel.opencode: expected provider/model",
+      );
+    }
+    if (agent === "rovodev") {
+      throw new InvalidConfigError(
+        "Invalid model for agentModel.rovodev: configure agent.modelId in Rovo Dev settings instead",
+      );
+    }
+    result[agent] = model;
   }
 
   return Object.keys(result).length === 0 ? undefined : result;
@@ -654,7 +671,7 @@ function serializeConfig(config: Config): string {
     "# Models per agent (optional)",
     "# Sets the model for the default agent without extra CLI args.",
     "# Each agent plumbs the string where it belongs: spawn arg for",
-    "# claude/codex/copilot/pi/cursor, request body for opencode/rovodev.",
+    "# claude/codex/copilot/pi/cursor, request body for opencode.",
     "# agentModel:",
     "#   claude: sonnet",
     "#   codex: gpt-5.4",

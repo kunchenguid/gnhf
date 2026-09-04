@@ -593,7 +593,7 @@ describe("OpenCodeAgent", () => {
     });
   });
 
-  it("sends a bare model name as modelID only", async () => {
+  it("rejects a model without a provider", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     const configuredAgent = new OpenCodeAgent({
@@ -624,12 +624,9 @@ describe("OpenCodeAgent", () => {
       .mockResolvedValueOnce(promptAsyncResponse())
       .mockResolvedValueOnce(jsonResponse(true));
 
-    await configuredAgent.run("test prompt", "/repo");
-
-    const messageBody = JSON.parse(
-      String(fetchMock.mock.calls[3]?.[1]?.body ?? ""),
+    await expect(configuredAgent.run("test prompt", "/repo")).rejects.toThrow(
+      "OpenCode model must use provider/model.",
     );
-    expect(messageBody.model).toEqual({ modelID: "gpt-5" });
   });
 
   it("passes configured extra args through to opencode serve", async () => {

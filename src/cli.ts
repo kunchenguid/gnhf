@@ -152,6 +152,11 @@ function parseModel(value: string): string {
   return model;
 }
 
+function isOpenCodeModel(model: string): boolean {
+  const slashIndex = model.indexOf("/");
+  return slashIndex > 0 && slashIndex < model.length - 1;
+}
+
 function humanizeErrorMessage(message: string): string {
   if (message.includes("not a git repository")) {
     return 'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
@@ -731,6 +736,20 @@ program
       const nativeAgent = getNativeAgentName(config.agent);
       if (options.model !== undefined && nativeAgent === undefined) {
         console.error("--model is not supported with ACP targets.");
+        process.exit(1);
+      }
+      if (
+        options.model !== undefined &&
+        nativeAgent === "opencode" &&
+        !isOpenCodeModel(options.model)
+      ) {
+        console.error("--model for --agent opencode must use provider/model.");
+        process.exit(1);
+      }
+      if (options.model !== undefined && nativeAgent === "rovodev") {
+        console.error(
+          "--model is not supported with --agent rovodev. Set agent.modelId in Rovo Dev settings instead.",
+        );
         process.exit(1);
       }
       if (options.fallbackModel !== undefined && config.agent !== "claude") {

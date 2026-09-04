@@ -759,6 +759,23 @@ describe("cli", () => {
     ).rejects.toThrow("process.exit unexpectedly called with 1");
   });
 
+  it.each([
+    ["opencode", "gpt-5"],
+    ["rovodev", "claude-sonnet-4-5"],
+  ] as const)("rejects unsupported --model for --agent %s", async (agent, model) => {
+    await expect(
+      runCliWithMocks(["--model", model, "ship it"], {
+        agent,
+        agentPathOverride: {},
+        agentModel: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      }),
+    ).rejects.toThrow("process.exit unexpectedly called with 1");
+  });
+
   it("buckets raw ACP command specs in telemetry", async () => {
     const { telemetry } = await runCliWithMocks(["ship it"], {
       agent: "acp:./bin/dev-acp --profile ci --token secret",
