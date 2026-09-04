@@ -144,6 +144,14 @@ function parseOnOffBoolean(value: string): boolean {
   );
 }
 
+function parseModel(value: string): string {
+  const model = value.trim();
+  if (model === "") {
+    throw new InvalidArgumentError("must be a non-empty string");
+  }
+  return model;
+}
+
 function humanizeErrorMessage(message: string): string {
   if (message.includes("not a git repository")) {
     return 'This command must be run inside a Git repository. Change into a repo or run "git init" first.';
@@ -593,6 +601,7 @@ program
   .option(
     "--model <model>",
     "Model for the agent; overrides agentModel.<agent> from config",
+    parseModel,
   )
   .option(
     "--max-iterations <n>",
