@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.49](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.48...gnhf-v0.1.49) (2026-09-04)
+
+
+### Features
+
+* **cli:** support per-agent model selection ([#225](https://github.com/kunchenguid/gnhf/issues/225)) ([33d89fb](https://github.com/kunchenguid/gnhf/commit/33d89fb54795c8d88512e833d50c7e18f01c1eda))
+
+
+### Bug Fixes
+
+* **claude:** surface limit failure state ([#223](https://github.com/kunchenguid/gnhf/issues/223)) ([693f1d5](https://github.com/kunchenguid/gnhf/commit/693f1d564a31fa419c0c0989aad8fb89a48578df))
+
 ## [0.1.48](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.47...gnhf-v0.1.48) (2026-09-01)
 
 
