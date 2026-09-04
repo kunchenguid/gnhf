@@ -719,6 +719,11 @@ program
         );
         process.exit(1);
       }
+      const nativeAgent = getNativeAgentName(config.agent);
+      if (options.model !== undefined && nativeAgent === undefined) {
+        console.error("--model is not supported with ACP targets.");
+        process.exit(1);
+      }
       if (options.fallbackModel !== undefined && config.agent !== "claude") {
         console.error(
           "--fallback-model is only supported with --agent claude.",
@@ -1040,7 +1045,6 @@ program
         gnhfVersion: packageVersion,
       });
 
-      const nativeAgent = getNativeAgentName(config.agent);
       const model =
         options.model ??
         (nativeAgent ? config.agentModel?.[nativeAgent] : undefined);

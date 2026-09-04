@@ -112,7 +112,12 @@ function normalizePreventSleep(value: unknown): boolean | undefined {
 }
 
 function isOpencodeModelArg(arg: string): boolean {
-  return arg === "--model" || arg.startsWith("--model=") || arg === "-m";
+  return (
+    arg === "--model" ||
+    arg.startsWith("--model=") ||
+    arg === "-m" ||
+    arg.startsWith("-m=")
+  );
 }
 
 function isReservedAgentArg(agent: AgentName, arg: string): boolean {
@@ -143,10 +148,7 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg.startsWith("--hostname=") ||
         arg === "--port" ||
         arg.startsWith("--port=") ||
-        arg === "--print-logs" ||
-        arg === "--model" ||
-        arg.startsWith("--model=") ||
-        arg === "-m"
+        arg === "--print-logs"
       );
     case "rovodev":
       return (

@@ -731,6 +731,20 @@ describe("cli", () => {
     );
   });
 
+  it("rejects --model for ACP targets", async () => {
+    await expect(
+      runCliWithMocks(["--model", "gemini-2.5-pro", "ship it"], {
+        agent: "acp:gemini",
+        agentPathOverride: {},
+        agentModel: {},
+        agentArgsOverride: {},
+        acpRegistryOverrides: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      }),
+    ).rejects.toThrow("process.exit unexpectedly called with 1");
+  });
+
   it("buckets raw ACP command specs in telemetry", async () => {
     const { telemetry } = await runCliWithMocks(["ship it"], {
       agent: "acp:./bin/dev-acp --profile ci --token secret",

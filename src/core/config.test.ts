@@ -489,7 +489,7 @@ describe("loadConfig", () => {
     );
   });
 
-  it.each(["--model", "--model=sonnet", "-m"])(
+  it.each(["--model", "--model=sonnet", "-m", "-m=sonnet"])(
     "throws when agentArgsOverride.opencode contains model flag %s",
     (flag) => {
       mockReadFileSync.mockReturnValue(
