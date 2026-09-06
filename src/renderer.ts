@@ -34,7 +34,6 @@ const TICK_MS = 200;
 const MOONS_PER_ROW = 30;
 const MOON_PHASE_PERIOD = 1600;
 const MAX_MSG_LINES = 3;
-const MAX_MSG_LINE_LEN = CONTENT_WIDTH;
 const RESUME_HINT = "[ctrl+c to stop, gnhf again to resume]";
 const GRACEFUL_STOP_HINT =
   "[graceful stop requested, ctrl+c again to force stop, gnhf again to resume]";
@@ -194,28 +193,29 @@ export function renderAgentMessageCells(
   message: string | null,
   status: string,
   lastAgentError?: string | null,
+  contentWidth: number = CONTENT_WIDTH,
 ): Cell[][] {
   const lines: string[] = [];
   if (status === "waiting") {
     lines.push("waiting (backoff)...");
     if (lastAgentError) {
-      lines.push(...wordWrap(lastAgentError, MAX_MSG_LINE_LEN, 2));
+      lines.push(...wordWrap(lastAgentError, contentWidth, 2));
     }
   } else if (status === "aborted" && lastAgentError) {
     lines.push(
       ...wordWrap(
         message ?? "max consecutive failures reached",
-        MAX_MSG_LINE_LEN,
+        contentWidth,
         1,
       ),
     );
-    lines.push(...wordWrap(lastAgentError, MAX_MSG_LINE_LEN, 2));
+    lines.push(...wordWrap(lastAgentError, contentWidth, 2));
   } else if (status === "aborted" && !message) {
     lines.push("max consecutive failures reached");
   } else if (!message) {
     lines.push("working...");
   } else {
-    const wrapped = wordWrap(message, MAX_MSG_LINE_LEN, MAX_MSG_LINES);
+    const wrapped = wordWrap(message, contentWidth, MAX_MSG_LINES);
     for (const wl of wrapped) {
       lines.push(wl);
     }
@@ -224,14 +224,18 @@ export function renderAgentMessageCells(
   return lines.map((l) => (l ? textToCells(l, "dim") : []));
 }
 
+/** Cell columns occupied by one moon glyph (emoji = 2 cells). */
+function moonCellsWide(): number {
+  return Math.max(1, textToCells(getMoonPhase("success"), "normal").length);
+}
+
 /**
  * Derives how many moon glyphs fit on one row for the given content width.
  * Capped at MOONS_PER_ROW so default-width output is unchanged; floored at 1
  * so the active moon is never dropped on narrow terminals.
  */
 function moonsPerRowForWidth(contentWidth: number): number {
-  const moonCells = textToCells(getMoonPhase("success"), "normal").length;
-  const perRow = Math.floor(contentWidth / Math.max(1, moonCells));
+  const perRow = Math.floor(contentWidth / moonCellsWide());
   return Math.min(MOONS_PER_ROW, Math.max(1, perRow));
 }
 
@@ -539,7 +543,7 @@ export function buildContentCells(
 
   const titleCells = renderTitleCells(agentName);
   const titleSpacer = titleCells[1] ?? [];
-  const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
+  const promptLines = wordWrap(prompt, contentWidth, MAX_PROMPT_LINES);
   const promptRows: Cell[][] = [];
   for (let i = 0; i < MAX_PROMPT_LINES; i++) {
     const pl = promptLines[i] ?? "";
@@ -569,6 +573,7 @@ export function buildContentCells(
         state.lastMessage,
         state.status,
         state.lastAgentError,
+        contentWidth,
       ),
     ],
     moon: [[], [], ...moonRows] as Cell[][],
@@ -641,7 +646,12 @@ export function buildFrameCells(
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
   // Narrow terminals get a narrower content viewport so rows (including the
   // moon strip) fit instead of overflowing; wide terminals are unchanged.
-  const contentWidth = Math.min(CONTENT_WIDTH, Math.max(1, terminalWidth));
+  // Floored at one moon glyph so the active moon always survives the frame
+  // clamp, even on degenerate 1-column terminals.
+  const contentWidth = Math.min(
+    CONTENT_WIDTH,
+    Math.max(terminalWidth, moonCellsWide()),
+  );
   const contentRows = buildContentCells(
     prompt,
     agentName,

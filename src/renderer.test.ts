@@ -301,6 +301,94 @@ describe("renderMoonStrip narrow-terminal reflow", () => {
     const text = cells.map((row) => stripAnsi(rowToString(row))).join("\n");
     expect(hasMoon(text)).toBe(true);
   });
+
+  it("wraps prompt text at narrow widths instead of discarding it", () => {
+    const state: OrchestratorState = {
+      status: "stopped",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    const prompt = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+
+    const rows = buildContentCells(
+      prompt,
+      "claude",
+      state,
+      "00:00:01",
+      Date.now(),
+      undefined,
+      20,
+    );
+
+    const text = rows.map((row) => stripAnsi(rowToString(row))).join("\n");
+    for (const word of prompt.split(" ")) {
+      expect(text).toContain(word);
+    }
+  });
+
+  it("wraps the agent message at narrow widths instead of discarding it", () => {
+    const message = "alpha beta gamma delta epsilon zeta omicron";
+    const rows = renderer.renderAgentMessageCells(message, "running", null, 20);
+
+    for (const row of rows) {
+      expect(row.length).toBeLessThanOrEqual(20);
+    }
+    const text = rows.map((row) => stripAnsi(rowToString(row))).join("\n");
+    expect(text).toContain("omicron");
+  });
+
+  it("keeps the active moon on a 1-column terminal", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 2,
+      totalInputTokens: 100,
+      totalOutputTokens: 50,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      tokensEstimated: false,
+      commitCount: 1,
+      iterations: [createIteration({ number: 1, success: true })],
+      successCount: 1,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      1,
+      30,
+    );
+
+    const text = cells.map((row) => stripAnsi(rowToString(row))).join("\n");
+    expect(hasMoon(text)).toBe(true);
+  });
 });
 
 describe("renderStarFieldLines", () => {
