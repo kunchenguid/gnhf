@@ -224,10 +224,22 @@ export function renderAgentMessageCells(
   return lines.map((l) => (l ? textToCells(l, "dim") : []));
 }
 
+/**
+ * Derives how many moon glyphs fit on one row for the given content width.
+ * Capped at MOONS_PER_ROW so default-width output is unchanged; floored at 1
+ * so the active moon is never dropped on narrow terminals.
+ */
+function moonsPerRowForWidth(contentWidth: number): number {
+  const moonCells = textToCells(getMoonPhase("success"), "normal").length;
+  const perRow = Math.floor(contentWidth / Math.max(1, moonCells));
+  return Math.min(MOONS_PER_ROW, Math.max(1, perRow));
+}
+
 export function renderMoonStripCells(
   iterations: { success: boolean }[],
   isRunning: boolean,
   now: number,
+  contentWidth: number = CONTENT_WIDTH,
 ): Cell[][] {
   const moons: string[] = iterations.map((iter) =>
     getMoonPhase(iter.success ? "success" : "fail"),
@@ -236,9 +248,10 @@ export function renderMoonStripCells(
     moons.push(getMoonPhase("active", now, MOON_PHASE_PERIOD));
   }
   if (moons.length === 0) return [[]];
+  const moonsPerRow = moonsPerRowForWidth(contentWidth);
   const rows: Cell[][] = [];
-  for (let i = 0; i < moons.length; i += MOONS_PER_ROW) {
-    const slice = moons.slice(i, i + MOONS_PER_ROW);
+  for (let i = 0; i < moons.length; i += moonsPerRow) {
+    const slice = moons.slice(i, i + moonsPerRow);
     const cells: Cell[] = [];
     for (const moon of slice) {
       cells.push(...textToCells(moon, "normal"));
@@ -290,8 +303,11 @@ export function renderMoonStrip(
   iterations: { success: boolean }[],
   isRunning: boolean,
   now: number,
+  contentWidth: number = CONTENT_WIDTH,
 ): string[] {
-  return renderMoonStripCells(iterations, isRunning, now).map(rowToString);
+  return renderMoonStripCells(iterations, isRunning, now, contentWidth).map(
+    rowToString,
+  );
 }
 
 // ── Star rendering (cell-based) ─────────────────────────────
@@ -509,9 +525,15 @@ export function buildContentCells(
   elapsed: string,
   now: number,
   availableHeight?: number,
+  contentWidth: number = CONTENT_WIDTH,
 ): Cell[][] {
   const isRunning = state.status === "running" || state.status === "waiting";
-  const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
+  const moonRows = renderMoonStripCells(
+    state.iterations,
+    isRunning,
+    now,
+    contentWidth,
+  );
   const maxRows = availableHeight ?? Infinity;
   if (maxRows <= 0) return [];
 
@@ -617,6 +639,9 @@ export function buildFrameCells(
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
   const availableHeight = Math.max(0, terminalHeight - reservedBottomRows);
+  // Narrow terminals get a narrower content viewport so rows (including the
+  // moon strip) fit instead of overflowing; wide terminals are unchanged.
+  const contentWidth = Math.min(CONTENT_WIDTH, Math.max(1, terminalWidth));
   const contentRows = buildContentCells(
     prompt,
     agentName,
@@ -624,6 +649,7 @@ export function buildFrameCells(
     elapsed,
     now,
     availableHeight,
+    contentWidth,
   );
 
   while (contentRows.length < Math.min(BASE_CONTENT_ROWS, availableHeight)) {
@@ -673,7 +699,7 @@ export function buildFrameCells(
       sideWidth,
       now,
     );
-    const center = centerLineCells(contentRows[i], CONTENT_WIDTH);
+    const center = centerLineCells(contentRows[i], contentWidth);
     const right = renderSideStarsCells(
       sideStars,
       visibleSideMeteors,

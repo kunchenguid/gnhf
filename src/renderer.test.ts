@@ -15,6 +15,7 @@ import {
   generateSideMeteorShower,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
+import { MOON_PHASES } from "./utils/moon.js";
 import type {
   IterationRecord,
   Orchestrator,
@@ -209,6 +210,96 @@ describe("renderMoonStrip", () => {
     expect(text).toMatch(
       /[\u{1F311}\u{1F312}\u{1F313}\u{1F314}\u{1F315}\u{1F316}\u{1F317}\u{1F318}]/u,
     );
+  });
+});
+
+describe("renderMoonStrip narrow-terminal reflow", () => {
+  const countMoons = (rows: string[]): number => {
+    const text = rows.join("");
+    return MOON_PHASES.reduce(
+      (n, phase) => n + text.split(phase).length - 1,
+      0,
+    );
+  };
+  const hasMoon = (text: string): boolean =>
+    MOON_PHASES.some((phase) => text.includes(phase));
+
+  it("keeps the default 30-per-row layout at full width", () => {
+    const iterations = Array.from({ length: 65 }, () => ({ success: true }));
+    const rows = renderer.renderMoonStripCells(iterations, false, Date.now());
+    expect(rows).toHaveLength(3);
+    expect(countMoons(rows.map(rowToString))).toBe(65);
+  });
+
+  it("reflows to fit a narrow content width without dropping moons", () => {
+    const iterations = Array.from({ length: 10 }, () => ({ success: true }));
+    const rows = renderer.renderMoonStripCells(
+      iterations,
+      true,
+      Date.now(),
+      20,
+    );
+    // 11 moons (10 completed + active) at 2 cells each in 20 columns.
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.length).toBeLessThanOrEqual(20);
+    }
+    expect(countMoons(rows.map(rowToString))).toBe(11);
+  });
+
+  it("floors at one moon per row instead of dropping the active moon", () => {
+    const rows = renderer.renderMoonStripCells(
+      [{ success: true }],
+      true,
+      Date.now(),
+      1,
+    );
+    expect(rows).toHaveLength(2);
+    expect(countMoons(rows.map(rowToString))).toBe(2);
+  });
+
+  it("fits every frame row to a narrow terminal and keeps the active moon", () => {
+    const terminalWidth = 40;
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 11,
+      totalInputTokens: 500,
+      totalOutputTokens: 300,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      tokensEstimated: false,
+      commitCount: 10,
+      iterations: Array.from({ length: 10 }, (_, index) =>
+        createIteration({ number: index + 1, success: true }),
+      ),
+      successCount: 10,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+
+    const cells = buildFrameCells(
+      "ship it",
+      "claude",
+      state,
+      [],
+      [],
+      [],
+      Date.now(),
+      terminalWidth,
+      30,
+    );
+
+    for (const row of cells) {
+      expect(row.length).toBeLessThanOrEqual(terminalWidth);
+    }
+    const text = cells.map((row) => stripAnsi(rowToString(row))).join("\n");
+    expect(hasMoon(text)).toBe(true);
   });
 });
 
