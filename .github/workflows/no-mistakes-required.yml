@@ -3,16 +3,13 @@ run-name: "PR #${{ github.event.pull_request.number }} body compliance - ${{ git
 
 on:
   pull_request:
-    # The verdict is a pure function of pull_request.body, so a push carries no
-    # new body to judge but does move the head SHA. This repository has no
-    # required status check that needs a run on every head SHA; keep synchronize
-    # excluded only while that remains true. The pipeline pushes before it
-    # writes the deterministic Pipeline section, so a synchronize trigger pinned
-    # a FAILURE check run to the new head for a body the same run was about to
-    # fix. GitHub keeps that failure next to the later edited SUCCESS, and gh pr
-    # checks collapses same-named check runs by startedAt alone, so the CI monitor
-    # could park the run red forever (kunchenguid/no-mistakes#773).
-    types: [opened, edited, reopened]
+    # T2: opened, edited, synchronize, reopened. #773 dropped synchronize
+    # because a pipeline push pinned a FAILURE check run to the new head
+    # before the PR step rewrote the body, and GitHub kept that failure
+    # next to the later edited SUCCESS. Since the pre-push attestation
+    # change (#994), synchronize is the event that judges a pipeline-pushed
+    # head, so it is restored.
+    types: [opened, edited, synchronize, reopened]
     branches:
       - main
     # Never create a run for a release-please PR. The job-level author exemption
@@ -25,6 +22,12 @@ on:
 
 permissions:
   contents: read
+  # Lets require-no-mistakes read this PR's LIVE body/head SHA instead of the
+  # workflow's own cached event payload, which a job rerun replays verbatim
+  # from its original trigger. Without this the gate fails closed rather than
+  # certifying from the possibly-stale event payload. See
+  # .github/actions/require-no-mistakes/README.md.
+  pull-requests: read
 
 # GitHub concurrency groups retain at most one pending run, replacing older
 # pending runs even when cancel-in-progress is false. Give body-bearing events
@@ -55,4 +58,4 @@ jobs:
       # pull request this gate is judging. Bumping the pin is a separate,
       # deliberate pull request.
       - name: Verify no-mistakes signature and pipeline attestation in PR body
-        uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in kunchenguid/no-mistakes#819)
+        uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970 # v1.80.1
