@@ -108,6 +108,87 @@ describe("renderStats", () => {
     expect(plain.length).toBeLessThanOrEqual(63);
   });
 
+  it.each([false, true])(
+    "preserves every stat with multi-digit progress (estimated: %s)",
+    (estimated) => {
+      const prefix = estimated ? "~" : "";
+      for (const [completed, cap, commits] of [
+        [12, 20, 11],
+        [99, 100, 99],
+        [999, 1000, 999],
+      ]) {
+        const plain = stripAnsi(
+          renderStats(
+            "08:07:17",
+            87_300_000,
+            860_000,
+            commits,
+            estimated,
+            0,
+            0,
+            completed,
+            cap,
+          ),
+        );
+
+        expect(plain.length).toBeLessThanOrEqual(63);
+        expect(plain).toBe(
+          `08:07:17·${completed}/${cap}·${prefix}88.2M total·${prefix}87.3M in·${prefix}860K out·${commits} commits`,
+        );
+      }
+    },
+  );
+
+  it("budgets estimated totals including cache tokens and preserves styles", () => {
+    const cells = renderer.renderStatsCells(
+      "08:07:17",
+      860_000,
+      87_300_000,
+      1,
+      true,
+      50_000_000,
+      40_000_000,
+      99,
+      1000,
+    );
+
+    expect(cells.length).toBeLessThanOrEqual(63);
+    expect(stripAnsi(rowToString(cells))).toBe(
+      "08:07:17·99/1000·~178.2M total·~860K in·~87.3M out·1 commit",
+    );
+    expect(cells.slice(0, 8).every((cell) => cell.style === "bold")).toBe(true);
+    expect(
+      cells
+        .filter((cell) => cell.char === "·")
+        .every((cell) => cell.style === "dim"),
+    ).toBe(true);
+  });
+
+  it.each([false, true])(
+    "keeps all values when progress needs compact token labels (estimated: %s)",
+    (estimated) => {
+      const prefix = estimated ? "~" : "";
+      const plain = stripAnsi(
+        renderStats(
+          "108:07:17",
+          876_500_000,
+          123_400_000,
+          9999,
+          estimated,
+          0,
+          0,
+          9999,
+          10000,
+        ),
+      );
+
+      expect(plain.length).toBeLessThanOrEqual(63);
+      expect(plain).toBe(
+        `108:07:17·9999/10000·Σ${prefix}999.9M·↓${prefix}876.5M·↑${prefix}123.4M·9999 commits`,
+      );
+    },
+  );
+
   it("prefixes token counts with '~' when usage is estimated", () => {
     const plain = stripAnsi(renderStats("01:23:45", 12400, 8200, 12, true));
     expect(plain).toContain("~21K total");
@@ -784,6 +865,53 @@ describe("buildContentCells adaptive height", () => {
     );
     expect(text).toContain("00:01:00 · 2/9 ·");
   });
+
+  it.each([false, true])(
+    "keeps the complete crowded stats row in the frame (estimated: %s)",
+    (estimated) => {
+      const crowdedState = {
+        ...state,
+        currentIteration: 13,
+        completedIterations: 12,
+        maxIterations: 20,
+        totalInputTokens: 87_300_000,
+        totalOutputTokens: 860_000,
+        tokensEstimated: estimated,
+        commitCount: 11,
+      };
+      const elapsed = "08:07:17";
+      const stats = buildContentCells(
+        "my prompt",
+        "claude",
+        crowdedState,
+        elapsed,
+        0,
+        1,
+      )[0];
+      const prefix = estimated ? "~" : "";
+      const expected = `08:07:17·12/20·${prefix}88.2M total·${prefix}87.3M in·${prefix}860K out·11 commits`;
+
+      expect(stats.length).toBeLessThanOrEqual(63);
+      expect(stripAnsi(rowToString(stats))).toBe(expected);
+
+      const frame = buildFrameCells(
+        "my prompt",
+        "claude",
+        crowdedState,
+        [],
+        [],
+        [],
+        state.startTime.getTime() + (8 * 3600 + 7 * 60 + 17) * 1000,
+        83,
+        30,
+      );
+      const statsLine = frame
+        .map(rowToString)
+        .map(stripAnsi)
+        .find((line) => line.includes(elapsed));
+      expect(statsLine?.trim()).toBe(expected);
+    },
+  );
 
   it("keeps the logo separated from both the eyebrow and prompt", () => {
     const lines = buildContentCells("my prompt", "claude", state, "00:01:00", 0)
