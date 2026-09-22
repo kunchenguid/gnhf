@@ -87,6 +87,9 @@ export interface RunLimits {
   maxRateLimitWaitMs?: number;
   stopWhen?: string;
   push?: boolean;
+  // Finished iterations restored on resume. Distinct from startIteration,
+  // which follows the newest attempt log even when that attempt never ended.
+  completedIterations?: number;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
@@ -192,7 +195,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         limits.maxRateLimitWaitMs ?? DEFAULT_RATE_LIMIT_MAX_WAIT_MS,
     };
     this.state.currentIteration = startIteration;
-    this.state.completedIterations = startIteration;
+    this.state.completedIterations =
+      limits.completedIterations ?? startIteration;
     this.state.maxIterations = limits.maxIterations;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,

@@ -355,6 +355,33 @@ export function getLastIterationNumber(runInfo: RunInfo): number {
   return max;
 }
 
+// Attempt logs are created when an iteration starts. Only iteration:end
+// records an iteration that actually finished, including a failed one.
+export function getCompletedIterationCount(runInfo: RunInfo): number {
+  if (!existsSync(runInfo.logPath)) return 0;
+
+  let completed = 0;
+  for (const line of readFileSync(runInfo.logPath, "utf-8").split("\n")) {
+    if (line.length === 0) continue;
+    let event: { event?: unknown; iteration?: unknown };
+    try {
+      event = JSON.parse(line) as { event?: unknown; iteration?: unknown };
+    } catch {
+      continue;
+    }
+    if (event.event !== "iteration:end") continue;
+    if (
+      typeof event.iteration !== "number" ||
+      !Number.isInteger(event.iteration) ||
+      event.iteration < 0
+    ) {
+      continue;
+    }
+    if (event.iteration > completed) completed = event.iteration;
+  }
+  return completed;
+}
+
 export function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((v): v is string => typeof v === "string");

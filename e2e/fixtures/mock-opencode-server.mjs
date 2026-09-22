@@ -8,6 +8,12 @@ import { createServer } from "node:http";
 import process from "node:process";
 import { setTimeout } from "node:timers";
 
+function shouldHangIteration(prompt) {
+  const hang = process.env.GNHF_MOCK_OPENCODE_HANG_ITERATION;
+  if (!hang) return false;
+  return String(prompt).includes(`This is iteration ${hang}.`);
+}
+
 function appendLog(event, details = {}) {
   const logPath = process.env.GNHF_MOCK_OPENCODE_LOG_PATH;
   if (!logPath) return;
@@ -226,7 +232,10 @@ const server = createServer(async (req, res) => {
     if (session) session.lastPrompt = String(prompt);
     appendLog("message:start", { sessionId, prompt });
 
-    if (String(prompt).includes("slow cleanup")) {
+    if (
+      String(prompt).includes("slow cleanup") ||
+      shouldHangIteration(prompt)
+    ) {
       req.on("close", () => {
         appendLog("message:closed", { sessionId });
       });
@@ -266,7 +275,10 @@ const server = createServer(async (req, res) => {
     if (session) session.lastPrompt = String(prompt);
     appendLog("message:start", { sessionId, prompt });
 
-    if (String(prompt).includes("slow cleanup")) {
+    if (
+      String(prompt).includes("slow cleanup") ||
+      shouldHangIteration(prompt)
+    ) {
       req.on("close", () => {
         appendLog("message:closed", { sessionId });
       });

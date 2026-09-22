@@ -1529,6 +1529,53 @@ describe("Orchestrator backoff behavior", () => {
     });
   });
 
+  it("does not count an unfinished resumed attempt as complete", async () => {
+    let resolveRun: ((value: AgentResult) => void) | undefined;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      2,
+      { maxIterations: 3, completedIterations: 1 },
+    );
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 1,
+      currentIteration: 2,
+      maxIterations: 3,
+    });
+
+    const startPromise = orchestrator.start();
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 1,
+      currentIteration: 3,
+      maxIterations: 3,
+    });
+
+    resolveRun!(createSuccessResult());
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 3,
+      currentIteration: 3,
+      maxIterations: 3,
+    });
+  });
+
   it("uses the configured fallback model once before returning to the rate-limit wait", async () => {
     vi.useFakeTimers();
 
