@@ -196,7 +196,8 @@ export function renderStatsCells(
       ),
     );
   }
-  const padding = paddedWidth <= CONTENT_WIDTH ? textToCells(" ", "normal") : [];
+  const padding =
+    paddedWidth <= CONTENT_WIDTH ? textToCells(" ", "normal") : [];
   const separator = [...padding, ...textToCells("\u00b7", "dim"), ...padding];
   return segments.flatMap((segment, index) =>
     index === 0 ? segment : [...separator, ...segment],
