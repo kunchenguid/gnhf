@@ -156,6 +156,8 @@ export function renderStatsCells(
   tokensEstimated = false,
   cacheReadTokens = 0,
   cacheCreationTokens = 0,
+  completedIterations?: number,
+  maxIterations?: number,
 ): Cell[] {
   const totalTokens = getTotalTokenCount(
     inputTokens,
@@ -168,8 +170,13 @@ export function renderStatsCells(
     ...textToCells("\u00b7", "dim"),
     ...textToCells(" ", "normal"),
   ];
+  const progress =
+    maxIterations !== undefined
+      ? textToCells(`${completedIterations ?? 0}/${maxIterations}`, "normal")
+      : [];
   return [
     ...textToCells(elapsed, "bold"),
+    ...(progress.length > 0 ? [...separator, ...progress] : []),
     ...separator,
     ...textToCells(
       formatTokenCount(totalTokens, "total", tokensEstimated),
@@ -262,6 +269,8 @@ export function renderStats(
   tokensEstimated = false,
   cacheReadTokens = 0,
   cacheCreationTokens = 0,
+  completedIterations?: number,
+  maxIterations?: number,
 ): string {
   return rowToString(
     renderStatsCells(
@@ -272,6 +281,8 @@ export function renderStats(
       tokensEstimated,
       cacheReadTokens,
       cacheCreationTokens,
+      completedIterations,
+      maxIterations,
     ),
   );
 }
@@ -538,6 +549,8 @@ export function buildContentCells(
         state.tokensEstimated,
         state.totalCacheReadTokens,
         state.totalCacheCreationTokens,
+        state.completedIterations,
+        state.maxIterations,
       ),
     ] as Cell[][],
     agent: [

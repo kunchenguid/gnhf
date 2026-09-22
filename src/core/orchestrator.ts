@@ -47,6 +47,10 @@ export interface OrchestratorState {
   gracefulStopRequested: boolean;
   interruptHint: InterruptHint;
   currentIteration: number;
+  // Finished iterations, including ones restored on resume. Stays behind
+  // currentIteration while an iteration is still running.
+  completedIterations?: number;
+  maxIterations?: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;
@@ -149,6 +153,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     status: "running",
     gracefulStopRequested: false,
     currentIteration: 0,
+    completedIterations: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,
@@ -187,6 +192,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         limits.maxRateLimitWaitMs ?? DEFAULT_RATE_LIMIT_MAX_WAIT_MS,
     };
     this.state.currentIteration = startIteration;
+    this.state.completedIterations = startIteration;
+    this.state.maxIterations = limits.maxIterations;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
       this.cwd,
@@ -406,6 +413,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.consecutiveRateLimitWaits = 0;
         const { record } = result;
         this.state.iterations.push(record);
+        this.state.completedIterations = this.state.currentIteration;
         this.emit("iteration:end", record);
         this.emit("state", this.getState());
 

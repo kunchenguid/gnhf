@@ -81,6 +81,33 @@ describe("renderStats", () => {
     expect(line).not.toContain("iteration");
   });
 
+  it("places finished iterations between the timer and token counts when capped", () => {
+    const line = stripAnsi(
+      renderStats("01:23:45", 12400, 8200, 12, false, 0, 0, 2, 9),
+    );
+    expect(line).toBe(
+      "01:23:45 · 2/9 · 21K total · 12K in · 8K out · 12 commits",
+    );
+  });
+
+  it("omits the cap when max iterations is unset", () => {
+    const line = stripAnsi(
+      renderStats("01:23:45", 12400, 8200, 12, false, 0, 0, 2),
+    );
+    expect(line).toBe("01:23:45 · 21K total · 12K in · 8K out · 12 commits");
+  });
+
+  it("keeps a capped high-token stats row within the content width", () => {
+    const plain = stripAnsi(
+      renderStats("08:07:17", 87_300_000, 860_000, 11, false, 0, 0, 2, 9),
+    );
+
+    expect(plain).toBe(
+      "08:07:17 · 2/9 · 88.2M total · 87.3M in · 860K out · 11 commits",
+    );
+    expect(plain.length).toBeLessThanOrEqual(63);
+  });
+
   it("prefixes token counts with '~' when usage is estimated", () => {
     const plain = stripAnsi(renderStats("01:23:45", 12400, 8200, 12, true));
     expect(plain).toContain("~21K total");
@@ -743,6 +770,19 @@ describe("buildContentCells adaptive height", () => {
     expect(text).toContain("reading files");
     expect(text).toContain("00:01:00");
     expect(rows).toHaveLength(22);
+  });
+
+  it("shows finished iterations between the timer and token counts", () => {
+    const text = toText(
+      buildContentCells(
+        "my prompt",
+        "claude",
+        { ...state, completedIterations: 2, maxIterations: 9 },
+        "00:01:00",
+        0,
+      ),
+    );
+    expect(text).toContain("00:01:00 · 2/9 ·");
   });
 
   it("keeps the logo separated from both the eyebrow and prompt", () => {
