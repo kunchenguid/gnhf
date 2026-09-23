@@ -81,6 +81,7 @@ describe("GrokAgent", () => {
         "--json-schema",
         JSON.stringify(schema),
         "--always-approve",
+        "--trust",
       ],
       {
         cwd: "/work/dir",
@@ -92,7 +93,7 @@ describe("GrokAgent", () => {
     );
   });
 
-  it("replaces user model args with the configured model and respects a user permission mode", () => {
+  it("replaces user model args with the configured model and respects user permission and trust flags", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -103,8 +104,8 @@ describe("GrokAgent", () => {
         "--model=older",
         "--effort",
         "high",
-        "--permission-mode",
-        "acceptEdits",
+        "--yolo",
+        "--trust",
       ],
       model: "grok-4.5-build",
       platform: "linux",
@@ -114,8 +115,8 @@ describe("GrokAgent", () => {
     expect(mockSpawn.mock.calls[0]![1]).toEqual([
       "--effort",
       "high",
-      "--permission-mode",
-      "acceptEdits",
+      "--yolo",
+      "--trust",
       "-m",
       "grok-4.5-build",
       "-p",
@@ -243,6 +244,17 @@ describe("GrokAgent", () => {
       "Rate limited: You've hit the rate limit for your plan.",
       RateLimitAgentError,
     ],
+    [
+      "invalid api key",
+      "Invalid API key. Check XAI_API_KEY.",
+      PermanentAgentError,
+    ],
+    [
+      "plan credit limit",
+      "You've hit the credit limit for your plan.",
+      PermanentAgentError,
+    ],
+    ["free usage limit", "You hit your free usage limit.", PermanentAgentError],
     ["weekly limit", "You hit your weekly limit.", RateLimitAgentError],
   ])(
     "classifies a %s error event exit",

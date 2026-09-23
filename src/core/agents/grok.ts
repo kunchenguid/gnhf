@@ -151,9 +151,11 @@ function buildGrokArgs(
   const userSpecifiedPermissionMode = userArgs.some(
     (arg) =>
       arg === "--always-approve" ||
+      arg === "--yolo" ||
       arg === "--permission-mode" ||
       arg.startsWith("--permission-mode="),
   );
+  const userSpecifiedTrust = userArgs.includes("--trust");
 
   return [
     ...userArgs,
@@ -165,6 +167,8 @@ function buildGrokArgs(
     "--json-schema",
     JSON.stringify(schema),
     ...(userSpecifiedPermissionMode ? [] : ["--always-approve"]),
+    // Untrusted folders skip project AGENTS.md, skills, and hooks headlessly.
+    ...(userSpecifiedTrust ? [] : ["--trust"]),
   ];
 }
 
@@ -183,13 +187,17 @@ function toTokenUsage(usage: GrokUsage): TokenUsage {
  * reports a reset time, so plan limits wait on the orchestrator's fallback.
  */
 function classifyGrokFailure(errorOutput: string, detail: string): Error {
-  if (/not signed in/i.test(errorOutput)) {
+  if (/not signed in|invalid api key/i.test(errorOutput)) {
     return new PermanentAgentError(
-      "grok is not signed in - run `grok login` or set XAI_API_KEY",
+      "grok is not authenticated - run `grok login` or set a valid XAI_API_KEY",
       detail,
     );
   }
-  if (/out of credits|spending limit/i.test(errorOutput)) {
+  if (
+    /out of credits|spending limit|credit limit|free usage limit|usage balance exhausted/i.test(
+      errorOutput,
+    )
+  ) {
     return new PermanentAgentError(
       "grok is out of credits or over its spending limit - see gnhf.log",
       detail,
