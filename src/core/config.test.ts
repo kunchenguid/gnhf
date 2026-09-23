@@ -592,6 +592,7 @@ describe("loadConfig", () => {
     "--cwd",
     "--continue",
     "--resume",
+    "--load",
     "--session-id",
     "--worktree",
   ])("throws when agentArgsOverride.grok contains reserved flag %s", (flag) => {

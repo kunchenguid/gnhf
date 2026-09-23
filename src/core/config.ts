@@ -252,6 +252,8 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-r" ||
         arg === "--resume" ||
         arg.startsWith("--resume=") ||
+        arg === "--load" ||
+        arg.startsWith("--load=") ||
         arg === "-s" ||
         arg === "--session-id" ||
         arg.startsWith("--session-id=") ||

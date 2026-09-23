@@ -81,7 +81,6 @@ describe("GrokAgent", () => {
         "--json-schema",
         JSON.stringify(schema),
         "--always-approve",
-        "--trust",
       ],
       {
         cwd: "/work/dir",
@@ -93,7 +92,7 @@ describe("GrokAgent", () => {
     );
   });
 
-  it("replaces user model args with the configured model and respects user permission and trust flags", () => {
+  it("replaces user model args with the configured model and passes user permission and trust flags through", () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -154,7 +153,6 @@ describe("GrokAgent", () => {
         "streaming-json",
         "--json-schema",
         JSON.stringify(schema),
-        "--trust",
       ]);
     },
   );

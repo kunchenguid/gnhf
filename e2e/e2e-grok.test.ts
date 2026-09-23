@@ -161,7 +161,7 @@ describe.skipIf(process.platform === "win32")("gnhf e2e grok agent", () => {
     return { cwd, mockLogPath: join(logDir, "mock-grok.jsonl") };
   }
 
-  it("runs --agent grok headless with the model, output schema, and always-approve and trust defaults", async () => {
+  it("runs --agent grok headless with the model, output schema, and always-approve default", async () => {
     const { cwd, mockLogPath } = setup();
 
     const result = await runCli(
@@ -204,7 +204,6 @@ describe.skipIf(process.platform === "win32")("gnhf e2e grok agent", () => {
       "--json-schema",
       "<schema>",
       "--always-approve",
-      "--trust",
     ]);
     expect(spawnEvent?.promptHasObjective).toBe(true);
     expect(spawnEvent?.schemaRequired).toEqual([

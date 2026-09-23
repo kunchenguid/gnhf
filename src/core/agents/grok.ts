@@ -156,7 +156,6 @@ function buildGrokArgs(
       arg === "--permission-mode" ||
       arg.startsWith("--permission-mode="),
   );
-  const userSpecifiedTrust = userArgs.includes("--trust");
 
   return [
     ...userArgs,
@@ -168,8 +167,6 @@ function buildGrokArgs(
     "--json-schema",
     JSON.stringify(schema),
     ...(userSpecifiedPermissionMode ? [] : ["--always-approve"]),
-    // Untrusted folders skip project AGENTS.md, skills, and hooks headlessly.
-    ...(userSpecifiedTrust ? [] : ["--trust"]),
   ];
 }
 
