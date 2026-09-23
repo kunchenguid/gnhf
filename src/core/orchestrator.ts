@@ -47,8 +47,9 @@ export interface OrchestratorState {
   gracefulStopRequested: boolean;
   interruptHint: InterruptHint;
   currentIteration: number;
-  // Finished iterations, including ones restored on resume. Stays behind
-  // currentIteration while an iteration is still running.
+  // Count of iterations that reached iteration:end, including failed ones
+  // restored on resume. An attempt that never ends stays out, so this can
+  // remain below currentIteration.
   completedIterations?: number;
   maxIterations?: number;
   totalInputTokens: number;
