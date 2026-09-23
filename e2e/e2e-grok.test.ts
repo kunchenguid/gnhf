@@ -4,7 +4,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -65,20 +64,6 @@ function readJsonLines(filePath: string): Record<string, unknown>[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
-}
-
-function findRunLogPath(cwd: string): string {
-  const runsDir = join(cwd, ".gnhf", "runs");
-  if (!existsSync(runsDir)) {
-    throw new Error(`No run directory found under ${runsDir}`);
-  }
-  const runs = readdirSync(runsDir);
-  if (runs.length !== 1) {
-    throw new Error(
-      `Expected exactly one run in ${runsDir}, found ${runs.length}: ${runs.join(", ")}`,
-    );
-  }
-  return join(runsDir, runs[0]!, "gnhf.log");
 }
 
 function runCli(
