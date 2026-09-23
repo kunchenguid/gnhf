@@ -56,6 +56,17 @@ vi.mock("./cursor.js", () => {
   return { CursorAgent };
 });
 
+vi.mock("./grok.js", () => {
+  const GrokAgent = vi.fn(function (
+    this: Record<string, unknown>,
+    deps?: Record<string, unknown>,
+  ) {
+    this.name = "grok";
+    this.deps = deps;
+  });
+  return { GrokAgent };
+});
+
 vi.mock("./rovodev.js", () => {
   const RovoDevAgent = vi.fn(function (
     this: Record<string, unknown>,
@@ -100,6 +111,7 @@ import { CodexAgent } from "./codex.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { CursorAgent } from "./cursor.js";
+import { GrokAgent } from "./grok.js";
 import { RovoDevAgent } from "./rovodev.js";
 import type { RunInfo } from "../run.js";
 
@@ -351,6 +363,24 @@ describe("createAgent", () => {
       extraArgs: undefined,
       schema: withStopSchema,
     });
+  });
+
+  it("passes path override, extra args, model, and schema through to the GrokAgent", () => {
+    const agent = createAgent(
+      "grok",
+      stubRunInfo,
+      "/custom/grok",
+      ["--effort", "high"],
+      { includeStopField: true, model: "grok-4.5-build" },
+    );
+
+    expect(GrokAgent).toHaveBeenCalledWith({
+      bin: "/custom/grok",
+      extraArgs: ["--effort", "high"],
+      model: "grok-4.5-build",
+      schema: withStopSchema,
+    });
+    expect(agent.name).toBe("grok");
   });
 
   it("creates a RovoDevAgent when name is 'rovodev'", () => {

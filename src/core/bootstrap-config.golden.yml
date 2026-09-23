@@ -11,6 +11,7 @@ agent: claude
 #   copilot: /path/to/custom-copilot
 #   pi: /path/to/custom-pi
 #   cursor: /path/to/custom-cursor-agent
+#   grok: /path/to/custom-grok
 
 # Native agent CLI arg overrides (optional)
 # ACP targets do not support path or arg overrides.

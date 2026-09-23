@@ -14,6 +14,7 @@ export const AGENT_NAMES = [
   "copilot",
   "pi",
   "cursor",
+  "grok",
 ] as const;
 
 export type AgentName = (typeof AGENT_NAMES)[number];
@@ -228,6 +229,33 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "--skip-worktree-setup" ||
         arg === "--api-key" ||
         arg.startsWith("--api-key=")
+      );
+    case "grok":
+      return (
+        arg === "-p" ||
+        arg === "--single" ||
+        arg.startsWith("--single=") ||
+        arg === "--prompt-file" ||
+        arg.startsWith("--prompt-file=") ||
+        arg === "--prompt-json" ||
+        arg.startsWith("--prompt-json=") ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--json-schema" ||
+        arg.startsWith("--json-schema=") ||
+        arg === "--cwd" ||
+        arg.startsWith("--cwd=") ||
+        arg === "-c" ||
+        arg === "--continue" ||
+        arg === "-r" ||
+        arg === "--resume" ||
+        arg.startsWith("--resume=") ||
+        arg === "-s" ||
+        arg === "--session-id" ||
+        arg.startsWith("--session-id=") ||
+        arg === "-w" ||
+        arg === "--worktree" ||
+        arg.startsWith("--worktree=")
       );
   }
 }
@@ -644,6 +672,7 @@ function serializeConfig(config: Config): string {
     "#   copilot: /path/to/custom-copilot",
     "#   pi: /path/to/custom-pi",
     "#   cursor: /path/to/custom-cursor-agent",
+    "#   grok: /path/to/custom-grok",
     "",
     "# Native agent CLI arg overrides (optional)",
     "# ACP targets do not support path or arg overrides.",

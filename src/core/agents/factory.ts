@@ -11,6 +11,7 @@ import { ClaudeAgent } from "./claude.js";
 import { CopilotAgent } from "./copilot.js";
 import { CodexAgent } from "./codex.js";
 import { CursorAgent } from "./cursor.js";
+import { GrokAgent } from "./grok.js";
 import { OpenCodeAgent } from "./opencode.js";
 import { PiAgent } from "./pi.js";
 import { RovoDevAgent } from "./rovodev.js";
@@ -82,6 +83,13 @@ export function createAgent(
       });
     case "cursor":
       return new CursorAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+        model: options.model,
+        schema,
+      });
+    case "grok":
+      return new GrokAgent({
         bin: pathOverride,
         extraArgs: agentArgsOverride,
         model: options.model,

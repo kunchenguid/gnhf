@@ -568,6 +568,41 @@ describe("loadConfig", () => {
     },
   );
 
+  it("allows safe agentArgsOverride.grok flags", () => {
+    mockReadFileSync.mockReturnValue(
+      "agentArgsOverride:\n  grok:\n    - --effort\n    - high\n    - --permission-mode\n    - acceptEdits\n",
+    );
+
+    const config = loadConfig();
+
+    expect(config.agentArgsOverride).toEqual({
+      grok: ["--effort", "high", "--permission-mode", "acceptEdits"],
+    });
+  });
+
+  it.each([
+    "-p",
+    "--single=hi",
+    "--prompt-file",
+    "--prompt-json",
+    "--output-format",
+    "--output-format=json",
+    "--json-schema",
+    "--cwd",
+    "--continue",
+    "--resume",
+    "--session-id",
+    "--worktree",
+  ])("throws when agentArgsOverride.grok contains reserved flag %s", (flag) => {
+    mockReadFileSync.mockReturnValue(
+      `agentArgsOverride:\n  grok:\n    - ${flag}\n`,
+    );
+
+    expect(() => loadConfig()).toThrow(
+      /agentArgsOverride\.grok\[0\].*managed by gnhf/,
+    );
+  });
+
   it("reads acpRegistryOverrides from config", () => {
     mockReadFileSync.mockReturnValue(
       [
