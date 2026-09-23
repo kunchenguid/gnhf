@@ -675,14 +675,15 @@ describe("getCompletedIterationCount", () => {
     expect(getCompletedIterationCount(runInfo)).toBe(1);
   });
 
-  it("uses the highest finished iteration, including a failure", () => {
+  it("counts distinct finished iterations, including a failure", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(
       [
         JSON.stringify({ event: "iteration:end", iteration: 1 }),
+        JSON.stringify({ event: "iteration:end", iteration: 1 }),
         JSON.stringify({
           event: "iteration:end",
-          iteration: 2,
+          iteration: 3,
           success: false,
         }),
       ].join("\n"),

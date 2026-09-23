@@ -360,7 +360,7 @@ export function getLastIterationNumber(runInfo: RunInfo): number {
 export function getCompletedIterationCount(runInfo: RunInfo): number {
   if (!existsSync(runInfo.logPath)) return 0;
 
-  let completed = 0;
+  const finished = new Set<number>();
   for (const line of readFileSync(runInfo.logPath, "utf-8").split("\n")) {
     if (line.length === 0) continue;
     let event: { event?: unknown; iteration?: unknown };
@@ -377,9 +377,9 @@ export function getCompletedIterationCount(runInfo: RunInfo): number {
     ) {
       continue;
     }
-    if (event.iteration > completed) completed = event.iteration;
+    finished.add(event.iteration);
   }
-  return completed;
+  return finished.size;
 }
 
 export function toStringArray(value: unknown): string[] {

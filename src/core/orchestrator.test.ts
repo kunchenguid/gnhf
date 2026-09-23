@@ -1503,7 +1503,7 @@ describe("Orchestrator backoff behavior", () => {
     );
 
     expect(orchestrator.getState()).toMatchObject({
-      completedIterations: 2,
+      completedIterations: 0,
       maxIterations: 3,
       currentIteration: 2,
     });
@@ -1514,7 +1514,7 @@ describe("Orchestrator backoff behavior", () => {
       expect(agent.run).toHaveBeenCalledTimes(1);
     });
     expect(orchestrator.getState()).toMatchObject({
-      completedIterations: 2,
+      completedIterations: 0,
       currentIteration: 3,
       maxIterations: 3,
     });
@@ -1523,7 +1523,7 @@ describe("Orchestrator backoff behavior", () => {
     await startPromise;
 
     expect(orchestrator.getState()).toMatchObject({
-      completedIterations: 3,
+      completedIterations: 1,
       currentIteration: 3,
       maxIterations: 3,
     });
@@ -1570,7 +1570,7 @@ describe("Orchestrator backoff behavior", () => {
     await startPromise;
 
     expect(orchestrator.getState()).toMatchObject({
-      completedIterations: 3,
+      completedIterations: 2,
       currentIteration: 3,
       maxIterations: 3,
     });

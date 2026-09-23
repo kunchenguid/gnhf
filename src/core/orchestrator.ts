@@ -195,8 +195,9 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         limits.maxRateLimitWaitMs ?? DEFAULT_RATE_LIMIT_MAX_WAIT_MS,
     };
     this.state.currentIteration = startIteration;
-    this.state.completedIterations =
-      limits.completedIterations ?? startIteration;
+    if (limits.completedIterations !== undefined) {
+      this.state.completedIterations = limits.completedIterations;
+    }
     this.state.maxIterations = limits.maxIterations;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
@@ -417,7 +418,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.consecutiveRateLimitWaits = 0;
         const { record } = result;
         this.state.iterations.push(record);
-        this.state.completedIterations = this.state.currentIteration;
+        this.state.completedIterations =
+          (this.state.completedIterations ?? 0) + 1;
         this.emit("iteration:end", record);
         this.emit("state", this.getState());
 
