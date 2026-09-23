@@ -235,6 +235,8 @@ function isReservedAgentArg(agent: AgentName, arg: string): boolean {
         arg === "-p" ||
         arg === "--single" ||
         arg.startsWith("--single=") ||
+        arg === "--print" ||
+        arg.startsWith("--print=") ||
         arg === "--prompt-file" ||
         arg.startsWith("--prompt-file=") ||
         arg === "--prompt-json" ||

@@ -17,10 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "dist", "cli.mjs");
 const fixtureBinDir = join(repoRoot, "e2e", "fixtures");
-const mockGrokPath = join(
-  fixtureBinDir,
-  process.platform === "win32" ? "mock-grok.cmd" : "mock-grok",
-);
+const mockGrokPath = join(fixtureBinDir, "mock-grok");
 
 const emptyGitConfigDir = mkdtempSync(
   join(tmpdir(), "gnhf-e2e-grok-gitconfig-"),
@@ -145,21 +142,13 @@ function createGrokEnv(
   };
 }
 
-describe("gnhf e2e grok agent", () => {
+// cmd.exe truncates the multi-line argv prompt a .cmd shim would receive.
+describe.skipIf(process.platform === "win32")("gnhf e2e grok agent", () => {
   const tempDirs: string[] = [];
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
-      try {
-        rmSync(dir, {
-          recursive: true,
-          force: true,
-          maxRetries: 3,
-          retryDelay: 200,
-        });
-      } catch {
-        // Best-effort cleanup on Windows file locks.
-      }
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

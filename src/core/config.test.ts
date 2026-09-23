@@ -583,6 +583,7 @@ describe("loadConfig", () => {
   it.each([
     "-p",
     "--single=hi",
+    "--print",
     "--prompt-file",
     "--prompt-json",
     "--output-format",

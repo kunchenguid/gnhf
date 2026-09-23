@@ -128,6 +128,37 @@ describe("GrokAgent", () => {
     ]);
   });
 
+  it.each([
+    ["--always-approve"],
+    ["--yolo"],
+    ["--dangerously-skip-permissions"],
+    ["--permission-mode", "plan"],
+    ["--permission-mode=plan"],
+  ])(
+    "does not add --always-approve when the user passes %s",
+    (...permissionArgs) => {
+      const proc = createMockProcess();
+      mockSpawn.mockReturnValue(proc);
+
+      new GrokAgent({
+        extraArgs: permissionArgs,
+        platform: "linux",
+        schema,
+      }).run("test prompt", "/work/dir");
+
+      expect(mockSpawn.mock.calls[0]![1]).toEqual([
+        ...permissionArgs,
+        "-p",
+        "test prompt",
+        "--output-format",
+        "streaming-json",
+        "--json-schema",
+        JSON.stringify(schema),
+        "--trust",
+      ]);
+    },
+  );
+
   it("returns the end event's structured output and usage, streaming per-request usage and text", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

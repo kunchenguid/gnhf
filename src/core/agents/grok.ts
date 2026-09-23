@@ -152,6 +152,7 @@ function buildGrokArgs(
     (arg) =>
       arg === "--always-approve" ||
       arg === "--yolo" ||
+      arg === "--dangerously-skip-permissions" ||
       arg === "--permission-mode" ||
       arg.startsWith("--permission-mode="),
   );
