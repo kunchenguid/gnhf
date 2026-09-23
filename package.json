@@ -29,7 +29,7 @@
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.2",
     "acp-mock": "^1.1.0",
-    "acpx": "^0.6.1",
+    "acpx": "^0.16.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.0.0",
     "prettier": "^3.0.0",
