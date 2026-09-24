@@ -99,17 +99,70 @@ async function waitForLogEvent(
   event: string,
   timeoutMs = 15_000,
 ): Promise<Record<string, unknown>> {
+  return waitForLogMatch(
+    filePath,
+    (entry) => entry.event === event,
+    timeoutMs,
+    `Timed out waiting for log event ${event} in ${filePath}`,
+  );
+}
+
+async function waitForLogMatch(
+  filePath: string,
+  predicate: (entry: Record<string, unknown>) => boolean,
+  timeoutMs = 15_000,
+  timeoutMessage = `Timed out waiting for a log match in ${filePath}`,
+): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const match = readJsonLines(filePath).find(
-      (entry) => entry.event === event,
-    );
-    if (match) return match;
+    if (existsSync(filePath)) {
+      const match = readJsonLines(filePath).find(predicate);
+      if (match) return match;
+    }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
   }
 
-  throw new Error(`Timed out waiting for log event ${event} in ${filePath}`);
+  throw new Error(timeoutMessage);
+}
+
+async function waitForRunLogPath(
+  cwd: string,
+  timeoutMs = 15_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  const runsDir = join(cwd, ".gnhf", "runs");
+
+  while (Date.now() < deadline) {
+    if (existsSync(runsDir)) {
+      const runs = readdirSync(runsDir);
+      if (runs.length === 1) return join(runsDir, runs[0]!, "gnhf.log");
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+  }
+
+  throw new Error(`Timed out waiting for a run log under ${runsDir}`);
+}
+
+const ANSI_COLOR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+function visibleText(text: string): string {
+  return text.replace(ANSI_COLOR, "");
+}
+
+async function waitForProgress(
+  stdout: () => string,
+  timeoutMs = 15_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const text = stdout();
+    if (text.includes("1/3") || text.includes("2/3")) return text;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+  }
+
+  throw new Error(`Timed out waiting for iteration progress in:\n${stdout()}`);
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -601,6 +654,118 @@ describe("gnhf e2e", () => {
     expect(secondRun.code).toBe(0);
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
   }, 30_000);
+
+  it.skipIf(process.platform === "win32")(
+    "does not count an interrupted iteration as finished when the run resumes",
+    async () => {
+      const cwd = createRepo();
+      tempDirs.push(cwd);
+      const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+      tempDirs.push(logDir);
+      const mockLogPath = join(logDir, "mock-opencode.jsonl");
+      const mockPids = new Set<number>();
+
+      const killPid = (pid: number) => {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      };
+
+      const spawnHeld = (hangIteration: string, prompt?: string) => {
+        const child = spawn(
+          process.execPath,
+          [
+            distCliPath,
+            ...(prompt === undefined ? [] : [prompt]),
+            "--agent",
+            "opencode",
+            "--max-iterations",
+            "3",
+            "--prevent-sleep",
+            "off",
+            "--meteor-frequency",
+            "0",
+          ],
+          {
+            cwd,
+            env: {
+              ...createTestEnv(mockLogPath, tempDirs),
+              GNHF_MOCK_OPENCODE_HANG_ITERATION: hangIteration,
+            },
+            stdio: ["pipe", "pipe", "pipe"],
+          },
+        );
+        child.stdin.end();
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk.toString();
+        });
+        const exited = new Promise<RunResult>((resolveResult, reject) => {
+          child.on("error", reject);
+          child.on("close", (code, signal) => {
+            resolveResult({ code, signal, stdout, stderr });
+          });
+        });
+        return {
+          child,
+          stdout: () => stdout,
+          stderr: () => stderr,
+          exited,
+        };
+      };
+
+      const first = spawnHeld("2", "ship it");
+      try {
+        const runLogPath = await waitForRunLogPath(cwd);
+        await waitForLogMatch(
+          runLogPath,
+          (entry) => entry.event === "agent:run:start" && entry.iteration === 2,
+        );
+        const runsDir = join(cwd, ".gnhf", "runs");
+        const runId = readdirSync(runsDir)[0]!;
+        expect(existsSync(join(runsDir, runId, "iteration-2.jsonl"))).toBe(
+          true,
+        );
+
+        first.child.kill("SIGKILL");
+        await first.exited;
+
+        const finished = readJsonLines(runLogPath)
+          .filter((entry) => entry.event === "iteration:end")
+          .map((entry) => entry.iteration);
+        expect(finished).toEqual([1]);
+      } finally {
+        for (const entry of readJsonLines(mockLogPath)) {
+          if (entry.event === "server:start" && typeof entry.pid === "number") {
+            mockPids.add(entry.pid);
+          }
+        }
+        for (const pid of mockPids) killPid(pid);
+        mockPids.clear();
+      }
+
+      const resumed = spawnHeld("3");
+      try {
+        const plain = visibleText(await waitForProgress(resumed.stdout));
+        expect(plain).toMatch(/00:00:\d\d · 1\/3 ·/);
+      } finally {
+        resumed.child.kill("SIGKILL");
+        await resumed.exited.catch(() => undefined);
+        for (const entry of readJsonLines(mockLogPath)) {
+          if (entry.event === "server:start" && typeof entry.pid === "number") {
+            killPid(entry.pid);
+          }
+        }
+      }
+    },
+    30_000,
+  );
 
   it.skipIf(process.platform === "win32")(
     "runs one iteration in --worktree mode and preserves the worktree with commits",

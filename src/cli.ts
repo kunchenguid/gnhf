@@ -47,6 +47,7 @@ import {
   resumeRun,
   peekRunMetadata,
   getLastIterationNumber,
+  getCompletedIterationCount,
   writeRunEndState,
 } from "./core/run.js";
 import { readStdinText } from "./core/stdin.js";
@@ -1097,6 +1098,7 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
+          completedIterations: getCompletedIterationCount(runInfo),
           stopWhen: effectiveStopWhen,
           ...(options.maxRateLimitWait === undefined
             ? {}

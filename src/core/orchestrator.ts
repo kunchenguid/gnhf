@@ -47,6 +47,11 @@ export interface OrchestratorState {
   gracefulStopRequested: boolean;
   interruptHint: InterruptHint;
   currentIteration: number;
+  // Count of iterations that reached iteration:end, including failed ones
+  // restored on resume. An attempt that never ends stays out, so this can
+  // remain below currentIteration.
+  completedIterations?: number;
+  maxIterations?: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;
@@ -83,6 +88,9 @@ export interface RunLimits {
   maxRateLimitWaitMs?: number;
   stopWhen?: string;
   push?: boolean;
+  // Finished iterations restored on resume. Distinct from startIteration,
+  // which follows the newest attempt log even when that attempt never ended.
+  completedIterations?: number;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
@@ -149,6 +157,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     status: "running",
     gracefulStopRequested: false,
     currentIteration: 0,
+    completedIterations: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,
@@ -187,6 +196,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         limits.maxRateLimitWaitMs ?? DEFAULT_RATE_LIMIT_MAX_WAIT_MS,
     };
     this.state.currentIteration = startIteration;
+    if (limits.completedIterations !== undefined) {
+      this.state.completedIterations = limits.completedIterations;
+    }
+    this.state.maxIterations = limits.maxIterations;
     this.state.commitCount = getBranchCommitCount(
       this.runInfo.baseCommit,
       this.cwd,
@@ -406,6 +419,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
         this.consecutiveRateLimitWaits = 0;
         const { record } = result;
         this.state.iterations.push(record);
+        this.state.completedIterations =
+          (this.state.completedIterations ?? 0) + 1;
         this.emit("iteration:end", record);
         this.emit("state", this.getState());
 

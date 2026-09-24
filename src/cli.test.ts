@@ -69,6 +69,7 @@ interface CliMockOverrides {
   peekRunMetadata?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
   getLastIterationNumber?: ReturnType<typeof vi.fn>;
+  getCompletedIterationCount?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
   readStdinText?: ReturnType<typeof vi.fn>;
@@ -130,6 +131,8 @@ async function runCliWithMocks(
   const resumeRun = overrides.resumeRun ?? vi.fn();
   const getLastIterationNumber =
     overrides.getLastIterationNumber ?? vi.fn(() => 0);
+  const getCompletedIterationCount =
+    overrides.getCompletedIterationCount ?? vi.fn(() => 0);
   const ensureCleanWorkingTree = overrides.ensureCleanWorkingTree ?? vi.fn();
   const writeRunEndState = overrides.writeRunEndState ?? vi.fn();
 
@@ -210,6 +213,7 @@ async function runCliWithMocks(
     peekRunMetadata,
     resumeRun,
     getLastIterationNumber,
+    getCompletedIterationCount,
     writeRunEndState,
   }));
   vi.doMock("./core/stdin.js", () => ({ readStdinText }));
@@ -304,6 +308,7 @@ async function runCliWithMocks(
     peekRunMetadata,
     resumeRun,
     getLastIterationNumber,
+    getCompletedIterationCount,
     orchestratorCtor,
     rendererCtor,
     orchestratorGetState,
@@ -414,6 +419,7 @@ async function runSigintCliTest({
     peekRunMetadata: vi.fn(() => stubRunInfo),
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
+    getCompletedIterationCount: vi.fn(() => 0),
     writeRunEndState: vi.fn(),
   }));
   vi.doMock("./core/agents/factory.js", () => ({
@@ -1137,6 +1143,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: undefined,
       maxTokens: undefined,
+      completedIterations: 0,
       stopWhen: undefined,
     });
     expect(
@@ -1160,6 +1167,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: undefined,
       maxTokens: undefined,
+      completedIterations: 0,
       stopWhen: undefined,
     });
     expect(
@@ -1242,6 +1250,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: 12,
       maxTokens: 3456,
+      completedIterations: 0,
       maxRateLimitWaitMs: 90 * 60_000,
     });
   });
@@ -1263,6 +1272,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: undefined,
       maxTokens: undefined,
+      completedIterations: 0,
       stopWhen: undefined,
       fallbackModel: "claude-haiku",
     });
@@ -1283,6 +1293,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: undefined,
       maxTokens: undefined,
+      completedIterations: 0,
       stopWhen: undefined,
       push: true,
     });
@@ -1374,6 +1385,7 @@ describe("cli", () => {
       runId,
     }));
     const getLastIterationNumber = vi.fn(() => 2);
+    const getCompletedIterationCount = vi.fn(() => 1);
 
     mkdirSync(join(tempDir, ".gnhf", "runs", runId), {
       recursive: true,
@@ -1393,7 +1405,7 @@ describe("cli", () => {
           maxConsecutiveFailures: 3,
           preventSleep: false,
         },
-        { resumeRun, getLastIterationNumber },
+        { resumeRun, getLastIterationNumber, getCompletedIterationCount },
       );
 
       expect(resumeRun).toHaveBeenCalledWith(runId, effectiveTempDir, {
@@ -1407,6 +1419,12 @@ describe("cli", () => {
         expect.objectContaining({ runId }),
       );
       expect(orchestratorCtor.mock.calls[0]?.[5]).toBe(2);
+      expect(getCompletedIterationCount).toHaveBeenCalledWith(
+        expect.objectContaining({ runId }),
+      );
+      expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual(
+        expect.objectContaining({ completedIterations: 1 }),
+      );
     } finally {
       process.chdir(originalCwd);
       rmSync(tempDir, { recursive: true, force: true });
@@ -1866,6 +1884,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/stdin.js", () => ({
@@ -2025,6 +2044,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2164,6 +2184,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2299,6 +2320,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2429,6 +2451,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2556,6 +2579,7 @@ describe("cli", () => {
         promptPath,
       })),
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2676,6 +2700,7 @@ describe("cli", () => {
       peekRunMetadata,
       resumeRun,
       getLastIterationNumber: vi.fn(() => 3),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -2851,6 +2876,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -3000,6 +3026,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -3177,6 +3204,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -3332,6 +3360,7 @@ describe("cli", () => {
       peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
+      getCompletedIterationCount: vi.fn(() => 0),
       writeRunEndState: vi.fn(),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -3730,6 +3759,7 @@ describe("cli", () => {
       expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
         maxIterations: undefined,
         maxTokens: undefined,
+        completedIterations: 0,
         stopWhen: undefined,
       });
     } finally {

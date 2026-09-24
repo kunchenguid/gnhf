@@ -156,6 +156,8 @@ export function renderStatsCells(
   tokensEstimated = false,
   cacheReadTokens = 0,
   cacheCreationTokens = 0,
+  completedIterations?: number,
+  maxIterations?: number,
 ): Cell[] {
   const totalTokens = getTotalTokenCount(
     inputTokens,
@@ -163,31 +165,43 @@ export function renderStatsCells(
     cacheReadTokens,
     cacheCreationTokens,
   );
-  const separator = [
-    ...textToCells(" ", "normal"),
-    ...textToCells("\u00b7", "dim"),
-    ...textToCells(" ", "normal"),
+  const tokenCounts = [
+    [totalTokens, "total", "Σ"],
+    [inputTokens, "in", "↓"],
+    [outputTokens, "out", "↑"],
+  ] as const;
+  const leadingSegments = [
+    textToCells(elapsed, "bold"),
+    ...(maxIterations !== undefined
+      ? [textToCells(`${completedIterations ?? 0}/${maxIterations}`, "normal")]
+      : []),
   ];
-  return [
-    ...textToCells(elapsed, "bold"),
-    ...separator,
-    ...textToCells(
-      formatTokenCount(totalTokens, "total", tokensEstimated),
-      "normal",
-    ),
-    ...separator,
-    ...textToCells(
-      formatTokenCount(inputTokens, "in", tokensEstimated),
-      "normal",
-    ),
-    ...separator,
-    ...textToCells(
-      formatTokenCount(outputTokens, "out", tokensEstimated),
-      "normal",
-    ),
-    ...separator,
-    ...textToCells(formatCommitCount(commitCount), "normal"),
-  ];
+  const tokenSegments = tokenCounts.map(([count, direction]) =>
+    textToCells(formatTokenCount(count, direction, tokensEstimated), "normal"),
+  );
+  const commits = textToCells(formatCommitCount(commitCount), "normal");
+  const segments = [...leadingSegments, ...tokenSegments, commits];
+  const paddedWidth =
+    segments.reduce((width, segment) => width + segment.length, 0) +
+    (segments.length - 1) * 3;
+  if (paddedWidth - (segments.length - 1) * 2 > CONTENT_WIDTH) {
+    segments.splice(
+      leadingSegments.length,
+      tokenSegments.length,
+      ...tokenCounts.map(([count, , label]) =>
+        textToCells(
+          `${label}${tokensEstimated ? "~" : ""}${formatTokens(count)}`,
+          "normal",
+        ),
+      ),
+    );
+  }
+  const padding =
+    paddedWidth <= CONTENT_WIDTH ? textToCells(" ", "normal") : [];
+  const separator = [...padding, ...textToCells("\u00b7", "dim"), ...padding];
+  return segments.flatMap((segment, index) =>
+    index === 0 ? segment : [...separator, ...segment],
+  );
 }
 
 export function renderAgentMessageCells(
@@ -262,6 +276,8 @@ export function renderStats(
   tokensEstimated = false,
   cacheReadTokens = 0,
   cacheCreationTokens = 0,
+  completedIterations?: number,
+  maxIterations?: number,
 ): string {
   return rowToString(
     renderStatsCells(
@@ -272,6 +288,8 @@ export function renderStats(
       tokensEstimated,
       cacheReadTokens,
       cacheCreationTokens,
+      completedIterations,
+      maxIterations,
     ),
   );
 }
@@ -538,6 +556,8 @@ export function buildContentCells(
         state.tokensEstimated,
         state.totalCacheReadTokens,
         state.totalCacheCreationTokens,
+        state.completedIterations,
+        state.maxIterations,
       ),
     ] as Cell[][],
     agent: [

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { join } from "node:path";
 
 vi.mock("node:fs", () => ({
@@ -36,6 +36,7 @@ import {
   resumeRun,
   peekRunMetadata,
   toStringArray,
+  getCompletedIterationCount,
 } from "./run.js";
 import { CONVENTIONAL_COMMIT_MESSAGE } from "./commit-message.js";
 
@@ -636,5 +637,58 @@ describe("toStringArray", () => {
 
   it("returns an empty array for null", () => {
     expect(toStringArray(null)).toEqual([]);
+  });
+});
+
+describe("getCompletedIterationCount", () => {
+  const runInfo = {
+    logPath: "/repo/.gnhf/runs/run-abc/gnhf.log",
+  } as Parameters<typeof getCompletedIterationCount>[0];
+
+  afterEach(() => {
+    mockExistsSync.mockReset();
+    mockExistsSync.mockReturnValue(false);
+    mockReadFileSync.mockReset();
+    mockReadFileSync.mockReturnValue("");
+  });
+
+  it("returns 0 when the run log does not exist", () => {
+    mockExistsSync.mockReturnValue(false);
+
+    expect(getCompletedIterationCount(runInfo)).toBe(0);
+    expect(mockReadFileSync).not.toHaveBeenCalled();
+  });
+
+  it("ignores an attempt that never reached iteration end", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      [
+        JSON.stringify({ event: "iteration:end", iteration: 1 }),
+        JSON.stringify({ event: "agent:run:start", iteration: 2 }),
+        JSON.stringify({ event: "iteration:start", iteration: 2 }),
+        "not json",
+        JSON.stringify({ event: "iteration:end", iteration: "2" }),
+        "",
+      ].join("\n"),
+    );
+
+    expect(getCompletedIterationCount(runInfo)).toBe(1);
+  });
+
+  it("counts distinct finished iterations, including a failure", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      [
+        JSON.stringify({ event: "iteration:end", iteration: 1 }),
+        JSON.stringify({ event: "iteration:end", iteration: 1 }),
+        JSON.stringify({
+          event: "iteration:end",
+          iteration: 3,
+          success: false,
+        }),
+      ].join("\n"),
+    );
+
+    expect(getCompletedIterationCount(runInfo)).toBe(2);
   });
 });

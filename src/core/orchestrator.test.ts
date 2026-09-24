@@ -1458,6 +1458,7 @@ describe("Orchestrator backoff behavior", () => {
       consecutiveFailures: 0,
       consecutiveErrors: 0,
       currentIteration: 0,
+      completedIterations: 0,
     });
     // Wakes shortly after the provider-reported reset time, not before.
     const waitingUntil = orchestrator.getState().waitingUntil;
@@ -1475,6 +1476,103 @@ describe("Orchestrator backoff behavior", () => {
       successCount: 1,
       failCount: 0,
       currentIteration: 1,
+      completedIterations: 1,
+      maxIterations: 1,
+    });
+  });
+
+  it("counts an iteration only after it finishes and keeps the cap", async () => {
+    let resolveRun: ((value: AgentResult) => void) | undefined;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      2,
+      { maxIterations: 3 },
+    );
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 0,
+      maxIterations: 3,
+      currentIteration: 2,
+    });
+
+    const startPromise = orchestrator.start();
+
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 0,
+      currentIteration: 3,
+      maxIterations: 3,
+    });
+
+    resolveRun!(createSuccessResult());
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 1,
+      currentIteration: 3,
+      maxIterations: 3,
+    });
+  });
+
+  it("does not count an unfinished resumed attempt as complete", async () => {
+    let resolveRun: ((value: AgentResult) => void) | undefined;
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(
+        () =>
+          new Promise<AgentResult>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      2,
+      { maxIterations: 3, completedIterations: 1 },
+    );
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 1,
+      currentIteration: 2,
+      maxIterations: 3,
+    });
+
+    const startPromise = orchestrator.start();
+    await vi.waitFor(() => {
+      expect(agent.run).toHaveBeenCalledTimes(1);
+    });
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 1,
+      currentIteration: 3,
+      maxIterations: 3,
+    });
+
+    resolveRun!(createSuccessResult());
+    await startPromise;
+
+    expect(orchestrator.getState()).toMatchObject({
+      completedIterations: 2,
+      currentIteration: 3,
+      maxIterations: 3,
     });
   });
 
