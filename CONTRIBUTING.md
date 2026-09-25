@@ -46,7 +46,7 @@ CI (`.github/workflows/ci.yml`) runs lint, format:check, typecheck, and test on 
 
 ## Repo conventions
 
-- Node 20+, TypeScript, ESM-only, and the pinned pnpm version from `packageManager`. See `AGENTS.md` for agent instructions and architecture notes.
+- Node 20+, TypeScript, ESM-only, and the pinned pnpm version from `packageManager`. See `AGENTS.md` for agent instructions and pointers to the relevant source files.
 - Unit tests are co-located as `*.test.ts`; e2e tests live under `e2e/`.
 - Run the lint, format, typecheck, and test scripts (see [Developing](#developing)) before pushing. The pipeline will run them again, but a fast local pass saves rounds.
 - Keep dependency changes in `pnpm-lock.yaml`; pnpm also enforces the workspace release-age policy and only allows `esbuild` build scripts.
