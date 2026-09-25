@@ -25,6 +25,7 @@ Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.r
 ## Invariants
 
 - Any flag gnhf controls must be listed in `isReservedAgentArg` (`src/core/config.ts`) so user arg overrides cannot shadow it.
+- Runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config; `--stop-when` is persisted per run for resume.
 - All git calls go through `execFileSync` with explicit argv in `src/core/git.ts`; add a `git.injection.test.ts` case whenever new user input flows into git args.
 - Worktree preservation (README "Worktree Mode") must hold on every exit path, including the `process.on("exit")` fallback and the force-exit timeout.
 - A sleep inhibitor that fails to start or confirm must never abort a run.
