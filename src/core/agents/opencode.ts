@@ -318,6 +318,28 @@ function toUsage(tokens?: OpenCodeTokens): TokenUsage {
   };
 }
 
+class EmptyAgentResponseError extends Error {
+  constructor(usage: TokenUsage) {
+    super("OpenCode produced no final answer");
+    this.name = "EmptyAgentResponseError";
+    this.usage = usage;
+  }
+
+  usage: TokenUsage;
+}
+
+function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheCreationTokens: a.cacheCreationTokens + b.cacheCreationTokens,
+  };
+}
+
+const EMPTY_RESPONSE_CONTINUATION_PROMPT =
+  "You did not produce a final answer. Continue and provide your final summary now.";
+
 function withTimeoutSignal(
   signal: AbortSignal | undefined,
   timeoutMs: number | undefined,
@@ -388,15 +410,41 @@ export class OpenCodeAgent implements Agent {
     try {
       const server = await this.ensureServer(cwd, runController.signal);
       sessionId = await this.createSession(server, cwd, runController.signal);
-      const result = await this.streamMessage(
-        server,
-        sessionId,
-        buildPrompt(prompt, this.schema),
-        runController.signal,
-        logStream,
-        onUsage,
-        onMessage,
-      );
+      let result: AgentResult;
+      try {
+        result = await this.streamMessage(
+          server,
+          sessionId,
+          buildPrompt(prompt, this.schema),
+          runController.signal,
+          logStream,
+          onUsage,
+          onMessage,
+        );
+      } catch (error) {
+        if (!(error instanceof EmptyAgentResponseError)) {
+          throw error;
+        }
+
+        appendDebugLog("opencode:output:continuation", {
+          sessionId,
+          attempt: 1,
+          prompt: EMPTY_RESPONSE_CONTINUATION_PROMPT,
+        });
+        const continuation = await this.streamMessage(
+          server,
+          sessionId,
+          EMPTY_RESPONSE_CONTINUATION_PROMPT,
+          runController.signal,
+          logStream,
+          (usage) => onUsage?.(addUsage(error.usage, usage)),
+          onMessage,
+        );
+        result = {
+          output: continuation.output,
+          usage: addUsage(error.usage, continuation.usage),
+        };
+      }
       appendDebugLog("opencode:run:end", {
         sessionId,
         elapsedMs: Date.now() - runStartedAt,
@@ -876,7 +924,7 @@ export class OpenCodeAgent implements Agent {
           message: errorInfo.message ?? null,
           retryable: isRetryableProviderError(errorInfo),
         });
-        return true;
+        return false;
       }
 
       const payload = event.payload;
@@ -974,7 +1022,7 @@ export class OpenCodeAgent implements Agent {
 
         processRawEvent(buffer.slice(0, boundary));
         buffer = buffer.slice(boundary + separatorLen);
-        if (sawSessionIdle) return;
+        if (sawSessionIdle || streamErrorInfo) return;
       }
 
       if (flushRemainder && buffer.trim()) {
@@ -985,7 +1033,7 @@ export class OpenCodeAgent implements Agent {
 
     let bytesRead = 0;
     try {
-      while (!sawSessionIdle) {
+      while (!sawSessionIdle && !streamErrorInfo) {
         let readResult: ReadableStreamReadResult<Uint8Array>;
         try {
           readResult = await reader.read();
@@ -1079,6 +1127,14 @@ export class OpenCodeAgent implements Agent {
       }
     }
 
+    if (streamErrorInfo) {
+      throw new Error(buildProviderErrorMessage(streamErrorInfo));
+    }
+
+    if (!sawSessionIdle) {
+      throw new Error("OpenCode produced no final answer");
+    }
+
     if (structuredOutputFromSSE) {
       appendDebugLog("opencode:output:structured", {
         sessionId,
@@ -1090,10 +1146,6 @@ export class OpenCodeAgent implements Agent {
       };
     }
 
-    if (streamErrorInfo) {
-      throw new Error(buildProviderErrorMessage(streamErrorInfo));
-    }
-
     const finalOutputText = toNonEmptyString(lastFinalAnswerText);
 
     if (finalOutputText === null) {
@@ -1101,7 +1153,7 @@ export class OpenCodeAgent implements Agent {
         sessionId,
         hasStructuredOutput: structuredOutputFromSSE !== null,
       });
-      throw new Error("OpenCode produced no final answer");
+      throw new EmptyAgentResponseError(usage);
     }
 
     try {

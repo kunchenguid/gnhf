@@ -287,6 +287,68 @@ describe("gnhf e2e", () => {
     expect(debugEvents).toContain("run:complete");
   }, 30_000);
 
+  it("recovers an empty OpenCode turn in one CLI iteration", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      ["ship it", "--agent", "opencode", "--max-iterations", "1"],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_TELEMETRY: "0",
+          GNHF_MOCK_OPENCODE_EMPTY_FIRST: "1",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+    const serverEvents = readJsonLines(mockLogPath);
+    const sessions = serverEvents.filter(
+      (entry) => entry.event === "session:create",
+    );
+    expect(sessions).toHaveLength(1);
+    const prompts = serverEvents.filter(
+      (entry) => entry.event === "message:start",
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts.map((entry) => entry.sessionId)).toEqual([
+      sessions[0]!.sessionId,
+      sessions[0]!.sessionId,
+    ]);
+    const changes = serverEvents.filter(
+      (entry) => entry.event === "workspace:changed",
+    );
+    expect(changes).toHaveLength(1);
+    expect(git(["show", "HEAD:README.md"], cwd)).toBe(
+      `# fixture\n${String(changes[0]!.marker)}`,
+    );
+    expect(git(["rev-list", "--count", "main..HEAD"], cwd)).toBe("1");
+    expect(git(["status", "--porcelain"], cwd)).toBe("");
+
+    const debugEvents = readJsonLines(findRunLogPath(cwd));
+    expect(
+      debugEvents.filter((entry) => entry.event === "iteration:start"),
+    ).toHaveLength(1);
+    expect(
+      debugEvents.filter((entry) => entry.event === "iteration:end"),
+    ).toEqual([
+      expect.objectContaining({ iteration: 1, success: true, commitCount: 1 }),
+    ]);
+    expect(
+      debugEvents.find((entry) => entry.event === "agent:run:end"),
+    ).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 10,
+      cacheReadTokens: 2,
+      cacheCreationTokens: 0,
+    });
+  }, 30_000);
+
   it("runs on the current branch and pushes each successful iteration", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);

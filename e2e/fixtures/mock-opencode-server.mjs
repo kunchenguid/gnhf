@@ -102,38 +102,40 @@ function emitOverloadError(sessionId) {
   broadcast(event);
 }
 
-function emitCompletedEvents(sessionId, summary) {
+function emitCompletedEvents(sessionId, summary, empty = false) {
   const output = buildStructuredResponse(summary);
-  broadcast({
-    directory: "/repo",
-    payload: {
-      type: "message.part.updated",
-      properties: {
-        sessionID: sessionId,
-        part: {
-          id: "part-commentary",
-          type: "text",
-          text: "Mock agent is working.",
-          metadata: { openai: { phase: "commentary" } },
+  if (!empty) {
+    broadcast({
+      directory: "/repo",
+      payload: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: sessionId,
+          part: {
+            id: "part-commentary",
+            type: "text",
+            text: "Mock agent is working.",
+            metadata: { openai: { phase: "commentary" } },
+          },
         },
       },
-    },
-  });
-  broadcast({
-    directory: "/repo",
-    payload: {
-      type: "message.part.updated",
-      properties: {
-        sessionID: sessionId,
-        part: {
-          id: "part-final",
-          type: "text",
-          text: JSON.stringify(output),
-          metadata: { openai: { phase: "final_answer" } },
+    });
+    broadcast({
+      directory: "/repo",
+      payload: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: sessionId,
+          part: {
+            id: "part-final",
+            type: "text",
+            text: JSON.stringify(output),
+            metadata: { openai: { phase: "final_answer" } },
+          },
         },
       },
-    },
-  });
+    });
+  }
   broadcast({
     directory: "/repo",
     payload: {
@@ -294,8 +296,15 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    applyWorkspaceChange(sessionId);
-    emitCompletedEvents(sessionId, "mocked objective complete");
+    const emptyFirstTurn = process.env.GNHF_MOCK_OPENCODE_EMPTY_FIRST === "1";
+    const continuation = emptyFirstTurn && session?.completedEmptyTurn;
+    if (!continuation) applyWorkspaceChange(sessionId);
+    emitCompletedEvents(
+      sessionId,
+      "mocked objective complete",
+      emptyFirstTurn && !continuation,
+    );
+    if (emptyFirstTurn && session) session.completedEmptyTurn = true;
     res.writeHead(204);
     res.end();
     return;
