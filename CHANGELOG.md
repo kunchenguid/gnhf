@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.50](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.49...gnhf-v0.1.50) (2026-09-25)
+
+
+### Features
+
+* **renderer:** show finished iterations against the run cap ([#236](https://github.com/kunchenguid/gnhf/issues/236)) ([b1222ad](https://github.com/kunchenguid/gnhf/commit/b1222ad3398f533ea9ae7681e72772c2975a0e1c))
+
 ## [0.1.49](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.48...gnhf-v0.1.49) (2026-09-04)
 
 
