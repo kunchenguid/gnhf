@@ -4,68 +4,40 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Project
 
-`gnhf` ("good night, have fun") is a CLI that runs a coding agent in a loop inside a git repo.
-The supported-agent roster is owned by the README's [Agents](./README.md#agents) table.
-Each successful iteration is a separate commit, normally on a dedicated `gnhf/<slug>` branch; `--current-branch` uses the existing branch instead, and `--push` publishes each successful iteration.
-Failure and rollback semantics are owned by the README's [How It Works](./README.md#how-it-works) section.
-The acceptance policy for what gnhf should and should not become is owned by [VISION.md](./VISION.md); test feature or scope decisions against its aligns/resist criteria.
-Target: Node 20+, published to npm as a bundled ESM CLI with optional agent-facing skills under `skills/`.
+`gnhf` ("good night, have fun") is a CLI that runs a coding agent in a loop inside a git repo, committing each successful iteration.
+User-facing behavior (run modes, failure/rollback, usage-limit waits, worktrees, sleep prevention, agents) is owned by the [README](./README.md); test feature or scope decisions against [VISION.md](./VISION.md).
+Target: Node 20+, published to npm as a bundled ESM CLI (`dist/cli.mjs`) with optional agent-facing skills under `skills/`.
 
 ## Commands
 
-`package.json` scripts are the source of truth for build/test/lint commands; the "Developing" section in [CONTRIBUTING.md](./CONTRIBUTING.md) documents them plus single-test invocation, the e2e prior-build requirement, and the CI matrix - keep all CI jobs green. `pnpm test` builds and then runs all tests. Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
+`package.json` scripts are the source of truth; [CONTRIBUTING.md](./CONTRIBUTING.md#developing) documents them, single-test invocation, the e2e prior-build requirement, and the CI matrix. Keep all CI jobs green.
+Releases are automated via release-please; never hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
 
-## Architecture
+## Code map
 
-Entry point is `src/cli.ts`. It parses flags with commander, resolves config, handles stdin/worktree/resume setup, then hands off to the orchestrator. Everything else is plain modules under `src/`.
+- `src/cli.ts`: entry point - flags, config, stdin/worktree/resume setup, shutdown and exit summary.
+- `src/core/run.ts`: `.gnhf/runs/<runId>/` metadata (kept local via `.git/info/exclude`).
+- `src/core/orchestrator.ts`: the iteration loop, commit/rollback, backoff, usage-limit waits, and `RunLimits`.
+- `src/renderer.ts`: alt-screen TUI driven by orchestrator events; `--mock` drives it offline via `src/mock-orchestrator.ts`.
+- `src/core/agents/`: one module per agent implementing `Agent` in `types.ts`, picked by `factory.ts`. Start from `stream-utils.ts` for streaming and process lifecycle, and use `parseAgentOutput` to validate a new native agent's output.
+- `src/core/config.ts`: `~/.gnhf/config.yml` loading; CLI flags override config.
 
-### Run lifecycle (the critical flow)
+## Invariants
 
-1. `cli.ts` decides one of four modes: new branch, resume an existing `gnhf/<slug>` branch, `--current-branch`, or `--worktree` (creates a sibling `<repo>-gnhf-worktrees/<slug>/` checkout). New branch and worktree runs probe numeric suffixes such as `gnhf/<slug>-1` and `<repo>-gnhf-worktrees/<slug>-1/` on collisions; current-branch runs first resume an exact same-prompt `.gnhf/runs/<runId>/` on a clean working tree, otherwise they probe `.gnhf/runs/<runId>-1/` metadata collisions without creating a branch; worktree mode also resumes preserved suffixed worktrees before creating a new one. When resuming with a different prompt, it asks whether to update `prompt.md` and continue the existing run history, start a new branch, or quit; if stdin is piped, that confirmation comes from the controlling terminal before any sleep-prevention re-exec. `setupRun`/`resumeRun` in `src/core/run.ts` create `.gnhf/runs/<runId>/` with `prompt.md`, `notes.md`, `output-schema.json`, `base-commit`, optional `stop-when`, `commit-message`, and `gnhf.log`, and add `.gnhf/runs/` to `.git/info/exclude` so run metadata stays local.
-2. `Orchestrator` (`src/core/orchestrator.ts`) is an `EventEmitter` loop. Each iteration: build prompt via `src/templates/iteration-prompt.ts` (injects current `notes.md`), add commit-repair instructions when a prior `git commit` failed, call `agent.run(...)`, then on success `commitAll` + append to `notes.md` and optionally `pushCurrentBranch`; on failure `resetHard` unless a pending commit failure is preserving uncommitted work for repair. The user-visible failure/rollback contract lives in the README's "How It Works"; in code, `commitAll` throws `CommitFailedError`, logs `git:commit:failed`, and records the commit output in `notes.md` so the next iteration can repair the workspace, retryable thrown agent errors increment the backoff streak, `RateLimitAgentError` rolls back and waits until the provider-reported reset time (bounded escalating fallback when absent) before retrying the same iteration number without counting a failure, an iteration the provider billed to extra usage instead of rejecting (Claude's `isUsingOverage`, reported out-of-band via `onOverage` so a terminal path that throws still carries it) keeps its committed work and waits after the post-iteration checks but before any error backoff, failing closed when the reported reset time is unusable - `providerResumeWait` is the single owner of what a reported reset time is worth, and both waits share `waitForUsageWindowReset` and the `--max-rate-limit-wait` budget - and `PermanentAgentError` aborts after rollback with `lastAgentError` set for the renderer. The `RunLimits` object enforces `--max-iterations` (between iterations), `--max-tokens` (mid-iteration via AbortController), `--max-rate-limit-wait` (total usage-limit wait before aborting), `--stop-when` (post-iteration via the agent's `should_fully_stop` output, deferred while a commit failure awaits repair), and `--push` post-success publishing.
-3. `Renderer` (`src/renderer.ts` + `src/renderer-diff.ts`) is a cell-based TUI using the alt screen buffer. `cli.ts` enters/exits alt screen around it. The renderer subscribes to orchestrator events, diffs frames to minimize writes, and updates the terminal title live. `MockOrchestrator` (`src/mock-orchestrator.ts`) drives the renderer offline via `--mock` for demos/testing.
-4. Shutdown path: `SIGINT` routes through `orchestrator.handleInterrupt()`. The first press requests a graceful stop, letting the current iteration finish or ending backoff early; the second press force-stops via `orchestrator.stop()`. `SIGTERM` force-stops immediately. `cli.ts` only keeps the done screen open for aborted runs; graceful stops exit once shutdown cleanup finishes. The README's [How It Works](./README.md#how-it-works) section owns worktree preservation and cleanup behavior. That rule must hold on every exit path, not just the normal cleanup block: the `process.on("exit")` cleanup fallback re-checks orchestrator state before removing a worktree, and the force-exit timeout prints the preserved path before calling `process.exit()`. After cleanup, `cli.ts` collects final branch/diff stats via `src/core/git.ts` and writes the permanent stdout summary rendered by `src/core/exit-summary.ts`, including an uncommitted-work warning when a commit failure is still pending.
-
-### Agents (`src/core/agents/`)
-
-Each agent implements the `Agent` interface in `types.ts` (`name`, async `run(prompt, cwd, options)` returning `{ output, usage }`, optional `close()`). They share two responsibilities: stream stdout, extract a structured `AgentOutput` (`success`, `summary`, `key_changes_made`, `key_learnings`, commit-message fields when configured, plus `should_fully_stop` only when `--stop-when` is active) that matches the schema built by `buildAgentOutputSchema(...)`, and accumulate `TokenUsage`. `factory.ts` picks one based on config.
-
-- `claude.ts` / `codex.ts` / `copilot.ts` / `pi.ts` / `cursor.ts`: spawn the CLI per iteration in non-interactive mode. Codex uses `--output-schema` pointing at the run's schema file; Claude uses `--json-schema`, treats the last successful structured result as terminal, raises `PermanentAgentError` for low credit balance exits, and after a short grace period shuts down a lingering Claude process tree if it stays alive. Copilot uses JSONL output plus prompt-level schema instructions, then parses the final `assistant.message` content. Pi runs in JSON mode, appends the final output schema to the prompt, and parses the assistant JSON reply from Pi's streamed events. Cursor (`--agent cursor`) resolves the Cursor CLI as `cursor-agent` and falls back to the generic `agent` name, runs it with `--print --output-format stream-json`, appends the final output schema to the prompt (stdin), defaults to `--force`, `--trust`, and `--approve-mcps` unless the user overrides those flags, parses the last assistant segment (falling back to `result` text) plus usage, raises `PermanentAgentError` for signed-out exits, and after a short grace period shuts down a lingering Cursor process tree if it stays alive after a non-error result.
-- `rovodev.ts` / `opencode.ts`: long-running local HTTP servers managed via `managed-process.ts` (start once, reuse across iterations, close on shutdown). OpenCode creates a per-run session and applies a blanket allow rule to avoid prompt blocking.
-- `acp.ts`: handles `acp:<target-or-command>` specs through the bundled `acpx` runtime and registry. It keeps a persistent per-run session keyed by run ID under `.gnhf/runs/<runId>/acp-sessions`, embeds the output schema in the prompt, parses only output text deltas as final JSON, records ACP lifecycle events in `gnhf.log`, and reports per-iteration token usage from ACP `used` deltas when available with prompt-length plus tool-call estimates as a fallback. Estimated ACP usage is marked for the renderer so totals are prefixed with `~`. Path and arg overrides are native-agent-only; ACP targets are customized via `acpRegistryOverrides` in config (a target-name -> spawn-command map fed into acpx's agent registry) or by passing a raw ACP server command directly after `acp:`. Raw command specs are redacted to `acp:custom`/`custom` in debug logs, errors, and telemetry. The e2e suite exercises the full wire path against the `acp-mock` package registered through that same override mechanism.
-- `json-extract.ts`: low-level recovery for final agent JSON that may be fenced or prose-wrapped; used directly by `acp.ts` and `rovodev.ts`, and wrapped by `parseAgentOutput` in `types.ts`, which is the shared parse-and-validate helper `copilot`, `opencode`, `pi`, and `cursor` call. Prefer `parseAgentOutput` when adding a new native-agent integration that must validate output against the agent schema.
-- `stream-utils.ts`: shared JSONL parsing, `AbortSignal` wiring, and child-process lifecycle helpers. When touching agent streaming, start here.
-
-Reserved args managed by gnhf are rejected in `config.ts` via `isReservedAgentArg` - if you add a new flag that gnhf controls, add it to that list so user overrides can't shadow it.
-
-### Config (`src/core/config.ts`)
-
-Loads `~/.gnhf/config.yml` (bootstrapped on first run). CLI flags override config; runtime-only flags (`--max-iterations`, `--max-tokens`, `--stop-when`) are never persisted to config. `--stop-when` is persisted per run for resume. `agent` accepts native agent names plus `acp:<target-or-command>` specs; `agentPathOverride` and `agentArgsOverride` are native-agent-only, and paths resolve relative to `~/.gnhf/` with `~` expansion. `acpRegistryOverrides` maps ACP target names to spawn commands, threaded into acpx's agent registry so `acp:<name>` resolves against the override map first - useful for pinning a custom or local build of an ACP agent while keeping logs/telemetry on the named target. Raw ACP command specs can also be passed directly and are logged as `acp:custom`. `commitMessage.preset: conventional` adds commit-message fields to the output schema/prompt and changes successful-iteration commit subjects; the resolved convention is persisted per run so resume does not silently switch formats after config changes.
-
-### Git helpers (`src/core/git.ts`)
-
-All git invocations go through `execFileSync` with explicit argv. `git.injection.test.ts` guards against shell-metachar leakage via branch names and prompts - add a case there whenever you accept new user input that flows into git args.
-
-### Sleep prevention (`src/core/sleep.ts`)
-
-When `preventSleep` is on, Linux re-execs gnhf under `systemd-inhibit` unless the process was already re-exec'd; macOS and Windows instead spawn a helper child (`caffeinate`, or a PowerShell `SetThreadExecutionState` helper) that releases the inhibit when gnhf exits.
-The Linux re-exec uses `GNHF_SLEEP_INHIBITED=1` as the loop-breaker and `GNHF_REEXEC_STDIN_PROMPT_FILE` to pass piped stdin across the re-exec (the original process writes a 0600 temp file, the child reads and unlinks it).
-The Windows helper prints a ready marker only after `SetThreadExecutionState` actually succeeds, and that handshake is settled at shutdown rather than on the startup path.
-An inhibitor that never starts or never confirms must never abort the run; it is reported through the exit summary's `sleep` line, whose user-facing contract lives in the README's [Sleep Prevention](./README.md#sleep-prevention) section.
-
-### Telemetry (`src/core/telemetry.ts`)
-
-Anonymous run summaries POSTed to a self-hosted Umami instance.
-One pageview at run start and one `track("run", ...)` event at the end - never per-iteration, and never with `cwd`, branch slug, prompt content, or anything else that could identify a user or repo.
-Build-time defaults are injected via `tsdown.config.ts`'s `define` from `GNHF_UMAMI_HOST` / `GNHF_UMAMI_WEBSITE_ID`; runtime env vars of the same name override, and `GNHF_TELEMETRY=0|false|off` disables.
-**User-facing docs about telemetry must stay minimal: cover only the opt-out env var (`GNHF_TELEMETRY=0`) and that the data is anonymous. Do not document fields, endpoint, or build-time injection in the README.**
+- Any flag gnhf controls must be listed in `isReservedAgentArg` (`src/core/config.ts`) so user arg overrides cannot shadow it.
+- All git calls go through `execFileSync` with explicit argv in `src/core/git.ts`; add a `git.injection.test.ts` case whenever new user input flows into git args.
+- Worktree preservation (README "Worktree Mode") must hold on every exit path, including the `process.on("exit")` fallback and the force-exit timeout.
+- A sleep inhibitor that fails to start or confirm must never abort a run.
+- Raw ACP command specs are redacted to `acp:custom`/`custom` in debug logs, errors, and telemetry.
+- `providerResumeWait` in the orchestrator is the single owner of what a provider-reported reset time is worth.
+- Telemetry (`src/core/telemetry.ts`) sends one pageview at start and one `run` event at the end - never per-iteration, and never `cwd`, branch slug, prompt content, or anything identifying a user or repo. User-facing telemetry docs cover only the `GNHF_TELEMETRY=0` opt-out and that data is anonymous.
 
 ## Conventions
 
-- ESM-only, `.js` import extensions in TypeScript source (`import { foo } from "./foo.js"`). tsdown bundles it all into `dist/cli.mjs`.
-- Unit tests co-located as `*.test.ts`; e2e tests under `e2e/`. Prefer e2e (new or existing) for behavior that crosses a process/IO boundary - CLI flags, config loading, git, agent spawning, stdout - since these match how the product is actually used and have proven less brittle than mock-heavy unit tests in this codebase. Unit-test pure helpers (schema builders, prompt templates, formatters) where speed and failure localization are worth more than realism. Use TDD for bugfixes and new features.
-- Error paths matter - `debug-log.ts` writes JSONL lifecycle events to `.gnhf/runs/<id>/gnhf.log` with full `error.cause` chains. Prefer `appendDebugLog("category:event", {...})` over ad-hoc logging.
-- No em dashes ("-"). No auto-added Claude co-author lines in commits.
+- ESM-only with `.js` import extensions in TypeScript source.
+- Unit tests co-located as `*.test.ts`; e2e tests under `e2e/`. Prefer e2e for behavior crossing a process/IO boundary (CLI flags, config, git, agent spawning, stdout); unit-test pure helpers. Use TDD for bugfixes and features.
+- Log lifecycle and error paths with `appendDebugLog("category:event", {...})` (`src/core/debug-log.ts`) rather than ad-hoc logging.
+- No em dashes. No auto-added agent co-author lines in commits.
 
 ## Maintaining this file
 
