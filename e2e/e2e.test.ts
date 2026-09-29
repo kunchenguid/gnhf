@@ -349,6 +349,53 @@ describe("gnhf e2e", () => {
     });
   }, 30_000);
 
+  it("fails the iteration when the OpenCode continuation is also empty", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+
+    const result = await runCli(
+      cwd,
+      ["stay silent", "--agent", "opencode", "--max-iterations", "1"],
+      {
+        env: {
+          ...createTestEnv(mockLogPath, tempDirs),
+          GNHF_TELEMETRY: "0",
+          GNHF_MOCK_OPENCODE_ALWAYS_EMPTY: "1",
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+
+    // One continuation only: the agent must not keep re-prompting an
+    // OpenCode turn that has already come back empty.
+    const prompts = readJsonLines(mockLogPath).filter(
+      (entry) => entry.event === "message:start",
+    );
+    expect(prompts).toHaveLength(2);
+
+    const debugLogPath = findRunLogPath(cwd);
+    expect(
+      readJsonLines(debugLogPath).find(
+        (entry) => entry.event === "iteration:end",
+      ),
+    ).toMatchObject({ success: false, commitCount: 0 });
+
+    // The morning-after trace: the user reads notes.md.
+    const notes = readFileSync(
+      join(dirname(debugLogPath), "notes.md"),
+      "utf-8",
+    );
+    expect(notes).toContain("[ERROR] OpenCode produced no final answer");
+
+    // The failed iteration's workspace edits are rolled back, not committed.
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("1");
+    expect(git(["status", "--porcelain"], cwd)).toBe("");
+  }, 30_000);
+
   it("runs on the current branch and pushes each successful iteration", async () => {
     const cwd = createRepo();
     tempDirs.push(cwd);

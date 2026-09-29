@@ -297,12 +297,13 @@ const server = createServer(async (req, res) => {
     }
 
     const emptyFirstTurn = process.env.GNHF_MOCK_OPENCODE_EMPTY_FIRST === "1";
+    const alwaysEmpty = process.env.GNHF_MOCK_OPENCODE_ALWAYS_EMPTY === "1";
     const continuation = emptyFirstTurn && session?.completedEmptyTurn;
     if (!continuation) applyWorkspaceChange(sessionId);
     emitCompletedEvents(
       sessionId,
       "mocked objective complete",
-      emptyFirstTurn && !continuation,
+      alwaysEmpty || (emptyFirstTurn && !continuation),
     );
     if (emptyFirstTurn && session) session.completedEmptyTurn = true;
     res.writeHead(204);
