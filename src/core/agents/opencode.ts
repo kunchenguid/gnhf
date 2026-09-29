@@ -1131,6 +1131,11 @@ export class OpenCodeAgent implements Agent {
       throw new Error(buildProviderErrorMessage(streamErrorInfo));
     }
 
+    // A stream that closes before `session.idle` is not a finished turn, so
+    // both success returns below stay gated on it even when answer text or
+    // structured output already arrived. This must also stay a plain Error:
+    // only the completed-but-empty case further down raises
+    // EmptyAgentResponseError, which is what earns the one recovery attempt.
     if (!sawSessionIdle) {
       throw new Error("OpenCode produced no final answer");
     }
