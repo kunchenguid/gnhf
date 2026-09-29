@@ -319,13 +319,13 @@ function toUsage(tokens?: OpenCodeTokens): TokenUsage {
 }
 
 class EmptyAgentResponseError extends Error {
+  usage: TokenUsage;
+
   constructor(usage: TokenUsage) {
     super("OpenCode produced no final answer");
     this.name = "EmptyAgentResponseError";
     this.usage = usage;
   }
-
-  usage: TokenUsage;
 }
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
