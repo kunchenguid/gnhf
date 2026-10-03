@@ -117,9 +117,10 @@ function eyebrowSegments(agentName: string): string[] {
 }
 
 export function renderTitleCells(agentName?: string, model?: string): Cell[][] {
+  const modelLabel = model?.replace(/\p{Cc}|\p{Zl}|\p{Zp}/gu, "") ?? "";
   const segments = [
     ...(agentName ? eyebrowSegments(agentName) : []),
-    ...(model ? [model] : []),
+    ...(modelLabel ? [modelLabel] : []),
   ];
   const separator: Cell[] = [
     ...textToCells("  ", "normal"),
