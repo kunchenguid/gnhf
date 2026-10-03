@@ -51,6 +51,11 @@ describe("renderTitle", () => {
     expect(lines[0]).toContain("r o v o d e v");
   });
 
+  it("renders the model after the agent name", () => {
+    const lines = renderTitle("cursor", "grok 4.7").map(stripAnsi);
+    expect(lines[0]).toContain("g n h f  ·  c u r s o r  ·  g r o k   4 . 7");
+  });
+
   it("renders an acp:<target> spec as two dot-separated segments", () => {
     const lines = renderTitle("acp:claude").map(stripAnsi);
     expect(lines[0]).toContain("g n h f  ·  a c p  ·  c l a u d e");

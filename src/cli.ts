@@ -1146,7 +1146,7 @@ program
         prompt,
         config.agent,
         handleSigInt,
-        { meteorFrequency: options.meteorFrequency },
+        { meteorFrequency: options.meteorFrequency, model },
       );
       renderer.start();
 

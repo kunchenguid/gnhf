@@ -209,7 +209,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | Flag                               | Description                                                                                        | Default                |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------- |
 | `--agent <agent>`                  | Agent to use: a native agent name or `acp:<target-or-command>`; see [Agents](#agents)              | config file (`claude`) |
-| `--model <model>`                  | Model for the agent; overrides `agentModel.<agent>` from the config file                           | config file            |
+| `--model <model>`                  | Model for the agent; overrides `agentModel.<agent>`. Shown in the title eyebrow when set           | config file            |
 | `--max-iterations <n>`             | Abort after `n` total iterations                                                                   | unlimited              |
 | `--max-tokens <n>`                 | Abort after `n` total input+output+cache tokens                                                    | unlimited              |
 | `--max-rate-limit-wait <duration>` | Abort after this much total Claude usage-limit wait (`30m`, `2h`, or `0`)                          | 24h safety cap         |
