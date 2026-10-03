@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.51](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.50...gnhf-v0.1.51) (2026-10-03)
+
+
+### Bug Fixes
+
+* **agents:** recover one empty OpenCode turn and require session completion ([#233](https://github.com/kunchenguid/gnhf/issues/233)) ([bc9c9a1](https://github.com/kunchenguid/gnhf/commit/bc9c9a1f5477a5c9c2690d95ecaebbb1b79b1150))
+
 ## [0.1.50](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.49...gnhf-v0.1.50) (2026-09-25)
 
 
