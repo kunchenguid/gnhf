@@ -51,6 +51,22 @@ describe("renderTitle", () => {
     expect(lines[0]).toContain("r o v o d e v");
   });
 
+  it("renders the model after the agent name", () => {
+    const lines = renderTitle("cursor", "grok 4.7").map(stripAnsi);
+    expect(lines[0]).toContain("g n h f  ·  c u r s o r  ·  g r o k   4 . 7");
+  });
+
+  it("strips control characters from the model so the eyebrow stays one row", () => {
+    const lines = renderTitle("cursor", "grok\n4.7\r").map(stripAnsi);
+    expect(lines[0]).toBe(renderTitle("cursor", "grok4.7").map(stripAnsi)[0]);
+    expect(lines[0]).not.toMatch(/[\n\r]/);
+  });
+
+  it("omits a model that is only control characters", () => {
+    const lines = renderTitle("cursor", "\n\r").map(stripAnsi);
+    expect(lines[0]).toBe(renderTitle("cursor").map(stripAnsi)[0]);
+  });
+
   it("renders an acp:<target> spec as two dot-separated segments", () => {
     const lines = renderTitle("acp:claude").map(stripAnsi);
     expect(lines[0]).toContain("g n h f  ·  a c p  ·  c l a u d e");
@@ -1053,6 +1069,99 @@ describe("buildContentCells adaptive height", () => {
     expect(rows).toHaveLength(1);
     expect(text).toContain("00:01:00");
     expect(text).not.toMatch(/🌕/);
+  });
+});
+
+describe("Renderer model eyebrow", () => {
+  it("prints the configured model in the live frame", () => {
+    const state: OrchestratorState = {
+      status: "running",
+      gracefulStopRequested: false,
+      interruptHint: "resume",
+      currentIteration: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      tokensEstimated: false,
+      commitCount: 0,
+      iterations: [],
+      successCount: 0,
+      failCount: 0,
+      consecutiveFailures: 0,
+      consecutiveErrors: 0,
+      startTime: new Date("2026-01-01T00:00:00Z"),
+      waitingUntil: null,
+      lastMessage: null,
+    };
+    const orchestrator = Object.assign(new EventEmitter(), {
+      getState: vi.fn(() => state),
+      stop: vi.fn(),
+    }) as unknown as Orchestrator;
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalStdinTty = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const originalColumns = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "columns",
+    );
+    const originalRows = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "rows",
+    );
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+    Object.defineProperty(process.stdout, "columns", {
+      configurable: true,
+      value: 80,
+    });
+    Object.defineProperty(process.stdout, "rows", {
+      configurable: true,
+      value: 40,
+    });
+
+    try {
+      const renderer = new Renderer(
+        orchestrator,
+        "ship it",
+        "cursor",
+        vi.fn(),
+        {
+          model: "grok\n4.7\r",
+        },
+      );
+      renderer.start();
+      renderer.stop();
+
+      const frame = stdoutWrite.mock.calls
+        .map((args: unknown[]) => String(args[0]))
+        .join("");
+      const eyebrow = frame
+        .split("\n")
+        .map(stripAnsi)
+        .find((line) => line.includes("g n h f"));
+
+      expect(eyebrow).toContain("c u r s o r");
+      expect(eyebrow).toContain("g r o k 4 . 7");
+      expect(eyebrow).not.toMatch(/[\n\r]/);
+    } finally {
+      if (originalRows) {
+        Object.defineProperty(process.stdout, "rows", originalRows);
+      }
+      if (originalColumns) {
+        Object.defineProperty(process.stdout, "columns", originalColumns);
+      }
+      if (originalStdinTty) {
+        Object.defineProperty(process.stdin, "isTTY", originalStdinTty);
+      }
+      stdoutWrite.mockRestore();
+    }
   });
 });
 

@@ -44,6 +44,7 @@ export type RendererExitReason = "interrupted" | "stopped";
 
 export interface RendererOptions {
   meteorFrequency?: number;
+  model?: string;
 }
 
 // ── ANSI helpers ─────────────────────────────────────────────
@@ -115,8 +116,12 @@ function eyebrowSegments(agentName: string): string[] {
   return [agentName];
 }
 
-export function renderTitleCells(agentName?: string): Cell[][] {
-  const segments = agentName ? eyebrowSegments(agentName) : [];
+export function renderTitleCells(agentName?: string, model?: string): Cell[][] {
+  const modelLabel = model?.replace(/\p{Cc}|\p{Zl}|\p{Zp}/gu, "") ?? "";
+  const segments = [
+    ...(agentName ? eyebrowSegments(agentName) : []),
+    ...(modelLabel ? [modelLabel] : []),
+  ];
   const separator: Cell[] = [
     ...textToCells("  ", "normal"),
     ...textToCells("\u00b7", "dim"),
@@ -264,8 +269,8 @@ export function renderMoonStripCells(
 
 // ── String wrappers (preserve existing API) ──────────────────
 
-export function renderTitle(agentName?: string): string[] {
-  return renderTitleCells(agentName).map(rowToString);
+export function renderTitle(agentName?: string, model?: string): string[] {
+  return renderTitleCells(agentName, model).map(rowToString);
 }
 
 export function renderStats(
@@ -527,13 +532,14 @@ export function buildContentCells(
   elapsed: string,
   now: number,
   availableHeight?: number,
+  model?: string,
 ): Cell[][] {
   const isRunning = state.status === "running" || state.status === "waiting";
   const moonRows = renderMoonStripCells(state.iterations, isRunning, now);
   const maxRows = availableHeight ?? Infinity;
   if (maxRows <= 0) return [];
 
-  const titleCells = renderTitleCells(agentName);
+  const titleCells = renderTitleCells(agentName, model);
   const titleSpacer = titleCells[1] ?? [];
   const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
   const promptRows: Cell[][] = [];
@@ -633,6 +639,7 @@ export function buildFrameCells(
   topMeteors: Meteor[] = [],
   bottomMeteors: Meteor[] = [],
   sideMeteors: Meteor[] = [],
+  model?: string,
 ): Cell[][] {
   const elapsed = formatElapsed(now - state.startTime.getTime());
   const reservedBottomRows = 2;
@@ -644,6 +651,7 @@ export function buildFrameCells(
     elapsed,
     now,
     availableHeight,
+    model,
   );
 
   while (contentRows.length < Math.min(BASE_CONTENT_ROWS, availableHeight)) {
@@ -768,6 +776,7 @@ export class Renderer {
   private orchestrator: Orchestrator;
   private prompt: string;
   private agentName: string;
+  private model?: string;
   private state: OrchestratorState;
   private interval: ReturnType<typeof setInterval> | null = null;
   private exitResolve!: (reason: RendererExitReason) => void;
@@ -807,6 +816,7 @@ export class Renderer {
     this.orchestrator = orchestrator;
     this.prompt = prompt;
     this.agentName = agentName;
+    this.model = options.model;
     this.onInterrupt = onInterrupt;
     this.meteorFrequency = Math.max(
       0,
@@ -946,6 +956,7 @@ export class Renderer {
       this.topMeteors,
       this.bottomMeteors,
       this.sideMeteors,
+      this.model,
     );
 
     if (this.isFirstFrame || resized) {

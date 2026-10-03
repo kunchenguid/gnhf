@@ -697,7 +697,7 @@ describe("cli", () => {
   });
 
   it("resolves the model from agentModel config and lets --model override it", async () => {
-    const { createAgent } = await runCliWithMocks(["ship it"], {
+    const { createAgent, rendererCtor } = await runCliWithMocks(["ship it"], {
       agent: "codex",
       agentPathOverride: {},
       agentModel: { codex: "gpt-5.4" },
@@ -713,6 +713,13 @@ describe("cli", () => {
       undefined,
       undefined,
       { includeStopField: false, acpRegistryOverrides: {}, model: "gpt-5.4" },
+    );
+    expect(rendererCtor).toHaveBeenCalledWith(
+      expect.anything(),
+      "ship it",
+      "codex",
+      expect.any(Function),
+      expect.objectContaining({ model: "gpt-5.4" }),
     );
 
     const flagResult = await runCliWithMocks(
