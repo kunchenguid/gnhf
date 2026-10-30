@@ -1075,14 +1075,7 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    if (
-      this.limits.maxRunTimeMs !== undefined &&
-      Date.now() - this.state.startTime.getTime() >= this.limits.maxRunTimeMs
-    ) {
-      return `max run time reached (${this.limits.maxRunTimeMs}ms)`;
-    }
-
-    return this.getTokenAbortReason();
+    return this.getRunTimeAbortReason() ?? this.getTokenAbortReason();
   }
 
   private getPostIterationAbortReason(): string | null {
@@ -1093,7 +1086,14 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    return this.getTokenAbortReason();
+    return this.getRunTimeAbortReason() ?? this.getTokenAbortReason();
+  }
+
+  private getRunTimeAbortReason(): string | null {
+    const { maxRunTimeMs } = this.limits;
+    if (maxRunTimeMs === undefined) return null;
+    if (Date.now() - this.state.startTime.getTime() < maxRunTimeMs) return null;
+    return `max run time reached (${maxRunTimeMs}ms)`;
   }
 
   private getTokenAbortReason(): string | null {
