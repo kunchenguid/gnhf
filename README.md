@@ -225,6 +225,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 `--max-run-time` caps an unattended run by wall-clock time, for example an overnight run with a local model: `gnhf --max-run-time 8h "improve the test coverage"`.
 Local models are less reliable at reporting a `--stop-when` condition, so let the loop keep iterating until the deadline instead.
 Once the time has passed, gnhf starts no new iteration and ends the run like `--max-iterations` does; an iteration already in progress finishes first.
+A usage-limit wait (see `--max-rate-limit-wait`) that starts before the deadline, or right after an iteration that the provider rejected for usage, is not cut short; the run ends once that wait is over.
 On resume, the clock starts again.
 
 ## Configuration
