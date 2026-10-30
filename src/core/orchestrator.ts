@@ -85,6 +85,7 @@ export interface RunLimits {
   fallbackModel?: string;
   maxIterations?: number;
   maxTokens?: number;
+  maxRunTimeMs?: number;
   maxRateLimitWaitMs?: number;
   stopWhen?: string;
   push?: boolean;
@@ -308,6 +309,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
       maxTokens: this.limits.maxTokens,
+      maxRunTimeMs: this.limits.maxRunTimeMs,
       maxRateLimitWaitMs: this.limits.maxRateLimitWaitMs,
       push: this.limits.push === true,
       maxConsecutiveFailures: this.config.maxConsecutiveFailures,
@@ -1071,6 +1073,13 @@ ${this.pendingCommitFailure}
       this.state.currentIteration >= this.limits.maxIterations
     ) {
       return `max iterations reached (${this.limits.maxIterations})`;
+    }
+
+    if (
+      this.limits.maxRunTimeMs !== undefined &&
+      Date.now() - this.state.startTime.getTime() >= this.limits.maxRunTimeMs
+    ) {
+      return `max run time reached (${this.limits.maxRunTimeMs}ms)`;
     }
 
     return this.getTokenAbortReason();

@@ -620,6 +620,11 @@ program
     parseNonNegativeInteger,
   )
   .option(
+    "--max-run-time <duration>",
+    'Start no new iteration after this much total run time (e.g. "30m", "8h")',
+    parseDuration,
+  )
+  .option(
     "--max-rate-limit-wait <duration>",
     'Abort after this much total usage-limit wait (e.g. "30m", "2h", or "0")',
     parseDuration,
@@ -667,6 +672,7 @@ program
         model?: string;
         maxIterations?: number;
         maxTokens?: number;
+        maxRunTime?: number;
         maxRateLimitWait?: number;
         fallbackModel?: string;
         stopWhen?: string;
@@ -1057,6 +1063,7 @@ program
         startIteration,
         maxIterations: options.maxIterations,
         maxTokens: options.maxTokens,
+        maxRunTimeMs: options.maxRunTime,
         maxRateLimitWaitMs: options.maxRateLimitWait,
         fallbackModel: options.fallbackModel,
         stopWhen: effectiveStopWhen,
@@ -1098,6 +1105,7 @@ program
         {
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
+          maxRunTimeMs: options.maxRunTime,
           completedIterations: getCompletedIterationCount(runInfo),
           stopWhen: effectiveStopWhen,
           ...(options.maxRateLimitWait === undefined
