@@ -915,6 +915,29 @@ describe("buildContentCells adaptive height", () => {
     expect(rows).toHaveLength(22);
   });
 
+  it.each([1, 5, 20, 40])("preserves prompt wrapping at width %i", (width) => {
+    const prompt =
+      "Implement the requested feature and preserve existing behavior. ".repeat(4);
+    const promptState = { ...state, iterations: [], status: "stopped" as const };
+    const standard = buildContentCells(
+      prompt,
+      "claude",
+      promptState,
+      "00:01:00",
+      0,
+    );
+    const narrow = buildContentCells(
+      prompt,
+      "claude",
+      promptState,
+      "00:01:00",
+      0,
+      undefined,
+      width,
+    );
+    expect(narrow).toEqual(standard);
+  });
+
   it("shows finished iterations between the timer and token counts", () => {
     const text = toText(
       buildContentCells(

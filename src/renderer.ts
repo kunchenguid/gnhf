@@ -554,7 +554,7 @@ export function buildContentCells(
 
   const titleCells = renderTitleCells(agentName);
   const titleSpacer = titleCells[1] ?? [];
-  const promptLines = wordWrap(prompt, contentWidth, MAX_PROMPT_LINES);
+  const promptLines = wordWrap(prompt, CONTENT_WIDTH, MAX_PROMPT_LINES);
   const promptRows: Cell[][] = [];
   for (let i = 0; i < MAX_PROMPT_LINES; i++) {
     const pl = promptLines[i] ?? "";
