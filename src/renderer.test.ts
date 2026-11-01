@@ -917,8 +917,14 @@ describe("buildContentCells adaptive height", () => {
 
   it.each([1, 5, 20, 40])("preserves prompt wrapping at width %i", (width) => {
     const prompt =
-      "Implement the requested feature and preserve existing behavior. ".repeat(4);
-    const promptState = { ...state, iterations: [], status: "stopped" as const };
+      "Implement the requested feature and preserve existing behavior. ".repeat(
+        4,
+      );
+    const promptState = {
+      ...state,
+      iterations: [],
+      status: "stopped" as const,
+    };
     const standard = buildContentCells(
       prompt,
       "claude",
