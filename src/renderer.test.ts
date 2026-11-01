@@ -323,6 +323,34 @@ describe("renderMoonStrip", () => {
       expect(rowToString(rows[25])).toBe("o");
     });
 
+    it.each([1, 20])(
+      "keeps the active moon in an 8-row frame at %i columns after 65 successes",
+      (terminalWidth) => {
+        const state = {
+          status: "running",
+          iterations: Array.from({ length: 65 }, () => ({ success: true })),
+          startTime: new Date("2026-01-01T00:00:00Z"),
+        } as unknown as OrchestratorState;
+        const cells = buildFrameCells(
+          "ship it",
+          "claude",
+          state,
+          [],
+          [],
+          [],
+          0,
+          terminalWidth,
+          8,
+        );
+
+        expect(cells).toHaveLength(8);
+        for (const row of cells)
+          expect(row.length).toBeLessThanOrEqual(terminalWidth);
+        const text = cells.map(rowToString).join("\n");
+        expect(text).toMatch(terminalWidth === 1 ? /o/ : /\u{1F311}/u);
+      },
+    );
+
     it.each([1, 2, 5, 20, 40, 80])(
       "keeps every frame row within %i columns and shows the active moon",
       (terminalWidth) => {
