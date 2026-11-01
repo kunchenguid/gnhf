@@ -8,6 +8,7 @@ import {
   renderStats,
   renderAgentMessage,
   renderMoonStrip,
+  renderMoonStripCells,
   renderStarFieldLines,
   buildFrame,
   buildFrameCells,
@@ -288,6 +289,67 @@ describe("renderAgentMessage", () => {
 });
 
 describe("renderMoonStrip", () => {
+  describe("narrow terminals", () => {
+    const iterations = Array.from({ length: 25 }, () => ({ success: true }));
+    const moonRegex = /[\u{1F311}-\u{1F318}]/gu;
+
+    it("keeps 30 moons per row at the default width", () => {
+      const rows = renderMoonStrip(iterations, true, 0);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].match(moonRegex)).toHaveLength(26);
+      const wide = renderMoonStrip(
+        Array.from({ length: 65 }, () => ({ success: true })),
+        false,
+        0,
+      );
+      expect(wide.map((r) => r.match(moonRegex)?.length)).toEqual([30, 30, 5]);
+    });
+
+    it("derives moons per row from the width and keeps the active moon last", () => {
+      const rows = renderMoonStrip(iterations, true, 0, 20);
+      expect(rows.map((r) => r.match(moonRegex)?.length)).toEqual([10, 10, 6]);
+      expect(rows[rows.length - 1].endsWith("\u{1F311}")).toBe(true);
+    });
+
+    it("shows one moon per row when only a few columns remain", () => {
+      const rows = renderMoonStrip([{ success: true }], true, 0, 3);
+      expect(rows).toHaveLength(2);
+    });
+
+    it("shows the active moon on a one-column terminal", () => {
+      const rows = renderMoonStripCells(iterations, true, 0, 1);
+      expect(rows).toHaveLength(26);
+      for (const row of rows) expect(row).toHaveLength(1);
+      expect(rowToString(rows[25])).toBe("o");
+    });
+
+    it.each([1, 2, 5, 20, 40, 80])(
+      "keeps every frame row within %i columns and shows the active moon",
+      (terminalWidth) => {
+        const state = {
+          status: "running",
+          iterations,
+          startTime: new Date("2026-01-01T00:00:00Z"),
+        } as unknown as OrchestratorState;
+        const cells = buildFrameCells(
+          "ship it",
+          "claude",
+          state,
+          [],
+          [],
+          [],
+          0,
+          terminalWidth,
+          60,
+        );
+        for (const row of cells)
+          expect(row.length).toBeLessThanOrEqual(terminalWidth);
+        const text = cells.map(rowToString).join("\n");
+        expect(text).toMatch(terminalWidth === 1 ? /o/ : /\u{1F311}/u);
+      },
+    );
+  });
+
   it("renders full moons for successes and new moons for failures", () => {
     const iterations = [
       { success: true },
