@@ -838,9 +838,12 @@ describe("gnhf e2e", () => {
         );
         const runsDir = join(cwd, ".gnhf", "runs");
         const runId = readdirSync(runsDir)[0]!;
-        expect(existsSync(join(runsDir, runId, "iteration-2.jsonl"))).toBe(
-          true,
-        );
+        const iterationLog = join(runsDir, runId, "iteration-2.jsonl");
+        // The log line precedes the agent's first write of the file.
+        for (let i = 0; i < 100 && !existsSync(iterationLog); i++) {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+        }
+        expect(existsSync(iterationLog)).toBe(true);
 
         first.child.kill("SIGKILL");
         await first.exited;

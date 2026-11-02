@@ -1232,6 +1232,8 @@ describe("cli", () => {
         "12",
         "--max-tokens",
         "3456",
+        "--max-run-time",
+        "8h",
         "--max-rate-limit-wait",
         "90m",
       ],
@@ -1250,6 +1252,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
       maxIterations: 12,
       maxTokens: 3456,
+      maxRunTimeMs: 8 * 60 * 60_000,
       completedIterations: 0,
       maxRateLimitWaitMs: 90 * 60_000,
     });

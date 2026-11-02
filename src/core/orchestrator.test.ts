@@ -371,6 +371,63 @@ describe("Orchestrator stop limits", () => {
     expect(orchestrator.getState().status).toBe("aborted");
   });
 
+  it("starts no new iteration once the max run time has elapsed", async () => {
+    vi.useFakeTimers();
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        vi.advanceTimersByTime(60_000);
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxRunTimeMs: 90_000 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(2);
+    expect(abort).toHaveBeenCalledWith("max run time reached (90000ms)");
+    expect(orchestrator.getState().status).toBe("aborted");
+  });
+
+  it("skips the failure backoff when the max run time passed during the iteration", async () => {
+    vi.useFakeTimers();
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => {
+        vi.advanceTimersByTime(60_000);
+        throw new Error("transient error");
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxRunTimeMs: 30_000 },
+    );
+
+    const abort = vi.fn();
+    orchestrator.on("abort", abort);
+
+    await orchestrator.start();
+
+    expect(agent.run).toHaveBeenCalledTimes(1);
+    expect(abort).toHaveBeenCalledWith("max run time reached (30000ms)");
+  });
+
   it("aborts after the iteration when the agent reports should_fully_stop and stopWhen is set", async () => {
     const agent: Agent = {
       name: "claude",

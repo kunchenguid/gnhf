@@ -85,6 +85,7 @@ export interface RunLimits {
   fallbackModel?: string;
   maxIterations?: number;
   maxTokens?: number;
+  maxRunTimeMs?: number;
   maxRateLimitWaitMs?: number;
   stopWhen?: string;
   push?: boolean;
@@ -308,6 +309,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       startIteration: this.state.currentIteration,
       maxIterations: this.limits.maxIterations,
       maxTokens: this.limits.maxTokens,
+      maxRunTimeMs: this.limits.maxRunTimeMs,
       maxRateLimitWaitMs: this.limits.maxRateLimitWaitMs,
       push: this.limits.push === true,
       maxConsecutiveFailures: this.config.maxConsecutiveFailures,
@@ -1073,7 +1075,7 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    return this.getTokenAbortReason();
+    return this.getRunTimeAbortReason() ?? this.getTokenAbortReason();
   }
 
   private getPostIterationAbortReason(): string | null {
@@ -1084,7 +1086,14 @@ ${this.pendingCommitFailure}
       return `max iterations reached (${this.limits.maxIterations})`;
     }
 
-    return this.getTokenAbortReason();
+    return this.getRunTimeAbortReason() ?? this.getTokenAbortReason();
+  }
+
+  private getRunTimeAbortReason(): string | null {
+    const { maxRunTimeMs } = this.limits;
+    if (maxRunTimeMs === undefined) return null;
+    if (Date.now() - this.state.startTime.getTime() < maxRunTimeMs) return null;
+    return `max run time reached (${maxRunTimeMs}ms)`;
   }
 
   private getTokenAbortReason(): string | null {
