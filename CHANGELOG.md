@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.52](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.51...gnhf-v0.1.52) (2026-11-02)
+
+
+### Features
+
+* add --max-run-time flag to end a run after a time limit ([#247](https://github.com/kunchenguid/gnhf/issues/247)) ([f330845](https://github.com/kunchenguid/gnhf/commit/f330845edce4705b3e834de815dd1d2388539930))
+
+
+### Bug Fixes
+
+* keep iteration moons visible in narrow terminals ([#248](https://github.com/kunchenguid/gnhf/issues/248)) ([b66471f](https://github.com/kunchenguid/gnhf/commit/b66471fe70641e7d3943c8d18aaa4edaa275c84b))
+
 ## [0.1.51](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.50...gnhf-v0.1.51) (2026-10-03)
 
 
