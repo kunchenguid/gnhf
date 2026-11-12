@@ -1660,7 +1660,7 @@ describe("Renderer terminal title", () => {
 });
 
 describe("Renderer resizing", () => {
-  it("redraws after resizing away and back between animation ticks", () => {
+  it("redraws after a delayed SIGWINCH with unchanged dimensions", () => {
     vi.useFakeTimers();
     const properties = [
       [process.stdin, "isTTY"],
@@ -1674,15 +1674,14 @@ describe("Renderer resizing", () => {
       configurable: true,
       value: false,
     });
-    function resize(columns: number, rows: number) {
+    function setDimensions(columns: number, rows: number) {
       Object.defineProperties(process.stdout, {
         columns: { configurable: true, value: columns },
         rows: { configurable: true, value: rows },
       });
-      process.stdout.emit("resize");
     }
-    const listeners = process.stdout.listeners("resize");
-    resize(120, 40);
+    const listeners = process.listeners("SIGWINCH");
+    setDimensions(120, 40);
     const stdoutWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
@@ -1704,16 +1703,23 @@ describe("Renderer resizing", () => {
       expect(stripAnsi(output())).not.toContain("ship it");
 
       stdoutWrite.mockClear();
-      resize(40, 8);
-      resize(120, 40);
+      setDimensions(40, 8);
+      setDimensions(120, 40);
+      process.emit("SIGWINCH");
+      expect(stdoutWrite).not.toHaveBeenCalled();
       vi.advanceTimersByTime(200);
       expect(stripAnsi(output())).toContain("g n h f");
       expect(stripAnsi(output())).toContain("ship it");
 
-      renderer.stop();
-      expect(process.stdout.listeners("resize")).toEqual(listeners);
       stdoutWrite.mockClear();
-      resize(80, 24);
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).not.toContain("ship it");
+
+      renderer.stop();
+      expect(process.listeners("SIGWINCH")).toEqual(listeners);
+      stdoutWrite.mockClear();
+      setDimensions(80, 24);
+      process.emit("SIGWINCH");
       vi.advanceTimersByTime(200);
       expect(stdoutWrite).not.toHaveBeenCalled();
     } finally {

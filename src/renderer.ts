@@ -847,7 +847,7 @@ export class Renderer {
     this.orchestrator.on("state", this.handleState);
 
     this.orchestrator.on("stopped", this.handleStopped);
-    process.stdout.on("resize", this.handleResize);
+    process.on("SIGWINCH", this.handleResize);
 
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
@@ -870,7 +870,7 @@ export class Renderer {
     }
     this.orchestrator.off("state", this.handleState);
     this.orchestrator.off("stopped", this.handleStopped);
-    process.stdout.off("resize", this.handleResize);
+    process.off("SIGWINCH", this.handleResize);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
