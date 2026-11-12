@@ -802,7 +802,7 @@ export class Renderer {
   private prevCells: Cell[][] = [];
   private prevTitle: string | null = null;
   private titleSaved = false;
-  private isFirstFrame = true;
+  private needsFullRedraw = true;
   private seedTop: number;
   private seedBottom: number;
   private seedSide: number;
@@ -813,6 +813,10 @@ export class Renderer {
   };
   private readonly handleStopped = () => {
     this.stop("stopped");
+  };
+  private readonly handleResize = () => {
+    // A resize can return to the cached dimensions before the next tick.
+    this.needsFullRedraw = true;
   };
 
   constructor(
@@ -843,6 +847,7 @@ export class Renderer {
     this.orchestrator.on("state", this.handleState);
 
     this.orchestrator.on("stopped", this.handleStopped);
+    process.stdout.on("resize", this.handleResize);
 
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
@@ -865,6 +870,7 @@ export class Renderer {
     }
     this.orchestrator.off("state", this.handleState);
     this.orchestrator.off("stopped", this.handleStopped);
+    process.stdout.off("resize", this.handleResize);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
@@ -966,9 +972,9 @@ export class Renderer {
       this.sideMeteors,
     );
 
-    if (this.isFirstFrame || resized) {
+    if (this.needsFullRedraw || resized) {
       process.stdout.write("\x1b[H" + nextCells.map(rowToString).join("\n"));
-      this.isFirstFrame = false;
+      this.needsFullRedraw = false;
     } else {
       const changes = diffFrames(this.prevCells, nextCells);
       if (changes.length > 0) {

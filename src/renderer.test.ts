@@ -16,6 +16,7 @@ import {
   generateSideMeteorShower,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
+import { MockOrchestrator } from "./mock-orchestrator.js";
 import type {
   IterationRecord,
   Orchestrator,
@@ -1654,6 +1655,76 @@ describe("Renderer terminal title", () => {
       restoreStdoutTty();
       restoreStdinTty();
       stdoutWrite.mockRestore();
+    }
+  });
+});
+
+describe("Renderer resizing", () => {
+  it("redraws after resizing away and back between animation ticks", () => {
+    vi.useFakeTimers();
+    const properties = [
+      [process.stdin, "isTTY"],
+      [process.stdout, "columns"],
+      [process.stdout, "rows"],
+    ] as const;
+    const descriptors = properties.map(([target, key]) =>
+      Object.getOwnPropertyDescriptor(target, key),
+    );
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+    function resize(columns: number, rows: number) {
+      Object.defineProperties(process.stdout, {
+        columns: { configurable: true, value: columns },
+        rows: { configurable: true, value: rows },
+      });
+      process.stdout.emit("resize");
+    }
+    const listeners = process.stdout.listeners("resize");
+    resize(120, 40);
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const output = () =>
+      stdoutWrite.mock.calls.map(([chunk]) => chunk).join("");
+    const renderer = new Renderer(
+      new MockOrchestrator() as unknown as Orchestrator,
+      "ship it",
+      "codex",
+      vi.fn(),
+      { meteorFrequency: 0 },
+    );
+
+    try {
+      renderer.start();
+      expect(stripAnsi(output())).toContain("ship it");
+      stdoutWrite.mockClear();
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).not.toContain("ship it");
+
+      stdoutWrite.mockClear();
+      resize(40, 8);
+      resize(120, 40);
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).toContain("g n h f");
+      expect(stripAnsi(output())).toContain("ship it");
+
+      renderer.stop();
+      expect(process.stdout.listeners("resize")).toEqual(listeners);
+      stdoutWrite.mockClear();
+      resize(80, 24);
+      vi.advanceTimersByTime(200);
+      expect(stdoutWrite).not.toHaveBeenCalled();
+    } finally {
+      renderer.stop();
+      properties.forEach(([target, key], index) => {
+        const descriptor = descriptors[index];
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+        else Reflect.deleteProperty(target, key);
+      });
+      stdoutWrite.mockRestore();
+      vi.useRealTimers();
     }
   });
 });
