@@ -1177,12 +1177,7 @@ describe("buildContentCells adaptive height", () => {
 });
 
 describe("Renderer ctrl+c", () => {
-  async function runRendererCtrlCTest(state: OrchestratorState): Promise<{
-    onInterrupt: ReturnType<typeof vi.fn>;
-    orchestratorStop: ReturnType<typeof vi.fn>;
-    pause: typeof process.stdin.pause;
-    renderer: Renderer;
-  }> {
+  function runRendererCtrlCTest(state: OrchestratorState): void {
     vi.useFakeTimers();
     let dataHandler: ((data: Buffer) => void) | null = null;
     const onInterrupt = vi.fn();
@@ -1247,13 +1242,11 @@ describe("Renderer ctrl+c", () => {
       }
       (dataHandler as unknown as (data: Buffer) => void)(Buffer.from([3]));
 
-      return {
-        onInterrupt,
-        orchestratorStop,
-        pause: process.stdin.pause,
-        renderer,
-      };
+      expect(onInterrupt).toHaveBeenCalledTimes(1);
+      expect(orchestratorStop).not.toHaveBeenCalled();
+      expect(process.stdin.pause).not.toHaveBeenCalled();
     } finally {
+      renderer.stop();
       Object.defineProperty(process.stdin, "isTTY", {
         configurable: true,
         value: originalIsTTY,
@@ -1271,7 +1264,7 @@ describe("Renderer ctrl+c", () => {
     }
   }
 
-  it("delegates ctrl+c handling to the callback", async () => {
+  it("delegates ctrl+c handling to the callback", () => {
     const state: OrchestratorState = {
       status: "running",
       gracefulStopRequested: false,
@@ -1293,12 +1286,10 @@ describe("Renderer ctrl+c", () => {
       lastMessage: null,
     };
 
-    const { onInterrupt, orchestratorStop, pause } =
-      await runRendererCtrlCTest(state);
+    const listeners = process.listeners("SIGWINCH");
+    runRendererCtrlCTest(state);
 
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-    expect(orchestratorStop).not.toHaveBeenCalled();
-    expect(pause).not.toHaveBeenCalled();
+    expect(process.listeners("SIGWINCH")).toEqual(listeners);
   });
 });
 
