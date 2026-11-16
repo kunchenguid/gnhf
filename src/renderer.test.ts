@@ -16,6 +16,7 @@ import {
   generateSideMeteorShower,
 } from "./renderer.js";
 import { rowToString } from "./renderer-diff.js";
+import { MockOrchestrator } from "./mock-orchestrator.js";
 import type {
   IterationRecord,
   Orchestrator,
@@ -1176,12 +1177,7 @@ describe("buildContentCells adaptive height", () => {
 });
 
 describe("Renderer ctrl+c", () => {
-  async function runRendererCtrlCTest(state: OrchestratorState): Promise<{
-    onInterrupt: ReturnType<typeof vi.fn>;
-    orchestratorStop: ReturnType<typeof vi.fn>;
-    pause: typeof process.stdin.pause;
-    renderer: Renderer;
-  }> {
+  function runRendererCtrlCTest(state: OrchestratorState): void {
     vi.useFakeTimers();
     let dataHandler: ((data: Buffer) => void) | null = null;
     const onInterrupt = vi.fn();
@@ -1246,13 +1242,11 @@ describe("Renderer ctrl+c", () => {
       }
       (dataHandler as unknown as (data: Buffer) => void)(Buffer.from([3]));
 
-      return {
-        onInterrupt,
-        orchestratorStop,
-        pause: process.stdin.pause,
-        renderer,
-      };
+      expect(onInterrupt).toHaveBeenCalledTimes(1);
+      expect(orchestratorStop).not.toHaveBeenCalled();
+      expect(process.stdin.pause).not.toHaveBeenCalled();
     } finally {
+      renderer.stop();
       Object.defineProperty(process.stdin, "isTTY", {
         configurable: true,
         value: originalIsTTY,
@@ -1270,7 +1264,7 @@ describe("Renderer ctrl+c", () => {
     }
   }
 
-  it("delegates ctrl+c handling to the callback", async () => {
+  it("delegates ctrl+c handling to the callback", () => {
     const state: OrchestratorState = {
       status: "running",
       gracefulStopRequested: false,
@@ -1292,12 +1286,10 @@ describe("Renderer ctrl+c", () => {
       lastMessage: null,
     };
 
-    const { onInterrupt, orchestratorStop, pause } =
-      await runRendererCtrlCTest(state);
+    const listeners = process.listeners("SIGWINCH");
+    runRendererCtrlCTest(state);
 
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-    expect(orchestratorStop).not.toHaveBeenCalled();
-    expect(pause).not.toHaveBeenCalled();
+    expect(process.listeners("SIGWINCH")).toEqual(listeners);
   });
 });
 
@@ -1654,6 +1646,82 @@ describe("Renderer terminal title", () => {
       restoreStdoutTty();
       restoreStdinTty();
       stdoutWrite.mockRestore();
+    }
+  });
+});
+
+describe("Renderer resizing", () => {
+  it("redraws after a delayed SIGWINCH with unchanged dimensions", () => {
+    vi.useFakeTimers();
+    const properties = [
+      [process.stdin, "isTTY"],
+      [process.stdout, "columns"],
+      [process.stdout, "rows"],
+    ] as const;
+    const descriptors = properties.map(([target, key]) =>
+      Object.getOwnPropertyDescriptor(target, key),
+    );
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+    function setDimensions(columns: number, rows: number) {
+      Object.defineProperties(process.stdout, {
+        columns: { configurable: true, value: columns },
+        rows: { configurable: true, value: rows },
+      });
+    }
+    const listeners = process.listeners("SIGWINCH");
+    setDimensions(120, 40);
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const output = () =>
+      stdoutWrite.mock.calls.map(([chunk]) => chunk).join("");
+    const renderer = new Renderer(
+      new MockOrchestrator() as unknown as Orchestrator,
+      "ship it",
+      "codex",
+      vi.fn(),
+      { meteorFrequency: 0 },
+    );
+
+    try {
+      renderer.start();
+      expect(stripAnsi(output())).toContain("ship it");
+      stdoutWrite.mockClear();
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).not.toContain("ship it");
+
+      stdoutWrite.mockClear();
+      setDimensions(40, 8);
+      setDimensions(120, 40);
+      process.emit("SIGWINCH");
+      expect(stdoutWrite).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).toContain("g n h f");
+      expect(stripAnsi(output())).toContain("ship it");
+
+      stdoutWrite.mockClear();
+      vi.advanceTimersByTime(200);
+      expect(stripAnsi(output())).not.toContain("ship it");
+
+      renderer.stop();
+      expect(process.listeners("SIGWINCH")).toEqual(listeners);
+      stdoutWrite.mockClear();
+      setDimensions(80, 24);
+      process.emit("SIGWINCH");
+      vi.advanceTimersByTime(200);
+      expect(stdoutWrite).not.toHaveBeenCalled();
+    } finally {
+      renderer.stop();
+      properties.forEach(([target, key], index) => {
+        const descriptor = descriptors[index];
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+        else Reflect.deleteProperty(target, key);
+      });
+      stdoutWrite.mockRestore();
+      vi.useRealTimers();
     }
   });
 });
