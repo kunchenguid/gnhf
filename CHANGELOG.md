@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.53](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.52...gnhf-v0.1.53) (2026-11-16)
+
+
+### Bug Fixes
+
+* **renderer:** redraw after rapid terminal resizing ([#250](https://github.com/kunchenguid/gnhf/issues/250)) ([bfd97af](https://github.com/kunchenguid/gnhf/commit/bfd97af1f737237544d1925e983de591316547e7))
+
 ## [0.1.52](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.51...gnhf-v0.1.52) (2026-11-02)
 
 
