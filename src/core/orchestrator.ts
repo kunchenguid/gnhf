@@ -29,6 +29,12 @@ import {
 } from "./interrupt-state.js";
 import { buildCommitMessage } from "./commit-message.js";
 import { buildIterationPrompt } from "../templates/iteration-prompt.js";
+import {
+  checkDiskFree,
+  defaultStatfs,
+  formatMb,
+  type StatfsFn,
+} from "./disk.js";
 import { getTotalTokenCount } from "../utils/tokens.js";
 
 export interface IterationRecord {
@@ -71,6 +77,9 @@ export interface OrchestratorState {
   lastMessage: string | null;
   lastAgentError?: string | null;
   hasPendingCommitFailure?: boolean;
+  // Last disk-guard reading (issue #252): free bytes on the run filesystem,
+  // undefined until the first check ran and undefined when disabled.
+  diskFreeBytes?: number;
 }
 
 export interface OrchestratorEvents {
@@ -87,6 +96,9 @@ export interface RunLimits {
   maxTokens?: number;
   maxRunTimeMs?: number;
   maxRateLimitWaitMs?: number;
+  // Stop before starting a new iteration when the run filesystem has less
+  // than this many bytes free (issue #252). 0/undefined disables the guard.
+  minFreeDiskBytes?: number;
   stopWhen?: string;
   push?: boolean;
   // Finished iterations restored on resume. Distinct from startIteration,
@@ -136,6 +148,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private cwd: string;
   private prompt: string;
   private limits: RunLimits;
+  private readonly statfsFn: StatfsFn;
   private stopRequested = false;
   private stopPromise: Promise<void> | null = null;
   private activeIterationPromise: Promise<RunIterationResult> | null = null;
@@ -184,6 +197,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     cwd: string,
     startIteration = 0,
     limits: RunLimits = {},
+    options: { statfsFn?: StatfsFn } = {},
   ) {
     super();
     this.config = config;
@@ -191,6 +205,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     this.runInfo = runInfo;
     this.prompt = prompt;
     this.cwd = cwd;
+    this.statfsFn = options.statfsFn ?? defaultStatfs;
     this.limits = {
       ...limits,
       maxRateLimitWaitMs:
@@ -325,6 +340,19 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           break;
         }
         if (this.stopForGracefulShutdown()) {
+          break;
+        }
+
+        // Disk guard before every iteration: starting a long agent run with
+        // a nearly full temp disk guarantees an ENOSPC failure mid-flight
+        // (issue #252). Stopping cleanly here keeps every prior commit.
+        // Skipped SYNCHRONOUSLY when disabled so the loop's microtask
+        // ordering is byte-for-byte unchanged from pre-guard behavior.
+        const diskAbortReason = this.limits.minFreeDiskBytes
+          ? await this.getDiskAbortReason()
+          : null;
+        if (diskAbortReason) {
+          this.abort(diskAbortReason);
           break;
         }
 
@@ -1076,6 +1104,43 @@ ${this.pendingCommitFailure}
     }
 
     return this.getRunTimeAbortReason() ?? this.getTokenAbortReason();
+  }
+
+  // Disk guard (issue #252): the check runs against the run directory's
+  // filesystem — with the per-run TMPDIR that is also where iteration temp
+  // files land, so one number covers the repo and the temp footprint. A
+  // statfs failure is fail-open: a probe error is not evidence of a full
+  // disk, and transient infra must not end the night early (VISION).
+  private async getDiskAbortReason(): Promise<string | null> {
+    const min = this.limits.minFreeDiskBytes;
+    if (!min || min <= 0) return null;
+    const outcome = await checkDiskFree(this.runInfo.runDir, {
+      minFreeBytes: min,
+      statfsFn: this.statfsFn,
+    });
+    if (outcome.kind === "disabled") return null;
+    if (outcome.kind === "error") {
+      appendDebugLog("disk:check-error", {
+        iteration: this.state.currentIteration,
+        error: outcome.error,
+      });
+      return null;
+    }
+    this.state.diskFreeBytes = outcome.freeBytes;
+    if (outcome.kind === "below") {
+      return (
+        `temp disk low: ${formatMb(outcome.freeBytes)} free on the run ` +
+        `filesystem, minimum ${formatMb(min)} (--min-disk-free-mb)`
+      );
+    }
+    if (outcome.kind === "warn") {
+      appendDebugLog("disk:warn", {
+        iteration: this.state.currentIteration,
+        freeBytes: outcome.freeBytes,
+        minFreeBytes: min,
+      });
+    }
+    return null;
   }
 
   private getPostIterationAbortReason(): string | null {

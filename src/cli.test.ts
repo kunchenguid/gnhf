@@ -3612,7 +3612,9 @@ describe("cli", () => {
       );
 
       await vi.waitFor(() => {
-        expect(exitHandlers).toHaveLength(1);
+        // Two exit handlers: the worktree-preservation fallback and the
+        // per-run tmp cleanup registered in cli.ts (issue #252).
+        expect(exitHandlers).toHaveLength(2);
       });
       await vi.advanceTimersByTimeAsync(5_000);
       await exitPromise;

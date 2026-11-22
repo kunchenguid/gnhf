@@ -28,6 +28,7 @@ import {
   initDebugLog,
   serializeError,
 } from "./core/debug-log.js";
+import { dirSizeSync, useRunTmpDir } from "./core/disk.js";
 import {
   ensureCleanWorkingTree,
   createBranch,
@@ -625,6 +626,11 @@ program
     parseDuration,
   )
   .option(
+    "--min-disk-free-mb <n>",
+    "Start no new iteration when the run filesystem has less free space than this (MB; 0 disables; default 256, from config)",
+    parseNonNegativeInteger,
+  )
+  .option(
     "--max-rate-limit-wait <duration>",
     'Abort after this much total usage-limit wait (e.g. "30m", "2h", or "0")',
     parseDuration,
@@ -674,6 +680,7 @@ program
         maxTokens?: number;
         maxRunTime?: number;
         maxRateLimitWait?: number;
+        minDiskFreeMb?: number;
         fallbackModel?: string;
         stopWhen?: string;
         preventSleep?: boolean;
@@ -684,6 +691,18 @@ program
         mock: boolean;
       },
     ) => {
+      // Per-run temp cleanup (issue #252): registered before anything that
+      // can exit the process; set once the run's tmp dir exists. Exit
+      // handlers must never throw.
+      let runTmpCleanup: (() => void) | null = null;
+      process.on("exit", () => {
+        try {
+          runTmpCleanup?.();
+        } catch {
+          // best-effort
+        }
+      });
+
       if (options.mock) {
         const mock = new MockOrchestrator();
         enterAltScreen();
@@ -1052,6 +1071,13 @@ program
         mode: runMode,
       });
 
+      // Per-run TMPDIR (issue #252): iteration temp files (venvs, build
+      // caches, …) land under the run directory — tracked, sizeable, and
+      // removed when the run ends — instead of leaking into the shared /tmp
+      // until the machine reboots.
+      const runTmp = useRunTmpDir(runInfo.runDir);
+      runTmpCleanup = runTmp.cleanup;
+
       initDebugLog(runInfo.logPath);
       appendDebugLog("run:start", {
         args: redactDebugArgs(process.argv.slice(2)),
@@ -1115,6 +1141,14 @@ program
             ? {}
             : { fallbackModel: options.fallbackModel }),
           ...(options.push ? { push: true } : {}),
+          ...((options.minDiskFreeMb ?? config.minDiskFreeMb ?? 0) > 0
+            ? {
+                minFreeDiskBytes:
+                  (options.minDiskFreeMb ?? config.minDiskFreeMb ?? 0) *
+                  1024 *
+                  1024,
+              }
+            : {}),
         },
       );
       getOrchestratorState = () => orchestrator.getState();
@@ -1253,6 +1287,11 @@ program
           });
         }
 
+        // Temp usage is measured BEFORE the per-run tmp dir is removed
+        // (issue #252: show temp usage in the run status/log).
+        const tmpDirUsedBytes = dirSizeSync(runTmp.dir);
+        runTmp.cleanup();
+
         const exitSummary = renderExitSummary({
           agentName: redactAgentSpecForLogs(config.agent),
           branchName: finalBranchName,
@@ -1276,6 +1315,8 @@ program
           terminalColumns: process.stdout.columns,
           hasPendingCommitFailure: finalState.hasPendingCommitFailure,
           sleepPreventionNotice,
+          tmpDirUsedBytes,
+          diskFreeBytes: finalState.diskFreeBytes,
         });
 
         appendDebugLog("run:complete", {
