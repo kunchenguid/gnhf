@@ -63,6 +63,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
     expect(config).not.toHaveProperty("commitMessage");
@@ -87,6 +88,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });
@@ -112,6 +114,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });
@@ -171,6 +174,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });
@@ -206,6 +210,7 @@ describe("loadConfig", () => {
       agentModel: {},
       agentArgsOverride: {},
       acpRegistryOverrides: {},
+      minDiskFreeMb: 256,
       maxConsecutiveFailures: 10,
       preventSleep: true,
     });
@@ -223,6 +228,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: false,
     });
   });
@@ -239,6 +245,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: false,
     });
   });
@@ -255,6 +262,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
     expect(config).toEqual({
@@ -264,6 +272,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });
@@ -332,6 +341,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });
@@ -349,6 +359,7 @@ describe("loadConfig", () => {
       agentArgsOverride: {},
       acpRegistryOverrides: {},
       maxConsecutiveFailures: 3,
+    minDiskFreeMb: 256,
       preventSleep: true,
     });
   });

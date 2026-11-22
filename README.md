@@ -215,6 +215,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--max-tokens <n>`                 | Abort after `n` total input+output+cache tokens                                                    | unlimited              |
 | `--max-run-time <duration>`        | Start no new iteration after this much total run time (`30m`, `8h`)                                | unlimited              |
 | `--max-rate-limit-wait <duration>` | Abort after this much total Claude usage-limit wait (`30m`, `2h`, or `0`)                          | 24h safety cap         |
+| `--min-disk-free-mb <n>`           | Start no new iteration when the run filesystem has less free space than this (`0` disables)        | config file (`256`)    |
 | `--stop-when <cond>`               | End when the agent reports this condition, after any commit-failure repair; persists across resume | unlimited              |
 | `--prevent-sleep <mode>`           | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                                 | config file (`on`)     |
 | `--worktree`                       | Run in a separate git worktree (enables multiple agents concurrently)                              | `false`                |
@@ -228,6 +229,8 @@ Local models are less reliable at reporting a `--stop-when` condition, so let th
 Once the time has passed, gnhf starts no new iteration and ends the run like `--max-iterations` does; an iteration already in progress finishes first.
 A usage-limit wait (see `--max-rate-limit-wait`) that starts before the deadline, or right after an iteration that the provider rejected for usage, is not cut short; the run ends once that wait is over.
 On resume, the clock starts again.
+
+Before every iteration gnhf also checks free space on the run filesystem (`--min-disk-free-mb`, config `minDiskFreeMb`, default 256 MB, `0` disables). Below the floor it stops cleanly before starting anything new — every earlier commit is kept — instead of grinding into ENOSPC mid-iteration. Between the floor and twice it, gnhf logs a warning to the debug log and keeps going. The exit summary reports how much temp the run accumulated and the last free-space reading.
 
 ## Configuration
 

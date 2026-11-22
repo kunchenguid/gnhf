@@ -80,6 +80,10 @@ export interface Config {
   acpRegistryOverrides: Record<string, string>;
   commitMessage?: CommitMessageConfig;
   maxConsecutiveFailures: number;
+  // Disk guard floor (issue #252): stop before starting a new iteration when
+  // the run filesystem has less than this many MB free. 0 disables the guard;
+  // DEFAULT_CONFIG supplies 256 when config.yml omits it.
+  minDiskFreeMb?: number;
   preventSleep: boolean;
 }
 
@@ -90,6 +94,7 @@ const DEFAULT_CONFIG: Config = {
   agentArgsOverride: {},
   acpRegistryOverrides: {},
   maxConsecutiveFailures: 3,
+  minDiskFreeMb: 256,
   preventSleep: true,
 };
 

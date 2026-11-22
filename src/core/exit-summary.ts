@@ -1,6 +1,7 @@
 import type { OrchestratorState } from "./orchestrator.js";
 import type { BranchDiffStats } from "./git.js";
 import { formatTokens, getTotalTokenCount } from "../utils/tokens.js";
+import { formatMb } from "./disk.js";
 
 type RunStatus = OrchestratorState["status"];
 
@@ -34,6 +35,11 @@ export interface ExitSummaryOptions {
   terminalColumns?: number;
   hasPendingCommitFailure?: boolean;
   sleepPreventionNotice?: SleepPreventionNotice;
+  // Disk guard telemetry (issue #252): temp the run accumulated (measured
+  // before its removal) and the last free-space reading on the run
+  // filesystem. Either may be absent (guard disabled / no reading).
+  tmpDirUsedBytes?: number;
+  diskFreeBytes?: number;
 }
 
 const MIN_CARD_WIDTH = 62;
@@ -256,6 +262,21 @@ export function renderExitSummary(options: ExitSummaryOptions): string {
       `${options.diffStats.filesUpdated} updated`,
       `${options.diffStats.filesDeleted} deleted`,
     ]),
+    ...(options.tmpDirUsedBytes !== undefined ||
+    options.diskFreeBytes !== undefined
+      ? [
+          metricLine(s.dim("temp disk"), [
+            s.bold(
+              options.tmpDirUsedBytes !== undefined
+                ? formatMb(options.tmpDirUsedBytes)
+                : "—",
+            ),
+            ...(options.diskFreeBytes !== undefined
+              ? [`${formatMb(options.diskFreeBytes)} free`]
+              : []),
+          ]),
+        ]
+      : []),
     "",
     commandLine(s.dim("notes"), options.notesPath),
     commandLine(s.dim("debug log"), options.logPath),
