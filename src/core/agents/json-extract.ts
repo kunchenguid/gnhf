@@ -81,7 +81,8 @@ export function extractLastJsonObject(
         // Keep scanning earlier objects when a candidate is not valid JSON.
       }
     }
-    cursor = text.lastIndexOf("{", cursor - 1);
+    // lastIndexOf clamps a negative position to zero, revisiting a leading brace.
+    cursor = cursor === 0 ? -1 : text.lastIndexOf("{", cursor - 1);
   }
   return null;
 }
