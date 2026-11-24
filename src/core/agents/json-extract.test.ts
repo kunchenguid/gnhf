@@ -55,6 +55,17 @@ describe("extractLastJsonObject", () => {
     expect(extractLastJsonObject("plain prose with no braces")).toBeNull();
   });
 
+  it.each(['{"summary": missing opening quote"}', '{"a":1'])(
+    "returns null for an invalid candidate at index zero: %s",
+    (text) => {
+      expect(extractLastJsonObject(text)).toBeNull();
+    },
+  );
+
+  it("returns null when the candidate at index zero is rejected", () => {
+    expect(extractLastJsonObject('{"a":1}', () => false)).toBeNull();
+  });
+
   it("falls back when the rightmost candidate is unterminated", () => {
     const text = 'good {"a":1} bad {"b":';
     expect(extractLastJsonObject(text)).toBe('{"a":1}');
@@ -123,6 +134,14 @@ describe("parseAgentJson", () => {
           "summary" in value &&
           typeof value.summary === "string",
         ),
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when an agent summary is missing its opening quote", () => {
+    expect(
+      parseAgentJson(
+        '{"success":true,"summary": Static review found a bug.","key_changes_made":[],"key_learnings":[]}',
       ),
     ).toBeNull();
   });
